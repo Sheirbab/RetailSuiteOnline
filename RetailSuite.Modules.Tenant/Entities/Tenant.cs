@@ -3,11 +3,15 @@ using RetailSuite.Shared;
 
 namespace RetailSuite.Modules.Tenant.Entities;
 
-public class Tenant : BaseEntity
+public class Tenant
 {
-    public string Name { get; private set; } = default!;
-    public string Subdomain { get; private set; } = default!;
+    public Guid Id { get; private set; } = Guid.NewGuid();
+
+    public string Name { get; private set; }
+    public string Subdomain { get; private set; }
     public string Status { get; private set; } = "Active";
+
+    public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
     private Tenant() { }
 

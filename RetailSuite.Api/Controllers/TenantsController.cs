@@ -26,7 +26,7 @@ public class TenantsController : ControllerBase
     }
 
     [HttpGet]
-    public IActionResult Get()
+    public IActionResult Get([FromHeader(Name = "X-Tenant-Id")] Guid tenantId)
     {
         return Ok(_db.Tenants.ToList());
     }

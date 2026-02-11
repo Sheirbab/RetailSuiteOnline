@@ -5,3 +5,5 @@ RetailSuite.Modules.Tenant/obj/
 RetailSuite.Shared/bin/
 RetailSuite.Shared/obj/
 RetailSuite.Modules.Tenant/bin/
+RetailSuite.Modules.Identity/obj/
+RetailSuite.Modules.Identity/bin/

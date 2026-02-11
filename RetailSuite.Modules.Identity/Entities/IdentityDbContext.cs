@@ -1,37 +1,41 @@
-
-using Microsoft.EntityFrameworkCore;
-using RetailSuite.Modules.Tenant.Entities;
+﻿using Microsoft.EntityFrameworkCore;
+using RetailSuite.Modules.Identity.Entities;
 using RetailSuite.Shared;
+using System.Collections.Generic;
+using System.Reflection.Emit;
 
-namespace RetailSuite.Modules.Tenant;
+namespace RetailSuite.Modules.Identity;
 
-public class TenantDbContext : DbContext
+public class IdentityDbContext : DbContext
 {
     private readonly ITenantContext _tenantContext;
 
-    public TenantDbContext(
-        DbContextOptions<TenantDbContext> options,
+    public IdentityDbContext(
+        DbContextOptions<IdentityDbContext> options,
         ITenantContext tenantContext)
         : base(options)
     {
         _tenantContext = tenantContext;
     }
 
-
-    public DbSet<Entities.Tenant> Tenants => Set<Entities.Tenant>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Entities.Tenant>(b =>
+        modelBuilder.Entity<User>(b =>
         {
-            b.ToTable("Tenants");
+            b.ToTable("Users");
             b.HasKey(x => x.Id);
-            b.Property(x => x.Name).IsRequired().HasMaxLength(200);
-            b.Property(x => x.Subdomain).IsRequired().HasMaxLength(100);
-            b.HasIndex(x => x.Subdomain).IsUnique();
+            b.HasIndex(x => x.Email);
+            b.Property(x => x.Email).IsRequired();
+            b.Property(x => x.PasswordHash).IsRequired();
         });
 
+        // 🔥 Global tenant filter
+        modelBuilder.Entity<User>()
+            .HasQueryFilter(u => u.TenantId == _tenantContext.TenantId);
     }
+
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
@@ -44,5 +48,4 @@ public class TenantDbContext : DbContext
 
         return base.SaveChangesAsync(cancellationToken);
     }
-
 }

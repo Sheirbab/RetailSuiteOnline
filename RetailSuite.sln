@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Tenant"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Shared", "RetailSuite.Shared\RetailSuite.Shared.csproj", "{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Identity", "RetailSuite.Modules.Identity\RetailSuite.Modules.Identity.csproj", "{94702923-309B-4579-B36C-E3BD309A8AAB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,8 +28,15 @@ Global
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94702923-309B-4579-B36C-E3BD309A8AAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94702923-309B-4579-B36C-E3BD309A8AAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94702923-309B-4579-B36C-E3BD309A8AAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94702923-309B-4579-B36C-E3BD309A8AAB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2F106F61-70B6-4013-87B1-BF19A7D51418}
 	EndGlobalSection
 EndGlobal
