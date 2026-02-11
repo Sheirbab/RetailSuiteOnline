@@ -1,0 +1,7 @@
+.vs/
+RetailSuite.Api/bin/
+RetailSuite.Api/obj/
+RetailSuite.Modules.Tenant/obj/
+RetailSuite.Shared/bin/
+RetailSuite.Shared/obj/
+RetailSuite.Modules.Tenant/bin/
