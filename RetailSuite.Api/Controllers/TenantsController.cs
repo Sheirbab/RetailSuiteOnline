@@ -1,4 +1,5 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RetailSuite.Modules.Tenant;
 using RetailSuite.Modules.Tenant.Entities;
@@ -29,5 +30,11 @@ public class TenantsController : ControllerBase
     public IActionResult Get([FromHeader(Name = "X-Tenant-Id")] Guid tenantId)
     {
         return Ok(_db.Tenants.ToList());
+    }
+    [Authorize]
+    [HttpGet("me")]
+    public IActionResult Me()
+    {
+        return Ok(User.Claims.Select(c => new { c.Type, c.Value }));
     }
 }

@@ -1,0 +1,15 @@
+{
+  "workspace": {
+    "id": "73d4de96-a76f-4d09-9ee3-01fc08ede4f7"
+  },
+  "entities": {
+    "environments": [],
+    "flows": [],
+    "globals": [],
+    "mocks": [],
+    "specs": [
+      "..\\RetailSuite.Api\\obj\\Debug\\net8.0\\EndpointInfo\\RetailSuite.Api.json"
+    ],
+    "collections": []
+  }
+}
