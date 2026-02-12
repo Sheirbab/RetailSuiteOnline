@@ -38,7 +38,10 @@ public class TenantDbContext : DbContext
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.TenantId = _tenantContext.TenantId;
+                if (_tenantContext.TenantId.HasValue)
+                {
+                    entry.Entity.TenantId = _tenantContext.TenantId.Value;
+                }
             }
         }
 

@@ -1,30 +1,30 @@
-﻿using RetailSuite.Shared;
+﻿using System.Security.Claims;
+using RetailSuite.Shared;
 
 namespace RetailSuite.Api.MultiTenancy;
 
 public class TenantContext : ITenantContext
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IHttpContextAccessor _accessor;
 
     public TenantContext(IHttpContextAccessor accessor)
     {
-        _httpContextAccessor = accessor;
+        _accessor = accessor;
     }
 
-    public Guid TenantId
+    public Guid? TenantId
     {
         get
         {
-            var header = _httpContextAccessor
-                .HttpContext?
-                .Request
-                .Headers["X-Tenant-Id"]
-                .FirstOrDefault();
+            var claim = _accessor.HttpContext?
+                .User?
+                .Claims?
+                .FirstOrDefault(c => c.Type == "tenantId");
 
-            if (string.IsNullOrWhiteSpace(header))
-                throw new Exception("Tenant header missing.");
+            if (claim == null)
+                return null;
 
-            return Guid.Parse(header);
+            return Guid.Parse(claim.Value);
         }
     }
 }

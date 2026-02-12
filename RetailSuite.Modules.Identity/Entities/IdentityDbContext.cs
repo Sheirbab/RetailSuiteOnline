@@ -30,19 +30,23 @@ public class IdentityDbContext : DbContext
             b.Property(x => x.Email).IsRequired();
             b.Property(x => x.PasswordHash).IsRequired();
         });
+        var tenantId = _tenantContext.TenantId;
 
-        // 🔥 Global tenant filter
         modelBuilder.Entity<User>()
-            .HasQueryFilter(u => u.TenantId == _tenantContext.TenantId);
-    }
+            .HasQueryFilter(u =>
+                tenantId == null || u.TenantId == tenantId);
 
+    }
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.TenantId = _tenantContext.TenantId;
+                if (_tenantContext.TenantId.HasValue)
+                {
+                    entry.Entity.TenantId = _tenantContext.TenantId.Value;
+                }
             }
         }
 
