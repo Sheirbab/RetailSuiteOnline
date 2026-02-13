@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RetailSuite.Modules.Inventory\RetailSuite.Modules.Inventory.csproj" />
     <ProjectReference Include="..\RetailSuite.Shared\RetailSuite.Shared.csproj" />
   </ItemGroup>
 

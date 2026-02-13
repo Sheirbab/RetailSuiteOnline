@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Catalog.Entities;
 
@@ -11,9 +12,9 @@ namespace RetailSuite.Api.Controllers;
 [Route("api/attributes")]
 public class ProductAttributesController : ControllerBase
 {
-    private readonly CatalogDbContext _db;
+    private readonly RetailDbContext _db;
 
-    public ProductAttributesController(CatalogDbContext db)
+    public ProductAttributesController(RetailDbContext db)
     {
         _db = db;
     }

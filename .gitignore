@@ -9,3 +9,9 @@ RetailSuite.Modules.Identity/obj/
 RetailSuite.Modules.Identity/bin/
 RetailSuite.Modules.Catalog/bin/
 RetailSuite.Modules.Catalog/obj/
+RetailSuite.Infrastructure/obj/
+RetailSuite.Modules.Inventory/bin/
+RetailSuite.Modules.Inventory/obj/
+RetailSuite.Modules.Order/bin/
+RetailSuite.Modules.Order/obj/
+RetailSuite.Infrastructure/bin/

@@ -1,0 +1,299 @@
+﻿using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Modules.Catalog.Entities;
+using RetailSuite.Modules.Orders.Entities;
+using RetailSuite.Shared;
+
+namespace RetailSuite.Infrastructure;
+
+public class RetailDbContext : DbContext
+{
+    private readonly ITenantContext _tenantContext;
+
+    public RetailDbContext(
+        DbContextOptions<RetailDbContext> options,
+        ITenantContext tenantContext)
+        : base(options)
+    {
+        _tenantContext = tenantContext;
+    }
+
+    // -----------------------------
+    // Catalog
+    // -----------------------------
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+    public DbSet<ProductAttribute> ProductAttributes => Set<ProductAttribute>();
+    public DbSet<ProductAttributeValue> ProductAttributeValues => Set<ProductAttributeValue>();
+    public DbSet<VariantAttributeValue> VariantAttributeValues => Set<VariantAttributeValue>();
+
+    // -----------------------------
+    // Inventory
+    // -----------------------------
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
+
+    // -----------------------------
+    // Orders
+    // -----------------------------
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        // =====================================================
+        // CATALOG CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<Product>(b =>
+        {
+            b.ToTable("Products");
+            b.HasKey(p => p.Id);
+
+            b.Property(p => p.Name)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            b.Property(p => p.Description)
+                .HasMaxLength(2000);
+
+            b.HasMany(p => p.Variants)
+                .WithOne()
+                .HasForeignKey(v => v.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductVariant>(b =>
+        {
+            b.ToTable("ProductVariants");
+            b.HasKey(v => v.Id);
+
+            b.Property(v => v.SKU)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            b.HasIndex(v => new { v.TenantId, v.SKU })
+                .IsUnique();
+
+            b.Property(v => v.Price)
+                .HasColumnType("decimal(18,2)");
+
+            b.HasMany(v => v.AttributeValues)
+                .WithOne(vav => vav.ProductVariant)
+                .HasForeignKey(vav => vav.ProductVariantId);
+        });
+
+        modelBuilder.Entity<Category>(b =>
+        {
+            b.ToTable("Categories");
+            b.HasKey(c => c.Id);
+
+            b.Property(c => c.Name)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            b.Property(c => c.Slug)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            b.HasOne<Category>()
+                .WithMany()
+                .HasForeignKey(c => c.ParentCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductCategory>(b =>
+        {
+            b.ToTable("ProductCategories");
+            b.HasKey(pc => new { pc.ProductId, pc.CategoryId });
+
+            b.HasOne(pc => pc.Product)
+                .WithMany()
+                .HasForeignKey(pc => pc.ProductId);
+
+            b.HasOne(pc => pc.Category)
+                .WithMany()
+                .HasForeignKey(pc => pc.CategoryId);
+        });
+
+        modelBuilder.Entity<ProductAttribute>(b =>
+        {
+            b.ToTable("ProductAttributes");
+            b.HasKey(a => a.Id);
+
+            b.Property(a => a.Name)
+                .IsRequired()
+                .HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<ProductAttributeValue>(b =>
+        {
+            b.ToTable("ProductAttributeValues");
+            b.HasKey(av => av.Id);
+
+            b.Property(av => av.Value)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            b.HasOne<ProductAttribute>()
+                .WithMany()
+                .HasForeignKey(av => av.AttributeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VariantAttributeValue>(b =>
+        {
+            b.ToTable("VariantAttributeValues");
+
+            b.HasKey(v => new { v.ProductVariantId, v.ProductAttributeValueId });
+
+            b.HasOne(v => v.ProductVariant)
+                .WithMany(pv => pv.AttributeValues)
+                .HasForeignKey(v => v.ProductVariantId);
+
+            b.HasOne(v => v.ProductAttributeValue)
+                .WithMany()
+                .HasForeignKey(v => v.ProductAttributeValueId);
+        });
+
+        // =====================================================
+        // INVENTORY CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<InventoryItem>(b =>
+        {
+            b.ToTable("InventoryItems");
+            b.HasKey(i => i.Id);
+
+            b.HasIndex(i => new { i.TenantId, i.ProductVariantId })
+                .IsUnique();
+
+            b.HasMany(i => i.Transactions)
+                .WithOne()
+                .HasForeignKey(t => t.InventoryItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InventoryTransaction>(b =>
+        {
+            b.ToTable("InventoryTransactions");
+            b.HasKey(t => t.Id);
+
+            b.Property(t => t.QuantityChange)
+                .IsRequired();
+
+            b.Property(t => t.TransactionType)
+                .IsRequired();
+
+            b.HasIndex(t => new { t.TenantId, t.ProductVariantId });
+            b.HasIndex(t => t.CreatedAt);
+        });
+
+        // =====================================================
+        // ORDERS CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<Customer>(b =>
+        {
+            b.ToTable("Customers");
+            b.HasKey(c => c.Id);
+
+            b.Property(c => c.FirstName)
+                .IsRequired()
+                .HasMaxLength(150);
+
+            b.Property(c => c.LastName)
+                .IsRequired()
+                .HasMaxLength(150);
+
+            b.Property(c => c.Email)
+                .HasMaxLength(200);
+
+            b.HasIndex(c => new { c.TenantId, c.Email });
+        });
+
+        modelBuilder.Entity<Order>(b =>
+        {
+            b.ToTable("Orders");
+            b.HasKey(o => o.Id);
+
+            b.Property(o => o.OrderNumber)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            b.HasIndex(o => new { o.TenantId, o.OrderNumber })
+                .IsUnique();
+
+            b.Property(o => o.TotalAmount)
+                .HasColumnType("decimal(18,2)");
+
+            b.HasOne(o => o.Customer)
+                .WithMany()
+                .HasForeignKey(o => o.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(o => o.Items)
+                .WithOne()
+                .HasForeignKey(i => i.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderItem>(b =>
+        {
+            b.ToTable("OrderItems");
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.SKU)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            b.Property(i => i.UnitPrice)
+                .HasColumnType("decimal(18,2)");
+        });
+
+        // =====================================================
+        // GLOBAL TENANT FILTER
+        // =====================================================
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(TenantEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                var method = typeof(RetailDbContext)
+                    .GetMethod(nameof(ApplyTenantFilter),
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+                    ?.MakeGenericMethod(entityType.ClrType);
+
+                method?.Invoke(null, new object[] { modelBuilder, tenantId });
+            }
+        }
+    }
+
+    private static void ApplyTenantFilter<TEntity>(
+        ModelBuilder modelBuilder,
+        Guid? tenantId)
+        where TEntity : TenantEntity
+    {
+        modelBuilder.Entity<TEntity>()
+            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in ChangeTracker.Entries<TenantEntity>())
+        {
+            if (entry.State == EntityState.Added &&
+                _tenantContext.TenantId.HasValue)
+            {
+                entry.Entity.TenantId = _tenantContext.TenantId.Value;
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+}

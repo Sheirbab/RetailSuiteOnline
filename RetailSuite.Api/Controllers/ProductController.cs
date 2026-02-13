@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
@@ -12,9 +13,9 @@ namespace RetailSuite.Api.Controllers;
 [Route("api/products")]
 public class ProductsController : ControllerBase
 {
-    private readonly CatalogDbContext _db;
+    private readonly RetailDbContext _db;
 
-    public ProductsController(CatalogDbContext db)
+    public ProductsController(RetailDbContext db)
     {
         _db = db;
     }

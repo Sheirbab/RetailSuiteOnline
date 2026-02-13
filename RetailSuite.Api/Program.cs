@@ -4,8 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using RetailSuite.Api.MultiTenancy;
+using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Identity;
+using RetailSuite.Modules.Inventory;
+using RetailSuite.Modules.Inventory.Services;
+using RetailSuite.Modules.Orders;
+using RetailSuite.Modules.Orders.Services;
 using RetailSuite.Modules.Tenant;
 using RetailSuite.Shared;
 using System.Text;
@@ -16,11 +21,13 @@ builder.Services.AddDbContext<TenantDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddDbContext<IdentityDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
-builder.Services.AddDbContext<CatalogDbContext>(options =>
+builder.Services.AddDbContext<RetailDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<InventoryService>();
+builder.Services.AddScoped<OrderService>();
 
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 

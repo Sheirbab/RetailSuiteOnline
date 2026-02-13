@@ -7,8 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RetailSuite.Modules.Catalog\RetailSuite.Modules.Catalog.csproj" />
+    <ProjectReference Include="..\RetailSuite.Infrastructure\RetailSuite.Infrastructure.csproj" />
     <ProjectReference Include="..\RetailSuite.Modules.Identity\RetailSuite.Modules.Identity.csproj" />
+    <ProjectReference Include="..\RetailSuite.Modules.Inventory\RetailSuite.Modules.Inventory.csproj" />
+    <ProjectReference Include="..\RetailSuite.Modules.Order\RetailSuite.Modules.Order.csproj" />
     <ProjectReference Include="..\RetailSuite.Shared\RetailSuite.Shared.csproj" />
     <ProjectReference Include="..\RetailSuite.Modules.Tenant\RetailSuite.Modules.Tenant.csproj" />
   </ItemGroup>
