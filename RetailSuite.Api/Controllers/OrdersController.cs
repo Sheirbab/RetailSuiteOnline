@@ -15,5 +15,11 @@ namespace RetailSuite.Api.Controllers
             await _orderService.ConfirmOrderAsync(orderId);
             return Ok();
         }
+        [HttpPost("{orderId}/cancel")]
+        public async Task<IActionResult> Cancel(Guid orderId)
+        {
+            await _orderService.CancelOrderAsync(orderId);
+            return Ok();
+        }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
@@ -41,11 +42,15 @@ public class RetailDbContext : DbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Customer> Customers => Set<Customer>();
-
+    // -----------------------------
+    // Accounting
+    // -----------------------------
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<Payment> Payments => Set<Payment>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var tenantId = _tenantContext.TenantId;
-
         // =====================================================
         // CATALOG CONFIGURATION
         // =====================================================
@@ -86,6 +91,8 @@ public class RetailDbContext : DbContext
             b.HasMany(v => v.AttributeValues)
                 .WithOne(vav => vav.ProductVariant)
                 .HasForeignKey(vav => vav.ProductVariantId);
+            b.Property(v => v.CostPrice)
+                .HasColumnType("decimal(18,2)");
         });
 
         modelBuilder.Entity<Category>(b =>
@@ -177,6 +184,12 @@ public class RetailDbContext : DbContext
                 .WithOne()
                 .HasForeignKey(t => t.InventoryItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            b.Property(i => i.AverageCost)
+                .HasColumnType("decimal(18,4)");
+
+            b.Property(i => i.TotalStockValue)
+                .HasColumnType("decimal(18,4)");
         });
 
         modelBuilder.Entity<InventoryTransaction>(b =>
@@ -257,8 +270,52 @@ public class RetailDbContext : DbContext
         });
 
         // =====================================================
+        // ACCOUNTING CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<Account>(b =>
+        {
+            b.ToTable("Accounts");
+            b.HasKey(a => a.Id);
+
+            b.Property(a => a.Code).IsRequired().HasMaxLength(50);
+            b.Property(a => a.Name).IsRequired().HasMaxLength(200);
+
+            b.HasIndex(a => new { a.TenantId, a.Code }).IsUnique();
+        });
+
+        modelBuilder.Entity<JournalEntry>(b =>
+        {
+            b.ToTable("JournalEntries");
+            b.HasKey(j => j.Id);
+
+            b.Property(j => j.Description)
+                .IsRequired()
+                .HasMaxLength(500);
+
+            b.HasMany(j => j.Lines)
+                .WithOne()
+                .HasForeignKey(l => l.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<JournalEntryLine>(b =>
+        {
+            b.ToTable("JournalEntryLines");
+            b.HasKey(l => l.Id);
+
+            b.Property(l => l.DebitAmount)
+                .HasColumnType("decimal(18,2)");
+
+            b.Property(l => l.CreditAmount)
+                .HasColumnType("decimal(18,2)");
+        });
+
+        // =====================================================
         // GLOBAL TENANT FILTER
         // =====================================================
+
+        var tenantId = _tenantContext.TenantId;
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -275,12 +332,14 @@ public class RetailDbContext : DbContext
     }
 
     private static void ApplyTenantFilter<TEntity>(
-        ModelBuilder modelBuilder,
-        Guid? tenantId)
-        where TEntity : TenantEntity
+      ModelBuilder modelBuilder,
+      Guid? tenantId)
+      where TEntity : TenantEntity
     {
         modelBuilder.Entity<TEntity>()
-            .HasQueryFilter(e => tenantId == null || e.TenantId == tenantId);
+            .HasQueryFilter(e =>
+                (tenantId == null || e.TenantId == tenantId)
+                && !e.IsDeleted);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

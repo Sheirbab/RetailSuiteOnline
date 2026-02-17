@@ -4,6 +4,7 @@ public class CreateVariantRequest
 {
     public string SKU { get; set; }
     public decimal Price { get; set; }
+    public decimal CostPrice { get; set; }
 
     public List<Guid> AttributeValueIds { get; set; } = new();
 }

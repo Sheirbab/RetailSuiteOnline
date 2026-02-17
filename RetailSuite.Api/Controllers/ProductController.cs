@@ -48,7 +48,8 @@ public class ProductsController : ControllerBase
             var variant = new ProductVariant(
                 product.Id,
                 variantReq.SKU,
-                variantReq.Price);
+                variantReq.Price,
+                variantReq.CostPrice);
 
             foreach (var attrValueId in variantReq.AttributeValueIds)
             {

@@ -12,6 +12,22 @@ namespace RetailSuite.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "Accounts",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Code = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    AccountType = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Accounts", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Categories",
                 columns: table => new
                 {
@@ -64,6 +80,21 @@ namespace RetailSuite.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_InventoryItems", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "JournalEntries",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReferenceId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_JournalEntries", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -140,6 +171,29 @@ namespace RetailSuite.Infrastructure.Migrations
                         name: "FK_InventoryTransactions_InventoryItems_InventoryItemId",
                         column: x => x.InventoryItemId,
                         principalTable: "InventoryItems",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "JournalEntryLines",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    JournalEntryId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AccountId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DebitAmount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    CreditAmount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_JournalEntryLines", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_JournalEntryLines_JournalEntries_JournalEntryId",
+                        column: x => x.JournalEntryId,
+                        principalTable: "JournalEntries",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -268,6 +322,12 @@ namespace RetailSuite.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_Accounts_TenantId_Code",
+                table: "Accounts",
+                columns: new[] { "TenantId", "Code" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Categories_ParentCategoryId",
                 table: "Categories",
                 column: "ParentCategoryId");
@@ -297,6 +357,11 @@ namespace RetailSuite.Infrastructure.Migrations
                 name: "IX_InventoryTransactions_TenantId_ProductVariantId",
                 table: "InventoryTransactions",
                 columns: new[] { "TenantId", "ProductVariantId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_JournalEntryLines_JournalEntryId",
+                table: "JournalEntryLines",
+                column: "JournalEntryId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_OrderItems_OrderId",
@@ -350,7 +415,13 @@ namespace RetailSuite.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "Accounts");
+
+            migrationBuilder.DropTable(
                 name: "InventoryTransactions");
+
+            migrationBuilder.DropTable(
+                name: "JournalEntryLines");
 
             migrationBuilder.DropTable(
                 name: "OrderItems");
@@ -363,6 +434,9 @@ namespace RetailSuite.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "InventoryItems");
+
+            migrationBuilder.DropTable(
+                name: "JournalEntries");
 
             migrationBuilder.DropTable(
                 name: "Orders");

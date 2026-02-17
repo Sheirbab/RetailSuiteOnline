@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using RetailSuite.Api.MultiTenancy;
 using RetailSuite.Infrastructure;
+using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Identity;
 using RetailSuite.Modules.Inventory;
@@ -28,6 +29,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<AccountingService>();
 
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 

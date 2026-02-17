@@ -12,7 +12,7 @@ using RetailSuite.Infrastructure;
 namespace RetailSuite.Infrastructure.Migrations
 {
     [DbContext(typeof(RetailDbContext))]
-    [Migration("20260213112729_InitialRetail")]
+    [Migration("20260213125835_InitialRetail")]
     partial class InitialRetail
     {
         /// <inheritdoc />
@@ -93,6 +93,95 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasIndex("TenantId", "ProductVariantId");
 
                     b.ToTable("InventoryTransactions", (string)null);
+                });
+
+            modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.Account", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AccountType")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Accounts", (string)null);
+                });
+
+            modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ReferenceId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("JournalEntries", (string)null);
+                });
+
+            modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntryLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("CreditAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("DebitAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("JournalEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JournalEntryId");
+
+                    b.ToTable("JournalEntryLines", (string)null);
                 });
 
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Category", b =>
@@ -397,6 +486,15 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntryLine", b =>
+                {
+                    b.HasOne("RetailSuite.Modules.Accounting.Entities.JournalEntry", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("JournalEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Category", b =>
                 {
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Category", null)
@@ -488,6 +586,11 @@ namespace RetailSuite.Infrastructure.Migrations
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", b =>
                 {
                     b.Navigation("Transactions");
+                });
+
+            modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntry", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Product", b =>

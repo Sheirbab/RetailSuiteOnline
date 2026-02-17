@@ -12,6 +12,11 @@ public class Order : TenantEntity
     public OrderStatus Status { get; private set; }
 
     public decimal TotalAmount { get; private set; }
+    public decimal PaidAmount { get; private set; }
+
+    public decimal OutstandingAmount => TotalAmount - PaidAmount;
+
+    public bool IsFullyPaid => OutstandingAmount <= 0;
 
     private readonly List<OrderItem> _items = new();
     public IReadOnlyCollection<OrderItem> Items => _items;
@@ -34,4 +39,28 @@ public class Order : TenantEntity
     public void Confirm() => Status = OrderStatus.Confirmed;
     public void Complete() => Status = OrderStatus.Completed;
     public void Cancel() => Status = OrderStatus.Cancelled;
+    public void RegisterPayment(decimal amount)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Payment amount must be positive.");
+
+        if (PaidAmount + amount > TotalAmount)
+            throw new InvalidOperationException("Overpayment not allowed.");
+
+        PaidAmount += amount;
+    }
+    public void UpdateItems(List<OrderItem> newItems)
+    {
+        if (Status != OrderStatus.Draft)
+            throw new InvalidOperationException("Only draft orders can be edited.");
+
+        _items.Clear();
+        TotalAmount = 0;
+
+        foreach (var item in newItems)
+        {
+            _items.Add(item);
+            TotalAmount += item.LineTotal;
+        }
+    }
 }
