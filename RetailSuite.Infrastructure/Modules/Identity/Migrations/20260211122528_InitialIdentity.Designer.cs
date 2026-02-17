@@ -5,11 +5,11 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using RetailSuite.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Identity;
 
 #nullable disable
 
-namespace RetailSuite.Modules.Identity.Migrations
+namespace RetailSuite.Infrastructure.Modules.Identity.Migrations
 {
     [DbContext(typeof(IdentityDbContext))]
     [Migration("20260211122528_InitialIdentity")]

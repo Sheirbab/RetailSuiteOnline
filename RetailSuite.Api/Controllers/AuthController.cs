@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using RetailSuite.Modules.Identity;
-using RetailSuite.Modules.Identity.Dtos;
-using RetailSuite.Modules.Identity.Entities;
-using RetailSuite.Modules.Tenant;
-using RetailSuite.Modules.Tenant.Entities;
+using RetailSuite.Infrastructure.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Identity.Dtos;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
+using RetailSuite.Infrastructure.Modules.Tenant;
+using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;

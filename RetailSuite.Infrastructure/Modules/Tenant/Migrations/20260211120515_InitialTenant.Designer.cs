@@ -5,11 +5,11 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using RetailSuite.Modules.Tenant;
+using RetailSuite.Infrastructure.Modules.Tenant;
 
 #nullable disable
 
-namespace RetailSuite.Modules.Tenant.Migrations
+namespace RetailSuite.Infrastructure.Modules.Tenant.Migrations
 {
     [DbContext(typeof(TenantDbContext))]
     [Migration("20260211120515_InitialTenant")]
