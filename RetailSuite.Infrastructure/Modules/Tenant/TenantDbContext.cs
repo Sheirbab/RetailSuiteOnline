@@ -1,9 +1,8 @@
 
 using Microsoft.EntityFrameworkCore;
-using RetailSuite.Modules.Tenant.Entities;
 using RetailSuite.Shared;
 
-namespace RetailSuite.Modules.Tenant;
+namespace RetailSuite.Infrastructure.Modules.Tenant;
 
 public class TenantDbContext : DbContext
 {

@@ -1,5 +1,4 @@
-﻿using RetailSuite.Modules.Orders.Entities;
-using RetailSuite.Shared;
+﻿using RetailSuite.Shared;
 
 namespace RetailSuite.Modules.Orders.Entities;
 public class Order : TenantEntity

@@ -1,23 +1,15 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36717.8
+# Visual Studio Version 18
+VisualStudioVersion = 18.2.11430.68 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Api", "RetailSuite.Api\RetailSuite.Api.csproj", "{B2B057D9-5246-9691-1809-EE0E7D7F9AF9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Tenant", "RetailSuite.Modules.Tenant\RetailSuite.Modules.Tenant.csproj", "{EDD2358F-BC6D-3E08-B9BF-13C455549D5D}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Shared", "RetailSuite.Shared\RetailSuite.Shared.csproj", "{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Identity", "RetailSuite.Modules.Identity\RetailSuite.Modules.Identity.csproj", "{94702923-309B-4579-B36C-E3BD309A8AAB}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
 	EndProjectSection
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Inventory", "RetailSuite.Modules.Inventory\RetailSuite.Modules.Inventory.csproj", "{A03A319C-3B12-49C2-8F90-926A15CBC4EA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Modules.Order", "RetailSuite.Modules.Order\RetailSuite.Modules.Order.csproj", "{0997222A-1B71-4A97-B7C9-9E40646E15CE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Infrastructure", "RetailSuite.Infrastructure\RetailSuite.Infrastructure.csproj", "{A4F69431-E0C9-406B-9433-A62849D16A6A}"
 EndProject
@@ -31,26 +23,10 @@ Global
 		{B2B057D9-5246-9691-1809-EE0E7D7F9AF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2B057D9-5246-9691-1809-EE0E7D7F9AF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2B057D9-5246-9691-1809-EE0E7D7F9AF9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{EDD2358F-BC6D-3E08-B9BF-13C455549D5D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{EDD2358F-BC6D-3E08-B9BF-13C455549D5D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{EDD2358F-BC6D-3E08-B9BF-13C455549D5D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{EDD2358F-BC6D-3E08-B9BF-13C455549D5D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3C7EC48D-384F-8E10-D7C3-F91004CA24EA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{94702923-309B-4579-B36C-E3BD309A8AAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{94702923-309B-4579-B36C-E3BD309A8AAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{94702923-309B-4579-B36C-E3BD309A8AAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{94702923-309B-4579-B36C-E3BD309A8AAB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A03A319C-3B12-49C2-8F90-926A15CBC4EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A03A319C-3B12-49C2-8F90-926A15CBC4EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A03A319C-3B12-49C2-8F90-926A15CBC4EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A03A319C-3B12-49C2-8F90-926A15CBC4EA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0997222A-1B71-4A97-B7C9-9E40646E15CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0997222A-1B71-4A97-B7C9-9E40646E15CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0997222A-1B71-4A97-B7C9-9E40646E15CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0997222A-1B71-4A97-B7C9-9E40646E15CE}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A4F69431-E0C9-406B-9433-A62849D16A6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A4F69431-E0C9-406B-9433-A62849D16A6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A4F69431-E0C9-406B-9433-A62849D16A6A}.Release|Any CPU.ActiveCfg = Release|Any CPU

@@ -1,9 +1,8 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace RetailSuite.Modules.Tenant.Migrations
+namespace RetailSuite.Infrastructure.Modules.Tenant.Migrations
 {
     /// <inheritdoc />
     public partial class InitialTenant : Migration

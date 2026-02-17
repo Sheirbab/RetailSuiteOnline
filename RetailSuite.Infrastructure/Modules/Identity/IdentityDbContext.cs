@@ -1,10 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using RetailSuite.Modules.Identity.Entities;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Shared;
-using System.Collections.Generic;
-using System.Reflection.Emit;
 
-namespace RetailSuite.Modules.Identity;
+namespace RetailSuite.Infrastructure.Modules.Identity;
 
 public class IdentityDbContext : DbContext
 {

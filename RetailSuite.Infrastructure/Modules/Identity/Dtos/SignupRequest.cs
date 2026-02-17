@@ -1,4 +1,4 @@
-﻿namespace RetailSuite.Modules.Identity.Dtos;
+﻿namespace RetailSuite.Infrastructure.Modules.Identity.Dtos;
 
 public class SignupRequest
 {

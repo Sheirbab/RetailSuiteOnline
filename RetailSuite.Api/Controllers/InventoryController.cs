@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
-using RetailSuite.Modules.Inventory.Services;
+using RetailSuite.Infrastructure.Modules.Inventory.Services;
 
 namespace RetailSuite.Api.Controllers;
 

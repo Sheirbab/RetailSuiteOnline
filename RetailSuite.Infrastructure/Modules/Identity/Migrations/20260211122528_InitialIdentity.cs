@@ -1,9 +1,8 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace RetailSuite.Modules.Identity.Migrations
+namespace RetailSuite.Infrastructure.Modules.Identity.Migrations
 {
     /// <inheritdoc />
     public partial class InitialIdentity : Migration

@@ -1,11 +1,6 @@
 ﻿using RetailSuite.Shared;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace RetailSuite.Modules.Identity.Entities
+namespace RetailSuite.Infrastructure.Modules.Identity.Entities
 {
     public class User : TenantEntity
     {

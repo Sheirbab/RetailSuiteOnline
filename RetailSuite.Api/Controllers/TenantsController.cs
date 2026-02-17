@@ -1,8 +1,8 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using RetailSuite.Modules.Tenant;
-using RetailSuite.Modules.Tenant.Entities;
+using RetailSuite.Infrastructure.Modules.Tenant.Entities;
+using RetailSuite.Infrastructure.Modules.Tenant;
 
 namespace RetailSuite.Api.Controllers;
 

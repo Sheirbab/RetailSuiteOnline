@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using RetailSuite.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Orders.Services;
 
 namespace RetailSuite.Api.Controllers
 {

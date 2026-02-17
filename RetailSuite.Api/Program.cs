@@ -8,13 +8,15 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Identity;
-using RetailSuite.Modules.Inventory;
-using RetailSuite.Modules.Inventory.Services;
+using RetailSuite.Infrastructure.Modules.Inventory;
+using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Modules.Orders;
-using RetailSuite.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Modules.Tenant;
 using RetailSuite.Shared;
 using System.Text;
+using RetailSuite.Infrastructure.Modules.Tenant;
+using RetailSuite.Infrastructure.Modules.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 

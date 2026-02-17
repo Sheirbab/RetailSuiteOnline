@@ -1,7 +1,4 @@
-
-using RetailSuite.Shared;
-
-namespace RetailSuite.Modules.Tenant.Entities;
+namespace RetailSuite.Infrastructure.Modules.Tenant.Entities;
 
 public class Tenant
 {
