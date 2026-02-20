@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Identity.Dtos;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
@@ -65,7 +66,7 @@ public class AuthController : ControllerBase
                 tenant.Id,
                 request.Email,
                 passwordHash,
-                "Admin");
+                UserRole.Admin);
 
             _identityDb.Users.Add(user);
             await _identityDb.SaveChangesAsync();
@@ -107,7 +108,7 @@ public class AuthController : ControllerBase
         {
             new Claim("userId", user.Id.ToString()),
             new Claim("tenantId", user.TenantId.ToString()),
-            new Claim(ClaimTypes.Role, user.Role)
+            new Claim(ClaimTypes.Role, user.Role.ToString())
         };
 
         var jwtKey = jwtSettings["Key"] ?? "";

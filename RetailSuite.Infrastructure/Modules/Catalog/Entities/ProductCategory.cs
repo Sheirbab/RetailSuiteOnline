@@ -7,4 +7,9 @@ public class ProductCategory
 
     public Guid CategoryId { get; set; }
     public Category Category { get; set; }
+    public ProductCategory(Guid productId, Guid categoryId)
+    {
+        ProductId = productId;
+        CategoryId = categoryId;
+    }
 }

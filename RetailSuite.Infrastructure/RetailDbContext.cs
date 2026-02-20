@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Orders.Entities;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
@@ -211,6 +213,17 @@ public class RetailDbContext : DbContext
         // ORDERS CONFIGURATION
         // =====================================================
 
+        //modelBuilder.Entity<Customer>(b =>
+        //{
+        //    b.ToTable("Customers");
+        //    b.HasKey(c => c.Id);
+
+        //    b.Property(c => c.IdentityUserId)
+        //        .IsRequired();
+
+        //    b.HasIndex(c => new { c.TenantId, c.IdentityUserId })
+        //        .IsUnique();
+        //});
         modelBuilder.Entity<Customer>(b =>
         {
             b.ToTable("Customers");
@@ -227,7 +240,10 @@ public class RetailDbContext : DbContext
             b.Property(c => c.Email)
                 .HasMaxLength(200);
 
-            b.HasIndex(c => new { c.TenantId, c.Email });
+            b.Property(c => c.UserId)
+              .IsRequired();
+
+            b.HasIndex(c => new { c.TenantId, c.UserId }).IsUnique();
         });
 
         modelBuilder.Entity<Order>(b =>

@@ -21,4 +21,20 @@ public class Product : TenantEntity
         Name = name;
         Description = description;
     }
+    public void Update(string name, string? description)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Name required.");
+
+        Name = name;
+        Description = description;
+    }
+
+    public void AddVariant(ProductVariant variant)
+    {
+        if (_variants.Any(v => v.SKU == variant.SKU))
+            throw new InvalidOperationException("Duplicate SKU.");
+
+        _variants.Add(variant);
+    }
 }

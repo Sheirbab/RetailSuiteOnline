@@ -2,13 +2,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
-using RetailSuite.Modules.Catalog;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
 
-namespace RetailSuite.Api.Controllers;
-
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 [ApiController]
 [Route("api/products")]
 public class ProductsController : ControllerBase
@@ -20,136 +17,124 @@ public class ProductsController : ControllerBase
         _db = db;
     }
 
-    // ------------------------------------
     // CREATE PRODUCT
-    // ------------------------------------
     [HttpPost]
     public async Task<IActionResult> Create(CreateProductRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest("Product name is required.");
-
-        var duplicate = request.Variants.GroupBy(v => string.Join("-", v.AttributeValueIds.OrderBy(x => x))).Any(g => g.Count() > 1);
-
-        if (duplicate)
-            return BadRequest("Duplicate variant combinations detected.");
-
-        var product = new Product(request.Name, request.Description);
-
-        foreach (var variantReq in request.Variants)
-        {
-            var validIds = await _db.ProductAttributeValues.Where(v => variantReq.AttributeValueIds.Contains(v.Id))
-                                                            .Select(v => v.Id)
-                                                            .ToListAsync();
-
-            if (validIds.Count != variantReq.AttributeValueIds.Count)
-                return BadRequest("Invalid attribute value detected.");
-
-            var variant = new ProductVariant(
-                product.Id,
-                variantReq.SKU,
-                variantReq.Price,
-                variantReq.CostPrice);
-
-            foreach (var attrValueId in variantReq.AttributeValueIds)
-            {
-                variant.AttributeValues.ToList()
-                    .Add(new VariantAttributeValue
-                    {
-                        ProductVariantId = variant.Id,
-                        ProductAttributeValueId = attrValueId
-                    });
-            }
-
-            _db.ProductVariants.Add(variant);
-        }
+        var product = new Product(
+            request.Name,
+            request.Description);
 
         _db.Products.Add(product);
-
         await _db.SaveChangesAsync();
 
         return Ok(product.Id);
     }
 
-    // ------------------------------------
-    // GET ALL PRODUCTS
-    // ------------------------------------
-    [HttpGet]
-    public async Task<IActionResult> GetAll()
+    // UPDATE PRODUCT
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, UpdateProductRequest request)
     {
-        var products = await _db.Products
-            .Include(p => p.Variants)
-                .ThenInclude(v => v.AttributeValues)
-                    .ThenInclude(av => av.ProductAttributeValue)
-            .ToListAsync();
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
 
-        var response = products.Select(p => new ProductResponse
-        {
-            Id = p.Id,
-            Name = p.Name,
-            Description = p.Description,
-            Variants = p.Variants.Select(v => new ProductVariantResponse
-            {
-                Id = v.Id,
-                SKU = v.SKU,
-                Price = v.Price,
-                Attributes = v.AttributeValues
-                    .Select(a => a.ProductAttributeValue.Value)
-                    .ToList()
-            }).ToList()
-        });
+        if (product == null)
+            return NotFound();
 
-        return Ok(response);
+        product.Update(request.Name, request.Description);
+
+        await _db.SaveChangesAsync();
+
+        return Ok();
     }
 
-    // ------------------------------------
-    // GET SINGLE PRODUCT
-    // ------------------------------------
+    // GET PRODUCT WITH VARIANTS
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(Guid id)
     {
         var product = await _db.Products
             .Include(p => p.Variants)
-                .ThenInclude(v => v.AttributeValues)
-                    .ThenInclude(av => av.ProductAttributeValue)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null)
             return NotFound();
 
-        var response = new ProductResponse
-        {
-            Id = product.Id,
-            Name = product.Name,
-            Description = product.Description,
-            Variants = product.Variants.Select(v => new ProductVariantResponse
-            {
-                Id = v.Id,
-                SKU = v.SKU,
-                Price = v.Price,
-                Attributes = v.AttributeValues
-                    .Select(a => a.ProductAttributeValue.Value)
-                    .ToList()
-            }).ToList()
-        };
-
-        return Ok(response);
+        return Ok(product);
     }
-
-    // ------------------------------------
-    // DEACTIVATE PRODUCT
-    // ------------------------------------
-    [HttpPut("{id}/deactivate")]
-    public async Task<IActionResult> Deactivate(Guid id)
+    // ADD VARIANT
+    [HttpPost("{productId}/variants")]
+    public async Task<IActionResult> AddVariant(
+        Guid productId,
+        CreateVariantRequest request)
     {
-        var product = await _db.Products.FindAsync(id);
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == productId);
 
         if (product == null)
             return NotFound();
 
-        typeof(Product)
-            .GetProperty("IsActive")?
-            .SetValue(product, false);
+        var variant = new ProductVariant(
+            productId,
+            request.SKU,
+            request.Price);
+
+        product.AddVariant(variant);
+
+        await _db.SaveChangesAsync();
+
+        return Ok(variant.Id);
+    }
+    [Authorize]
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+    string? keyword,
+    Guid? categoryId,
+    int page = 1,
+    int pageSize = 20)
+    {
+        var query = _db.Products
+            .Include(p => p.Variants)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+            query = query.Where(p => p.Name.Contains(keyword));
+
+        if (categoryId.HasValue)
+            query = query.Where(p =>
+                _db.ProductCategories.Any(pc =>
+                    pc.ProductId == p.Id &&
+                    pc.CategoryId == categoryId.Value));
+
+        var total = await query.CountAsync();
+
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            Items = items
+        });
+    }
+    [HttpPost("{productId}/categories/{categoryId}")]
+    public async Task<IActionResult> AssignCategory(
+    Guid productId,
+    Guid categoryId)
+    {
+        var exists = await _db.ProductCategories
+            .AnyAsync(pc =>
+                pc.ProductId == productId &&
+                pc.CategoryId == categoryId);
+
+        if (exists)
+            return Ok();
+
+        _db.ProductCategories.Add(
+            new ProductCategory(productId, categoryId));
 
         await _db.SaveChangesAsync();
 

@@ -23,11 +23,23 @@ builder.Services.AddDbContext<RetailDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<AccountingService>();
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly",
+        policy => policy.RequireRole("Admin"));
+
+    options.AddPolicy("StaffOrAdmin",
+        policy => policy.RequireRole("Admin", "Staff"));
+
+    options.AddPolicy("CustomerOnly",
+        policy => policy.RequireRole("Customer"));
+});
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 
 builder.Services.AddAuthentication(options =>

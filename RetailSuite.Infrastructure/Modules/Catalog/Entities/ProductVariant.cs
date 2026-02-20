@@ -22,4 +22,23 @@ public class ProductVariant : TenantEntity
         Price = price;
         CostPrice = costPrice;
     }
+    public ProductVariant(
+      Guid productId,
+      string sku,
+      decimal price)
+    {
+        if (string.IsNullOrWhiteSpace(sku))
+            throw new ArgumentException("SKU required.");
+
+        ProductId = productId;
+        SKU = sku;
+        Price = price;
+    }
+    public void UpdatePrice(decimal price)
+    {
+        if (price < 0)
+            throw new ArgumentException("Invalid price.");
+
+        Price = price;
+    }
 }

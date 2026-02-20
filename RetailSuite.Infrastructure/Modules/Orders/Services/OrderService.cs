@@ -3,6 +3,7 @@ using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
+using RetailSuite.Shared;
 
 namespace RetailSuite.Infrastructure.Modules.Orders.Services
 {
@@ -11,15 +12,17 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         private readonly RetailDbContext _db;
         private readonly InventoryService _inventoryService;
         private readonly AccountingService _accountingService;
-
+        private readonly ICurrentUserContext _currentUser;
         public OrderService(
         RetailDbContext db,
         InventoryService inventoryService,
-        AccountingService accountingService)
+        AccountingService accountingService,
+        ICurrentUserContext currentUser)
         {
             _db = db;
             _inventoryService = inventoryService;
             _accountingService = accountingService;
+            _currentUser = currentUser;
         }
 
         // ---------------------------------------
@@ -27,6 +30,14 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         // ---------------------------------------
         public async Task ConfirmOrderAsync(Guid orderId)
         {
+            var userId = _currentUser.UserId;
+
+            var customer = await _db.Customers
+                .FirstOrDefaultAsync(c => c.UserId == userId);
+
+            if (customer == null)
+                throw new Exception("Customer profile not found.");
+
             using var transaction = await _db.Database.BeginTransactionAsync();
 
             var order = await _db.Orders

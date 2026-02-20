@@ -11,9 +11,10 @@ public class Category : TenantEntity
 
     private Category() { }
 
-    public Category(string name, string slug)
+    public Category(string name, string slug, Guid? parentId)
     {
         Name = name;
         Slug = slug;
+        ParentCategoryId = parentId;
     }
 }
