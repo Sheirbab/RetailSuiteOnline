@@ -16,10 +16,10 @@ public class Product : TenantEntity
 
     private Product() { }
 
-    public Product(string name, string description)
+    public Product(string name, string? description)
     {
         Name = name;
-        Description = description;
+        Description = description ?? "";
     }
     public void Update(string name, string? description)
     {
@@ -27,7 +27,7 @@ public class Product : TenantEntity
             throw new ArgumentException("Name required.");
 
         Name = name;
-        Description = description;
+        Description = description ?? "";
     }
 
     public void AddVariant(ProductVariant variant)

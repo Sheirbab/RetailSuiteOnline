@@ -1,4 +1,6 @@
 ﻿using RetailSuite.Infrastructure.Modules.Customer.Dtos;
+using RetailSuite.Infrastructure.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,36 +11,29 @@ namespace RetailSuite.Infrastructure.Modules.Customer.Services;
 
 public class CustomerService
 {
-    private readonly UserManager<IdentityUser> _userManager;
     private readonly RetailDbContext _db;
+    private readonly IdentityDbContext _identityDbContext;
 
-    public CustomerService(
-        UserManager<IdentityUser> userManager,
-        RetailDbContext db)
+    public CustomerService(RetailDbContext db, IdentityDbContext identityDbContext)
     {
-        _userManager = userManager;
         _db = db;
+        this._identityDbContext = identityDbContext;
     }
 
     public async Task<Guid> RegisterAsync(RegisterCustomerRequest request)
     {
         using var transaction = await _db.Database.BeginTransactionAsync();
 
-        var user = new IdentityUser
-        {
-            UserName = request.Email,
-            Email = request.Email
-        };
+        var user = new User(Guid.NewGuid(), request.Email, request.Password, Model.UserRole.Customer);
 
-        var result = await _userManager.CreateAsync(user, request.Password);
+        _identityDbContext.Users.Add(user);
+        var result = await _identityDbContext.SaveChangesAsync();
 
-        if (!result.Succeeded)
-            throw new Exception(string.Join(",", result.Errors.Select(e => e.Description)));
-
-        var customer = new Customer(
+        var customer = new Entities.Customer(
             user.Id,
             request.FirstName,
             request.LastName,
+            request.Email,
             request.Phone);
 
         _db.Customers.Add(customer);

@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
-using RetailSuite.Infrastructure.Modules.Orders.Entities;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
