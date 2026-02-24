@@ -261,9 +261,14 @@ public class RetailDbContext : DbContext
                 .HasColumnType("decimal(18,2)");
 
             b.HasOne(o => o.Customer)
-                .WithMany()
-                .HasForeignKey(o => o.CustomerId)
-                .OnDelete(DeleteBehavior.Restrict);
+                    .WithMany()
+                    .HasForeignKey(o => o.CustomerId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(o => o.Payments)
+                  .WithOne()
+                  .HasForeignKey(p => p.OrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
 
             b.HasMany(o => o.Items)
                 .WithOne()

@@ -61,6 +61,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             }
 
             order.Confirm();
+
             order.Complete();
 
             _db.Orders.Add(order);
