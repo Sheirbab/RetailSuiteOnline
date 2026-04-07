@@ -16,3 +16,7 @@ RetailSuite.Modules.Order/bin/
 RetailSuite.Modules.Order/obj/
 RetailSuite.Infrastructure/bin/
 RetailSuite.Modules.Accounting/obj/
+RetailSuite.Admin/obj/
+RetailSuite.Admin/bin/
+RetailSuite.StoreAdmin/bin/
+RetailSuite.StoreAdmin/obj/

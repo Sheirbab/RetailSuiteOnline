@@ -3,15 +3,16 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using RetailSuite.Api.Middleware;
 using RetailSuite.Api.MultiTenancy;
 using RetailSuite.Infrastructure;
-using RetailSuite.Modules.Accounting.Services;
+using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Tenant;
+using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Shared;
 using System.Text;
-using RetailSuite.Infrastructure.Modules.Tenant;
-using RetailSuite.Infrastructure.Modules.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -74,6 +75,8 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.MapGet("/", () => "RetailSuite API Running 🚀");
+
+app.UseMiddleware<ExceptionMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

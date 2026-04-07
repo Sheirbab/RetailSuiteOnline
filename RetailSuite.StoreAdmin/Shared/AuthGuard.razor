@@ -1,0 +1,12 @@
+﻿@inject AuthService Auth
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && !Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login", true);
+        }
+    }
+}

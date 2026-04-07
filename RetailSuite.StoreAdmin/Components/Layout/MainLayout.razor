@@ -1,0 +1,54 @@
+﻿@using RetailSuite.StoreAdmin.Shared
+@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+@if (!_checked)
+{
+    <p>Loading...</p>
+}
+else if (!Auth.IsAuthenticated)
+{
+    <p>Redirecting...</p>
+}
+else
+{
+    <div>
+        <h2>Admin Panel</h2>
+
+        <nav>
+            <a href="/">Dashboard</a>
+        </nav>
+
+        <hr />
+
+        @Body
+    </div>
+}
+@code {
+    private bool _checked;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _checked = true;
+
+            if (!Auth.IsAuthenticated)
+            {
+                Nav.NavigateTo("/login", true);
+            }
+
+            StateHasChanged();
+        }
+    }
+    public void Dispose()
+    {
+        Auth.OnChange -= StateHasChanged;
+    }
+}

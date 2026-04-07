@@ -331,6 +331,8 @@ public class RetailDbContext : DbContext
                 .HasColumnType("decimal(18,2)");
         });
 
+        modelBuilder.Entity<TenantEntity>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantContext.TenantId);
+
         // =====================================================
         // GLOBAL TENANT FILTER
         // =====================================================

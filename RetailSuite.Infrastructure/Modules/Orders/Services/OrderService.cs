@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
@@ -14,16 +15,19 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         private readonly InventoryService _inventoryService;
         private readonly AccountingService _accountingService;
         private readonly ICurrentUserContext _currentUser;
+        private readonly ILogger<OrderService> _logger;
         public OrderService(
         RetailDbContext db,
         InventoryService inventoryService,
         AccountingService accountingService,
-        ICurrentUserContext currentUser)
+        ICurrentUserContext currentUser,
+        ILogger<OrderService> logger)
         {
             _db = db;
             _inventoryService = inventoryService;
             _accountingService = accountingService;
             _currentUser = currentUser;
+            _logger = logger;
         }
 
         // ---------------------------------------
@@ -31,6 +35,8 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         // ---------------------------------------
         public async Task ConfirmOrderAsync(Guid orderId)
         {
+            _logger.LogInformation("Order {OrderId} confirmed", orderId);
+
             var userId = _currentUser.UserId;
 
             var customer = await _db.Customers

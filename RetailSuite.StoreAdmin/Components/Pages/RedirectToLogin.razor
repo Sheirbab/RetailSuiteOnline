@@ -1,0 +1,19 @@
+﻿@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@code {
+    private bool _hasRendered;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_hasRendered)
+        {
+            _hasRendered = true;
+
+            // Small delay ensures interactive mode
+            await Task.Delay(10);
+
+            Nav.NavigateTo("/login", true);
+        }
+    }
+}

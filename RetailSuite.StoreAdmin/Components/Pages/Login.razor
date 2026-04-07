@@ -1,0 +1,46 @@
+﻿@page "/login"
+@using RetailSuite.StoreAdmin.Shared
+@inject AuthService Auth
+@inject NavigationManager Nav
+@layout LoginLayout
+
+<div class="login-container">
+    <div class="login-box">
+        <h2>Admin Login</h2>
+
+        <input @bind="email" placeholder="Email" />
+        <input @bind="password" type="password" placeholder="Password" />
+
+        <button @onclick="LogIn">Login btn</button>
+
+        @if (error != null)
+        {
+            <p class="error">@error</p>
+        }
+    </div>
+</div>
+
+@code {
+    string? email;
+    string? password;
+    string? error;
+
+    async Task LogIn()
+    {
+
+        // TEMP: fake login
+        Auth.SetToken("dummy-token");
+
+        Nav.NavigateTo("/");
+
+        // var success = await Auth.LoginAsync(email, password);
+
+        // if (!success)
+        // {
+        //     error = "Invalid login.";
+        //     return;
+        // }
+
+        // Nav.NavigateTo("/");
+    }
+}
