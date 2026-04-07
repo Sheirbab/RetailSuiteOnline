@@ -1,0 +1,37 @@
+﻿@page "/products"
+
+@inject HttpClient Http
+
+<h3>Products</h3>
+
+<button @onclick="LoadProducts">Load Products</button>
+
+@if (products == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <ul>
+        @foreach (var p in products)
+        {
+            <li>Name</li>
+            <li>@p.Name</li>
+        }
+    </ul>
+}
+
+@code {
+    List<ProductDto>? products;
+
+    async Task LoadProducts()
+    {
+        products = await Http.GetFromJsonAsync<List<ProductDto>>("api/products");
+    }
+
+    public class ProductDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; }
+    }
+}

@@ -12,12 +12,10 @@ namespace RetailSuite.Infrastructure.Modules.Customer.Services;
 public class CustomerService
 {
     private readonly RetailDbContext _db;
-    private readonly IdentityDbContext _identityDbContext;
 
-    public CustomerService(RetailDbContext db, IdentityDbContext identityDbContext)
+    public CustomerService(RetailDbContext db)
     {
         _db = db;
-        this._identityDbContext = identityDbContext;
     }
 
     public async Task<Guid> RegisterAsync(RegisterCustomerRequest request)
@@ -26,8 +24,8 @@ public class CustomerService
 
         var user = new User(Guid.NewGuid(), request.Email, request.Password, Model.UserRole.Customer);
 
-        _identityDbContext.Users.Add(user);
-        var result = await _identityDbContext.SaveChangesAsync();
+        _db.Users.Add(user);
+        var result = await _db.SaveChangesAsync();
 
         var customer = new Entities.Customer(
             user.Id,

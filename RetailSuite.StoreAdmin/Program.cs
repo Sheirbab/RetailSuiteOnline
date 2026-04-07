@@ -7,6 +7,13 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped(sp =>
+{
+    return new HttpClient
+    {
+        BaseAddress = new Uri("https://localhost:59777/") // your API port
+    };
+});
 
 var app = builder.Build();
 

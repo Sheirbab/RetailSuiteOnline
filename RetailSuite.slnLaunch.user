@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "RetailSuite.Api\\RetailSuite.Api.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "RetailSuite.StoreAdmin\\RetailSuite.StoreAdmin.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

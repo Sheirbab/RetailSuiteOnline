@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Identity.Dtos;
@@ -17,17 +18,14 @@ namespace RetailSuite.Api.Controllers;
 [Route("api/auth")]
 public class AuthController : ControllerBase
 {
-    private readonly TenantDbContext _tenantDb;
-    private readonly IdentityDbContext _identityDb;
+    private readonly RetailDbContext _Db;
     private readonly IConfiguration _config;
 
     public AuthController(
-        TenantDbContext tenantDb,
-        IdentityDbContext identityDb,
+        RetailDbContext Db,
         IConfiguration config)
     {
-        _tenantDb = tenantDb;
-        _identityDb = identityDb;
+        _Db = Db;
         _config = config;
     }
 
@@ -46,19 +44,19 @@ public class AuthController : ControllerBase
             return BadRequest("Password must be at least 8 characters.");
 
         // Check subdomain uniqueness
-        if (await _tenantDb.Tenants
+        if (await _Db.Tenants
             .AnyAsync(t => t.Subdomain == request.Subdomain))
         {
             return BadRequest("Subdomain already taken.");
         }
 
-        using var transaction = await _tenantDb.Database.BeginTransactionAsync();
+        using var transaction = await _Db.Database.BeginTransactionAsync();
 
         try
         {
             var tenant = new Tenant(request.TenantName, request.Subdomain);
-            _tenantDb.Tenants.Add(tenant);
-            await _tenantDb.SaveChangesAsync();
+            _Db.Tenants.Add(tenant);
+            await _Db.SaveChangesAsync();
 
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
@@ -68,8 +66,8 @@ public class AuthController : ControllerBase
                 passwordHash,
                 UserRole.Admin);
 
-            _identityDb.Users.Add(user);
-            await _identityDb.SaveChangesAsync();
+            _Db.Users.Add(user);
+            await _Db.SaveChangesAsync();
 
             await transaction.CommitAsync();
 
@@ -86,7 +84,7 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login(string email, string password)
     {
-        var user = await _identityDb.Users
+        var user = await _Db.Users
             .FirstOrDefaultAsync(u => u.Email == email);
 
         if (user == null)

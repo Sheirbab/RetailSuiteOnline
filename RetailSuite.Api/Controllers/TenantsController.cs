@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant;
+using RetailSuite.Infrastructure;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -10,9 +11,9 @@ namespace RetailSuite.Api.Controllers;
 [Route("api/tenants")]
 public class TenantsController : ControllerBase
 {
-    private readonly TenantDbContext _db;
+    private readonly RetailDbContext _db;
 
-    public TenantsController(TenantDbContext db)
+    public TenantsController(RetailDbContext db)
     {
         _db = db;
     }

@@ -1,6 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
@@ -50,8 +52,35 @@ public class RetailDbContext : DbContext
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<User> Users => Set<User>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<User>(b =>
+        {
+            b.ToTable("Users");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.Email);
+            b.Property(x => x.Email).IsRequired();
+            b.Property(x => x.PasswordHash).IsRequired();
+        });
+
+
+        Guid? tenantId = _tenantContext.TenantId;
+
+        modelBuilder.Entity<User>()
+            .HasQueryFilter(u =>
+                tenantId == null || u.TenantId == tenantId);
+
+        modelBuilder.Entity<Tenant>(b =>
+        {
+            b.ToTable("Tenants");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Subdomain).IsRequired().HasMaxLength(100);
+            b.HasIndex(x => x.Subdomain).IsUnique();
+        });
+
         // =====================================================
         // CATALOG CONFIGURATION
         // =====================================================
@@ -212,17 +241,6 @@ public class RetailDbContext : DbContext
         // ORDERS CONFIGURATION
         // =====================================================
 
-        //modelBuilder.Entity<Customer>(b =>
-        //{
-        //    b.ToTable("Customers");
-        //    b.HasKey(c => c.Id);
-
-        //    b.Property(c => c.IdentityUserId)
-        //        .IsRequired();
-
-        //    b.HasIndex(c => new { c.TenantId, c.IdentityUserId })
-        //        .IsUnique();
-        //});
         modelBuilder.Entity<Customer>(b =>
         {
             b.ToTable("Customers");
@@ -330,15 +348,25 @@ public class RetailDbContext : DbContext
             b.Property(l => l.CreditAmount)
                 .HasColumnType("decimal(18,2)");
         });
-
-        modelBuilder.Entity<TenantEntity>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantContext.TenantId);
+      
+        modelBuilder.Entity<Payment>(b =>
+        {
+            b.ToTable("Payments");
+            b.HasKey(p => p.Id);
+            b.Property(p => p.Amount)
+                .HasColumnType("decimal(18,2)");
+            b.Property(p => p.PaymentMethod)
+                .IsRequired()
+                .HasMaxLength(100);
+            b.Property(p => p.TransactionReference)
+                .HasMaxLength(200);
+        });
 
         // =====================================================
         // GLOBAL TENANT FILTER
         // =====================================================
 
-        var tenantId = _tenantContext.TenantId;
-
+        modelBuilder.Entity<TenantEntity>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantContext.TenantId);
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             if (typeof(TenantEntity).IsAssignableFrom(entityType.ClrType))
@@ -348,9 +376,11 @@ public class RetailDbContext : DbContext
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
                     ?.MakeGenericMethod(entityType.ClrType);
 
-                method?.Invoke(null, new object[] { modelBuilder, tenantId });
+                method?.Invoke(null, new object[] { modelBuilder, tenantId ?? new Guid() });
             }
         }
+
+        modelBuilder.Ignore<TenantEntity>();
     }
 
     private static void ApplyTenantFilter<TEntity>(

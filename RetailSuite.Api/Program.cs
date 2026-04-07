@@ -16,10 +16,6 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<TenantDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
-builder.Services.AddDbContext<IdentityDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddDbContext<RetailDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
