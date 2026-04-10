@@ -1,0 +1,27 @@
+﻿@inject ToastService Toastservice
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="toast">@message</div>
+}
+
+@code {
+    string message;
+
+    protected override void OnInitialized()
+    {
+        Toastservice.OnShow += ShowToast;
+    }
+
+    void ShowToast(string msg)
+    {
+        message = msg;
+        StateHasChanged();
+
+        Task.Delay(2000).ContinueWith(_ =>
+        {
+            message = null;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+}

@@ -1,0 +1,17 @@
+﻿@if (Visible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal" @onclick:stopPropagation>
+            @ChildContent
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public RenderFragment ChildContent { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    void Close() => OnClose.InvokeAsync();
+}

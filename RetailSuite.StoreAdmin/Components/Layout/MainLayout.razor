@@ -1,8 +1,11 @@
-﻿@using RetailSuite.StoreAdmin.Shared
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
+
 @inject AuthService Auth
 @inject NavigationManager Nav
-@rendermode InteractiveServer
+@implements IDisposable
+
+<Toast />
+
 @if (!_checked)
 {
     <p>Loading...</p>
@@ -13,20 +16,57 @@ else if (!Auth.IsAuthenticated)
 }
 else
 {
-    <div>
-        <h2>Admin Panel</h2>
+    <div class="layout">
 
-        <nav>
-            <a href="/">Dashboard</a>
-        </nav>
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2>RetailSuite</h2>
 
-        <NavLink href="/products">Products</NavLink>
+            <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+            <NavLink href="/products">
+                <i class="lucide lucide-box"></i>Products
+            </NavLink>
+            <NavLink href="/inventory">
+                <i class="lucide lucide-box"></i>Inventory
+            </NavLink>
+            <NavLink href="/orders">
+                <i class="lucide lucide-box"></i>Orders
+            </NavLink>
+            <NavLink href="/customers">
+                <i class="lucide lucide-box"></i>Customers
+            </NavLink>
+            <NavLink href="/payments">
+                <i class="lucide lucide-box"></i>Payments
+            </NavLink>
+        </div>
 
-        <hr />
+        <!-- Main -->
+        <div class="main">
 
-        @Body
+            <!-- Header -->
+            <div class="header">
+                <span>Admin Panel</span>
+
+                <button class="btn btn-danger" @onclick="Logout">
+                    <i class="lucide lucide-log-out"></i> Logout
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="content">
+                @Body
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                © 2026 RetailSuite
+            </div>
+
+        </div>
     </div>
 }
+
+
 @code {
     private bool _checked;
 
@@ -49,6 +89,13 @@ else
             StateHasChanged();
         }
     }
+
+    void Logout()
+    {
+        Auth.Logout();
+        Nav.NavigateTo("/login", true);
+    }
+
     public void Dispose()
     {
         Auth.OnChange -= StateHasChanged;

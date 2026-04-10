@@ -7,6 +7,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<ToastService>();
+
 builder.Services.AddScoped(sp =>
 {
     return new HttpClient

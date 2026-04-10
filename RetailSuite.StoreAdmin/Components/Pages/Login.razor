@@ -5,18 +5,18 @@
 @layout LoginLayout
 
 <div class="login-container">
-    <div class="login-box">
-        <h2>Admin Login</h2>
+    <div class="login-card">
 
-        <input @bind="email" placeholder="Email" />
-        <input @bind="password" type="password" placeholder="Password" />
+        <h2>RetailSuite</h2>
+        <p class="subtitle">Admin Login</p>
 
-        <button @onclick="LogIn">Login btn</button>
+        <input class="input full" @bind="email" placeholder="Email" />
+        <input class="input full" type="password" @bind="password" placeholder="Password" />
 
-        @if (error != null)
-        {
-            <p class="error">@error</p>
-        }
+        <button class="btn btn-primary full" @onclick="LogIn">
+            Login
+        </button>
+
     </div>
 </div>
 
