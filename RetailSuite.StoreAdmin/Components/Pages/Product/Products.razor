@@ -102,8 +102,8 @@
     bool isLoading = true;
     bool showModal = false;
 
-    string newProductName;
-    string newProductDesc;
+    string? newProductName;
+    string? newProductDesc;
 
     // Variant inputs per product (fixes shared input bug)
     Dictionary<Guid, VariantInput> variantInputs = new();
@@ -198,20 +198,20 @@
     public class ProductDto
     {
         public Guid Id { get; set; }
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public List<VariantDto>? Variants { get; set; }
     }
 
     public class VariantDto
     {
         public Guid Id { get; set; }
-        public string SKU { get; set; }
+        public string? SKU { get; set; }
         public decimal Price { get; set; }
     }
 
     public class VariantInput
     {
-        public string Sku { get; set; }
+        public string? Sku { get; set; }
         public decimal Price { get; set; }
     }
 }

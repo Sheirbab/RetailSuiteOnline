@@ -121,6 +121,13 @@ public class RetailDbContext : DbContext
             b.HasMany(v => v.AttributeValues)
                 .WithOne(vav => vav.ProductVariant)
                 .HasForeignKey(vav => vav.ProductVariantId);
+
+            modelBuilder.Entity<ProductVariant>()
+                        .HasOne(v => v.Product)
+                        .WithMany(p => p.Variants)
+                        .HasForeignKey(v => v.ProductId)
+                        .OnDelete(DeleteBehavior.Restrict);
+
             b.Property(v => v.CostPrice)
                 .HasColumnType("decimal(18,2)");
         });
@@ -348,7 +355,7 @@ public class RetailDbContext : DbContext
             b.Property(l => l.CreditAmount)
                 .HasColumnType("decimal(18,2)");
         });
-      
+
         modelBuilder.Entity<Payment>(b =>
         {
             b.ToTable("Payments");
@@ -381,6 +388,12 @@ public class RetailDbContext : DbContext
         }
 
         modelBuilder.Ignore<TenantEntity>();
+
+        foreach (var relationship in modelBuilder.Model.GetEntityTypes()
+         .SelectMany(e => e.GetForeignKeys()))
+        {
+            relationship.DeleteBehavior = DeleteBehavior.Restrict;
+        }
     }
 
     private static void ApplyTenantFilter<TEntity>(

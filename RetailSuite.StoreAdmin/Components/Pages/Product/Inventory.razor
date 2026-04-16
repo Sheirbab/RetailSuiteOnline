@@ -1,0 +1,193 @@
+﻿@page "/inventory"
+@inject HttpClient Http
+@inject ToastService Toast
+
+<h3 style="margin-bottom:20px;">Inventory</h3>
+
+@if (isLoading)
+{
+    <div class="spinner"></div>
+}
+else if (items != null)
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Stock</th>
+                    <th>Avg Cost</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                @foreach (var item in items)
+                {
+                    <tr>
+                        <td>@item.ProductName</td>
+                        <td>@item.SKU</td>
+                        <td>@item.CurrentStock</td>
+                        <td>Rs @item.AverageCost</td>
+
+                        <td>
+                            <button class="btn btn-primary"
+                                    @onclick="() => OpenReceive(item)">
+                                Receive
+                            </button>
+
+                            <button class="btn"
+                                    @onclick="() => OpenAdjust(item)">
+                                Adjust
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- RECEIVE MODAL -->
+<Modal Visible="@showReceive" OnClose="CloseReceive">
+    <h3>Receive Stock</h3>
+
+    <p>@selectedItem?.SKU</p>
+
+    <input class="input full" type="number"
+           placeholder="Quantity"
+           @bind="receiveQty" />
+
+    <input class="input full" type="number"
+           placeholder="Unit Cost"
+           @bind="receiveCost" />
+
+    <button class="btn btn-primary" @onclick="ReceiveStock">
+        Save
+    </button>
+</Modal>
+
+<!-- ADJUST MODAL -->
+<Modal Visible="@showAdjust" OnClose="CloseAdjust">
+    <h3>Adjust Stock</h3>
+
+    <p>@selectedItem?.SKU</p>
+
+    <input class="input full" type="number"
+           placeholder="Quantity (+/-)"
+           @bind="adjustQty" />
+
+    <button class="btn btn-primary" @onclick="AdjustStock">
+        Save
+    </button>
+</Modal>
+
+@code {
+    List<InventoryItemDto>? items;
+    bool isLoading = true;
+
+    bool showReceive = false;
+    bool showAdjust = false;
+
+    InventoryItemDto? selectedItem;
+
+    int receiveQty;
+    decimal receiveCost;
+
+    int adjustQty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInventory();
+    }
+
+    async Task LoadInventory()
+    {
+        isLoading = true;
+
+        items = await Http.GetFromJsonAsync<List<InventoryItemDto>>("api/inventory/all");
+
+        isLoading = false;
+    }
+
+    void OpenReceive(InventoryItemDto item)
+    {
+        selectedItem = item;
+        receiveQty = 0;
+        receiveCost = 0;
+        showReceive = true;
+    }
+
+    void CloseReceive()
+    {
+        showReceive = false;
+    }
+
+    async Task ReceiveStock()
+    {
+        var request = new
+        {
+            productVariantId = selectedItem?.Id,
+            quantity = receiveQty,
+            unitCost = receiveCost
+        };
+
+        var response = await Http.PostAsJsonAsync("api/inventory/receive", request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Toast.Show("Stock received");
+            showReceive = false;
+            await LoadInventory();
+        }
+        else
+        {
+            Toast.Show("Error receiving stock");
+        }
+    }
+
+    void OpenAdjust(InventoryItemDto item)
+    {
+        selectedItem = item;
+        adjustQty = 0;
+        showAdjust = true;
+    }
+
+    void CloseAdjust()
+    {
+        showAdjust = false;
+    }
+
+    async Task AdjustStock()
+    {
+        var request = new
+        {
+            productVariantId = selectedItem?.Id,
+            quantity = adjustQty,
+            type = adjustQty > 0 ? 1 : 2 // Increase / Decrease
+        };
+
+        var response = await Http.PostAsJsonAsync("api/inventory/adjust", request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Toast.Show("Stock adjusted");
+            showAdjust = false;
+            await LoadInventory();
+        }
+        else
+        {
+            Toast.Show("Error adjusting stock");
+        }
+    }
+
+    public class InventoryItemDto
+    {
+        public Guid Id { get; set; }
+        public string? ProductName { get; set; }
+        public string? SKU { get; set; }
+        public int? CurrentStock { get; set; }
+        public decimal? AverageCost { get; set; }
+    }
+}

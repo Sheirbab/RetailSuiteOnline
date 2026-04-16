@@ -6,21 +6,21 @@
 }
 
 @code {
-    string message;
+    string? message;
 
     protected override void OnInitialized()
     {
         Toastservice.OnShow += ShowToast;
     }
 
-    void ShowToast(string msg)
+    void ShowToast(string? msg)
     {
         message = msg;
         StateHasChanged();
 
         Task.Delay(2000).ContinueWith(_ =>
         {
-            message = null;
+            message = "";
             InvokeAsync(StateHasChanged);
         });
     }

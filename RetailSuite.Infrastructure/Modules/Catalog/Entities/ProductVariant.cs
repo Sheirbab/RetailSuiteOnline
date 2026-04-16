@@ -10,6 +10,9 @@ public class ProductVariant : TenantEntity
     public decimal Price { get; private set; }
     public decimal CostPrice { get; private set; }
     public bool IsActive { get; private set; } = true;
+    public int StockQuantity { get; set; }
+    public decimal AverageCost { get; set; }
+    public Product Product { get; set; }
 
     private readonly List<VariantAttributeValue> _attributeValues = new();
     public IReadOnlyCollection<VariantAttributeValue> AttributeValues => _attributeValues;

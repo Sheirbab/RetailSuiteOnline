@@ -6,6 +6,12 @@ using System.Text.Json;
 public class AuthService
 {
     private readonly HttpClient _httpClient;
+
+    public AuthService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
     public bool IsAuthenticated => !string.IsNullOrEmpty(Token);
     public string? Token { get; private set; }
     public event Action? OnChange;
