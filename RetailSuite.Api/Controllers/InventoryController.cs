@@ -8,7 +8,7 @@ using RetailSuite.Infrastructure.Modules.Inventory.Services;
 
 namespace RetailSuite.Api.Controllers;
 
-//[Authorize(Policy = "StaffOrAdmin")]
+[Authorize(Policy = "StaffOrAdmin")]
 [ApiController]
 [Route("api/inventory")]
 public class InventoryController : ControllerBase

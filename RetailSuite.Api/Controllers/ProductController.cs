@@ -1,11 +1,12 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
+using RetailSuite.Shared;
 
-//[Authorize(Policy = "AdminOnly")]
+[Authorize(Policy = "StaffOrAdmin")]
 [ApiController]
 [Route("api/products")]
 public class ProductsController : ControllerBase
@@ -17,37 +18,18 @@ public class ProductsController : ControllerBase
         _db = db;
     }
 
-    // CREATE PRODUCT
-    [HttpPost]
-    public async Task<IActionResult> Create(CreateProductRequest request)
+    // GET /api/products
+    [HttpGet]
+    public async Task<IActionResult> Get()
     {
-        var product = new Product(
-            request.Name,
-            request.Description);
+        var products = await _db.Products
+            .Include(p => p.Variants)
+            .ToListAsync();
 
-        _db.Products.Add(product);
-        await _db.SaveChangesAsync();
-
-        return Ok(product.Id);
+        return Ok(new ApiResponse<object>(true, null, products));
     }
 
-    // UPDATE PRODUCT
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(Guid id, UpdateProductRequest request)
-    {
-        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
-
-        if (product == null)
-            return NotFound();
-
-        product.Update(request.Name, request.Description);
-
-        await _db.SaveChangesAsync();
-
-        return Ok();
-    }
-
-    // GET PRODUCT WITH VARIANTS
+    // GET /api/products/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(Guid id)
     {
@@ -56,52 +38,41 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null)
-            return NotFound();
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
 
-        return Ok(product);
+        return Ok(new ApiResponse<object>(true, null, product));
     }
-    [HttpGet]
-    public async Task<IActionResult> Get()
+
+    // GET /api/products/variants  — flat list for POS
+    [HttpGet("variants")]
+    public async Task<IActionResult> GetVariants()
     {
-        var product = await _db.Products
-            .Include(p => p.Variants).ToListAsync();
+        var variants = await _db.ProductVariants
+            .Include(v => v.Product)
+            .Where(v => v.IsActive)
+            .Select(v => new
+            {
+                v.Id,
+                v.SKU,
+                v.Barcode,
+                v.Price,
+                v.CostPrice,
+                v.StockQuantity,
+                ProductId   = v.ProductId,
+                ProductName = v.Product.Name
+            })
+            .ToListAsync();
 
-        if (product == null)
-            return NotFound();
-
-        return Ok(product);
+        return Ok(new ApiResponse<object>(true, null, variants));
     }
-    // ADD VARIANT
-    [HttpPost("{productId}/variants")]
-    public async Task<IActionResult> AddVariant(
-        Guid productId,
-        CreateVariantRequest request)
-    {
-        var product = await _db.Products
-            .Include(p => p.Variants)
-            .FirstOrDefaultAsync(p => p.Id == productId);
 
-        if (product == null)
-            return NotFound();
-
-        var variant = new ProductVariant(
-            productId,
-            request.SKU,
-            request.Price);
-
-        product.AddVariant(variant);
-
-        await _db.SaveChangesAsync();
-
-        return Ok(variant.Id);
-    }
-    [Authorize]
+    // GET /api/products/search
     [HttpGet("search")]
     public async Task<IActionResult> Search(
-    string? keyword,
-    Guid? categoryId,
-    int page = 1,
-    int pageSize = 20)
+        string? keyword,
+        Guid? categoryId,
+        int page = 1,
+        int pageSize = 20)
     {
         var query = _db.Products
             .Include(p => p.Variants)
@@ -123,32 +94,72 @@ public class ProductsController : ControllerBase
             .Take(pageSize)
             .ToListAsync();
 
-        return Ok(new
+        return Ok(new ApiResponse<object>(true, null, new
         {
-            Total = total,
-            Page = page,
+            Total    = total,
+            Page     = page,
             PageSize = pageSize,
-            Items = items
-        });
+            Items    = items
+        }));
     }
-    [HttpPost("{productId}/categories/{categoryId}")]
-    public async Task<IActionResult> AssignCategory(
-    Guid productId,
-    Guid categoryId)
+
+    // POST /api/products
+    [HttpPost]
+    public async Task<IActionResult> Create(CreateProductRequest request)
     {
-        var exists = await _db.ProductCategories
-            .AnyAsync(pc =>
-                pc.ProductId == productId &&
-                pc.CategoryId == categoryId);
-
-        if (exists)
-            return Ok();
-
-        _db.ProductCategories.Add(
-            new ProductCategory(productId, categoryId));
-
+        var product = new Product(request.Name, request.Description);
+        _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
-        return Ok();
+        return Ok(new ApiResponse<Guid>(true, "Product created.", product.Id));
+    }
+
+    // PUT /api/products/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, UpdateProductRequest request)
+    {
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
+
+        if (product == null)
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        product.Update(request.Name, request.Description);
+        await _db.SaveChangesAsync();
+
+        return Ok(new ApiResponse<object>(true, "Product updated.", null));
+    }
+
+    // POST /api/products/{productId}/variants
+    [HttpPost("{productId}/variants")]
+    public async Task<IActionResult> AddVariant(Guid productId, CreateVariantRequest request)
+    {
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == productId);
+
+        if (product == null)
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        var variant = new ProductVariant(productId, request.SKU, request.Price);
+        product.AddVariant(variant);
+        await _db.SaveChangesAsync();
+
+        return Ok(new ApiResponse<Guid>(true, "Variant added.", variant.Id));
+    }
+
+    // POST /api/products/{productId}/categories/{categoryId}
+    [HttpPost("{productId}/categories/{categoryId}")]
+    public async Task<IActionResult> AssignCategory(Guid productId, Guid categoryId)
+    {
+        var exists = await _db.ProductCategories
+            .AnyAsync(pc => pc.ProductId == productId && pc.CategoryId == categoryId);
+
+        if (!exists)
+        {
+            _db.ProductCategories.Add(new ProductCategory(productId, categoryId));
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new ApiResponse<object>(true, "Category assigned.", null));
     }
 }

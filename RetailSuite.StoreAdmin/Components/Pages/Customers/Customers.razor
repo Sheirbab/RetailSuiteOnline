@@ -1,0 +1,182 @@
+@page "/customers"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:20px;">Customers</h3>
+
+<button class="btn btn-primary" style="margin-bottom:16px;" @onclick="() => _showModal = true">
+    + Register Customer
+</button>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_customers.Count == 0)
+{
+    <div class="card"><p style="color:#9ca3af;">No customers found. Register one above.</p></div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Joined</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _customers)
+                {
+                    <tr>
+                        <td><strong>@c.FullName</strong></td>
+                        <td>@c.Email</td>
+                        <td>@(c.Phone ?? "—")</td>
+                        <td>@c.CreatedAt.ToString("dd MMM yyyy")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- Register Customer Modal -->
+<Modal Visible="@_showModal" OnClose="CloseModal">
+    <h3 style="margin-bottom:16px;">Register Customer</h3>
+
+    @if (!string.IsNullOrEmpty(_modalError))
+    {
+        <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:10px;margin-bottom:12px;color:#b91c1c;font-size:14px;">
+            @_modalError
+        </div>
+    }
+
+    <input class="input full" placeholder="First Name *" @bind="_firstName" />
+    <input class="input full" placeholder="Last Name *"  @bind="_lastName" />
+    <input class="input full" placeholder="Email *"      @bind="_email" type="email" />
+    <input class="input full" placeholder="Password *"   @bind="_password" type="password" />
+    <input class="input full" placeholder="Phone"        @bind="_phone" />
+
+    <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="RegisterCustomer" disabled="@_saving">
+            @(_saving ? "Saving..." : "Register")
+        </button>
+        <button class="btn" @onclick="CloseModal">Cancel</button>
+    </div>
+</Modal>
+
+@code {
+    bool             _loading    = true;
+    bool             _showModal;
+    bool             _saving;
+    string?          _modalError;
+    List<CustomerRow> _customers = new();
+
+    string? _firstName;
+    string? _lastName;
+    string? _email;
+    string? _password;
+    string? _phone;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    async Task Load()
+    {
+        _loading = true;
+        try
+        {
+            var json = await Http.GetStringAsync("api/customers");
+            using var doc  = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            _customers.Clear();
+            var dataEl = root.TryGetProperty("data", out var d) ? d : root;
+            if (dataEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in dataEl.EnumerateArray())
+                {
+                    _customers.Add(new CustomerRow
+                    {
+                        Id        = c.TryGetProperty("id",        out var id) ? id.GetGuid()     : Guid.Empty,
+                        FullName  = c.TryGetProperty("fullName",  out var fn) ? fn.GetString()!  : "—",
+                        Email     = c.TryGetProperty("email",     out var em) ? em.GetString()   : null,
+                        Phone     = c.TryGetProperty("phone",     out var ph) ? ph.GetString()   : null,
+                        CreatedAt = c.TryGetProperty("createdAt", out var ca) ? ca.GetDateTime() : DateTime.MinValue
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error loading customers: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    async Task RegisterCustomer()
+    {
+        _modalError = null;
+
+        if (string.IsNullOrWhiteSpace(_firstName) || string.IsNullOrWhiteSpace(_lastName) ||
+            string.IsNullOrWhiteSpace(_email)     || string.IsNullOrWhiteSpace(_password))
+        {
+            _modalError = "First name, last name, email and password are required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var payload = new
+            {
+                firstName = _firstName,
+                lastName  = _lastName,
+                email     = _email,
+                password  = _password,
+                phone     = _phone
+            };
+
+            var res = await Http.PostAsJsonAsync("api/customers/register", payload);
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                Toast.Show("Customer registered successfully.");
+                CloseModal();
+                await Load();
+            }
+            else
+            {
+                using var doc  = JsonDocument.Parse(content);
+                _modalError = doc.RootElement.TryGetProperty("message", out var msg)
+                    ? msg.GetString()
+                    : "Registration failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _modalError = $"Error: {ex.Message}";
+        }
+        _saving = false;
+    }
+
+    void CloseModal()
+    {
+        _showModal  = false;
+        _modalError = null;
+        _firstName = _lastName = _email = _password = _phone = null;
+    }
+
+    class CustomerRow
+    {
+        public Guid     Id        { get; set; }
+        public string   FullName  { get; set; } = string.Empty;
+        public string?  Email     { get; set; }
+        public string?  Phone     { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}

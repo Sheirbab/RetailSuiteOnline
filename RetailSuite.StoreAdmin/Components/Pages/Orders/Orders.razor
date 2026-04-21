@@ -1,0 +1,254 @@
+@page "/orders"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:20px;">Orders</h3>
+
+<!-- Filters -->
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <select class="input" style="width:160px;" @bind="_statusFilter">
+        <option value="">All Statuses</option>
+        <option value="1">Draft</option>
+        <option value="2">Confirmed</option>
+        <option value="3">Completed</option>
+        <option value="4">Cancelled</option>
+        <option value="5">Paid</option>
+    </select>
+
+    <button class="btn btn-primary" @onclick="Load">Refresh</button>
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_orders.Count == 0)
+{
+    <div class="card"><p style="color:#9ca3af;">No orders found.</p></div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Order #</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th>Paid</th>
+                    <th>Outstanding</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var o in _orders)
+                {
+                    <tr style="cursor:pointer;" @onclick="() => OpenDetail(o)">
+                        <td><strong>@o.OrderNumber</strong></td>
+                        <td><span class="badge badge-@StatusClass(o.Status)">@StatusLabel(o.Status)</span></td>
+                        <td>Rs @o.TotalAmount.ToString("N2")</td>
+                        <td>Rs @o.PaidAmount.ToString("N2")</td>
+                        <td style="color:@(o.OutstandingAmount > 0 ? "#dc2626" : "#16a34a");">
+                            Rs @o.OutstandingAmount.ToString("N2")
+                        </td>
+                        <td>@o.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
+                        <td @onclick:stopPropagation="true">
+                            @if (o.Status == 1)
+                            {
+                                <button class="btn btn-primary" style="padding:3px 10px;font-size:12px;"
+                                        @onclick="() => ConfirmOrder(o.Id)">Confirm</button>
+                                <button class="btn btn-danger" style="padding:3px 10px;font-size:12px;margin-left:4px;"
+                                        @onclick="() => CancelOrder(o.Id)">Cancel</button>
+                            }
+                            @if (o.Status == 2)
+                            {
+                                <button class="btn btn-danger" style="padding:3px 10px;font-size:12px;"
+                                        @onclick="() => CancelOrder(o.Id)">Cancel</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div style="margin-top:16px;display:flex;gap:8px;align-items:center;">
+            <button class="btn" @onclick="PrevPage" disabled="@(_page <= 1)">← Prev</button>
+            <span>Page @_page of @_totalPages</span>
+            <button class="btn" @onclick="NextPage" disabled="@(_page >= _totalPages)">Next →</button>
+        </div>
+    </div>
+}
+
+<!-- Order Detail Modal -->
+<Modal Visible="@(_selectedOrder != null)" OnClose="CloseDetail">
+    @if (_selectedOrder != null)
+    {
+        <h3 style="margin-bottom:16px;">Order @_selectedOrder.OrderNumber</h3>
+
+        <table class="table" style="margin-bottom:16px;">
+            <thead><tr><th>SKU</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+            <tbody>
+                @foreach (var item in _selectedOrder.Items)
+                {
+                    <tr>
+                        <td>@item.SKU</td>
+                        <td>@item.Quantity</td>
+                        <td>Rs @item.UnitPrice.ToString("N2")</td>
+                        <td>Rs @item.LineTotal.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div style="font-weight:700;margin-bottom:8px;">Total: Rs @_selectedOrder.TotalAmount.ToString("N2")</div>
+        <div style="color:#6b7280;">Paid: Rs @_selectedOrder.PaidAmount.ToString("N2")</div>
+        <div style="color:@(_selectedOrder.OutstandingAmount > 0 ? "#dc2626" : "#16a34a");">
+            Outstanding: Rs @_selectedOrder.OutstandingAmount.ToString("N2")
+        </div>
+    }
+</Modal>
+
+@code {
+    bool            _loading      = true;
+    string          _statusFilter = string.Empty;
+    int             _page         = 1;
+    int             _pageSize     = 20;
+    int             _totalPages   = 1;
+    List<OrderRow>  _orders       = new();
+    OrderDetail?    _selectedOrder;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    async Task Load()
+    {
+        _loading = true;
+        try
+        {
+            var url = $"api/orders?page={_page}&pageSize={_pageSize}";
+            if (!string.IsNullOrEmpty(_statusFilter))
+                url += $"&status={_statusFilter}";
+
+            var json = await Http.GetStringAsync(url);
+            using var doc  = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            _orders.Clear();
+            if (root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var o in items.EnumerateArray())
+                {
+                    _orders.Add(new OrderRow
+                    {
+                        Id              = o.TryGetProperty("id",              out var id)  ? id.GetGuid()      : Guid.Empty,
+                        OrderNumber     = o.TryGetProperty("orderNumber",     out var on)  ? on.GetString()!   : "—",
+                        Status          = o.TryGetProperty("status",          out var st)  ? st.GetInt32()     : 0,
+                        TotalAmount     = o.TryGetProperty("totalAmount",     out var ta)  ? ta.GetDecimal()   : 0,
+                        PaidAmount      = o.TryGetProperty("paidAmount",      out var pa)  ? pa.GetDecimal()   : 0,
+                        OutstandingAmount = o.TryGetProperty("outstandingAmount", out var oa) ? oa.GetDecimal() : 0,
+                        CreatedAt       = o.TryGetProperty("createdAt",       out var ca)  ? ca.GetDateTime()  : DateTime.MinValue
+                    });
+                }
+            }
+
+            if (root.TryGetProperty("total", out var total))
+                _totalPages = Math.Max(1, (int)Math.Ceiling(total.GetInt32() / (double)_pageSize));
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error loading orders: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    async Task OpenDetail(OrderRow o)
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/orders/{o.Id}");
+            using var doc  = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            _selectedOrder = new OrderDetail
+            {
+                OrderNumber     = o.OrderNumber,
+                TotalAmount     = o.TotalAmount,
+                PaidAmount      = o.PaidAmount,
+                OutstandingAmount = o.OutstandingAmount,
+                Items           = new()
+            };
+
+            if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in itemsEl.EnumerateArray())
+                {
+                    var unitPrice = item.TryGetProperty("unitPrice", out var up) ? up.GetDecimal() : 0;
+                    var qty       = item.TryGetProperty("quantity",  out var q)  ? q.GetInt32()   : 0;
+                    _selectedOrder.Items.Add(new OrderLineItem
+                    {
+                        SKU       = item.TryGetProperty("sku",      out var sku) ? sku.GetString()! : "—",
+                        UnitPrice = unitPrice,
+                        Quantity  = qty,
+                        LineTotal = unitPrice * qty
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+    }
+
+    void CloseDetail() => _selectedOrder = null;
+
+    async Task ConfirmOrder(Guid id)
+    {
+        var res = await Http.PostAsync($"api/orders/{id}/confirm", null);
+        if (res.IsSuccessStatusCode) { Toast.Show("Order confirmed."); await Load(); }
+        else Toast.Show("Failed to confirm order.");
+    }
+
+    async Task CancelOrder(Guid id)
+    {
+        var res = await Http.PostAsync($"api/orders/{id}/cancel", null);
+        if (res.IsSuccessStatusCode) { Toast.Show("Order cancelled."); await Load(); }
+        else Toast.Show("Failed to cancel order.");
+    }
+
+    async Task PrevPage() { if (_page > 1) { _page--; await Load(); } }
+    async Task NextPage() { if (_page < _totalPages) { _page++; await Load(); } }
+
+    string StatusLabel(int s) => s switch { 1=>"Draft", 2=>"Confirmed", 3=>"Completed", 4=>"Cancelled", 5=>"Paid", _=>"Unknown" };
+    string StatusClass(int s) => s switch { 1=>"grey", 2=>"blue", 3=>"green", 4=>"red", 5=>"green", _=>"grey" };
+
+    class OrderRow
+    {
+        public Guid     Id                { get; set; }
+        public string   OrderNumber       { get; set; } = string.Empty;
+        public int      Status            { get; set; }
+        public decimal  TotalAmount       { get; set; }
+        public decimal  PaidAmount        { get; set; }
+        public decimal  OutstandingAmount { get; set; }
+        public DateTime CreatedAt         { get; set; }
+    }
+
+    class OrderDetail
+    {
+        public string          OrderNumber       { get; set; } = string.Empty;
+        public decimal         TotalAmount       { get; set; }
+        public decimal         PaidAmount        { get; set; }
+        public decimal         OutstandingAmount { get; set; }
+        public List<OrderLineItem> Items         { get; set; } = new();
+    }
+
+    class OrderLineItem
+    {
+        public string  SKU       { get; set; } = string.Empty;
+        public decimal UnitPrice { get; set; }
+        public int     Quantity  { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+}

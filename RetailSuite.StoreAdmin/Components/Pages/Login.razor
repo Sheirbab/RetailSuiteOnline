@@ -1,4 +1,4 @@
-﻿@page "/login"
+@page "/login"
 @using RetailSuite.StoreAdmin.Shared
 @inject AuthService Auth
 @inject NavigationManager Nav
@@ -8,39 +8,66 @@
     <div class="login-card">
 
         <h2>RetailSuite</h2>
-        <p class="subtitle">Admin Login</p>
+        <p class="subtitle">Sign in to your store</p>
 
-        <input class="input full" @bind="email" placeholder="Email" />
-        <input class="input full" type="password" @bind="password" placeholder="Password" />
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px;margin-bottom:12px;color:#b91c1c;font-size:14px;">
+                @_error
+            </div>
+        }
 
-        <button class="btn btn-primary full" @onclick="LogIn">
-            Login
+        <input class="input full"
+               type="email"
+               placeholder="Email address"
+               @bind="_email"
+               @onkeydown="HandleKeyDown" />
+
+        <input class="input full"
+               type="password"
+               placeholder="Password"
+               @bind="_password"
+               @onkeydown="HandleKeyDown" />
+
+        <button class="btn btn-primary full"
+                @onclick="LogIn"
+                disabled="@_loading">
+            @(_loading ? "Signing in..." : "Sign In")
         </button>
 
     </div>
 </div>
 
 @code {
-    string? email;
-    string? password;
-    // string? error;
+    string? _email;
+    string? _password;
+    string? _error;
+    bool    _loading;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsAuthenticated)
+            Nav.NavigateTo("/", replace: true);
+    }
 
     async Task LogIn()
     {
+        _error   = null;
+        _loading = true;
 
-        // TEMP: fake login
-        Auth.SetToken("dummy-token");
+        var (success, error) = await Auth.LoginAsync(_email, _password);
 
-        Nav.NavigateTo("/");
+        _loading = false;
 
-        // var success = await Auth.LoginAsync(email, password);
+        if (success)
+            Nav.NavigateTo("/", replace: true);
+        else
+            _error = error;
+    }
 
-        // if (!success)
-        // {
-        //     error = "Invalid login.";
-        //     return;
-        // }
-
-        // Nav.NavigateTo("/");
+    async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await LogIn();
     }
 }

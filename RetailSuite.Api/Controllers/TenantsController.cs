@@ -1,41 +1,48 @@
-
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using RetailSuite.Infrastructure.Modules.Tenant.Entities;
-using RetailSuite.Infrastructure.Modules.Tenant;
+using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
+using RetailSuite.Shared;
 
 namespace RetailSuite.Api.Controllers;
 
 [ApiController]
 [Route("api/tenants")]
+[Authorize]
 public class TenantsController : ControllerBase
 {
     private readonly RetailDbContext _db;
+    private readonly ITenantContext _tenantContext;
 
-    public TenantsController(RetailDbContext db)
+    public TenantsController(RetailDbContext db, ITenantContext tenantContext)
     {
         _db = db;
+        _tenantContext = tenantContext;
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create(string name, string subdomain)
-    {
-        var tenant = new Tenant(name, subdomain);
-        _db.Tenants.Add(tenant);
-        await _db.SaveChangesAsync();
-        return Ok(tenant);
-    }
-
-    [HttpGet]
-    public IActionResult Get([FromHeader(Name = "X-Tenant-Id")] Guid tenantId)
-    {
-        return Ok(_db.Tenants.ToList());
-    }
-    [Authorize]
+    /// <summary>
+    /// Returns the current authenticated user's tenant details.
+    /// </summary>
     [HttpGet("me")]
-    public IActionResult Me()
+    public async Task<IActionResult> Me()
     {
-        return Ok(User.Claims.Select(c => new { c.Type, c.Value }));
+        var tenantId = _tenantContext.TenantId;
+
+        if (!tenantId.HasValue)
+            return Unauthorized(ApiResponse<object>.Fail("Tenant context not available."));
+
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId.Value);
+
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            tenant.Id,
+            tenant.Name,
+            tenant.Subdomain,
+            tenant.Status,
+            tenant.CreatedAt
+        }));
     }
 }

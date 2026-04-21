@@ -1,0 +1,275 @@
+@page "/pos"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:20px;">Point of Sale</h3>
+
+<div style="display:flex;gap:20px;align-items:flex-start;">
+
+    <!-- LEFT: Product Search -->
+    <div style="flex:1;" class="card">
+        <h4 style="margin-bottom:12px;">Products</h4>
+
+        <input class="input full"
+               placeholder="Search SKU or product name..."
+               @bind="_search"
+               @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
+
+        <div style="margin-top:10px;max-height:440px;overflow-y:auto;">
+            @foreach (var v in FilteredVariants)
+            {
+                <div style="padding:10px 12px;border-bottom:1px solid #e5e7eb;cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+                     @onclick="() => AddToCart(v)">
+                    <div>
+                        <strong>@v.SKU</strong>
+                        <div style="font-size:12px;color:#6b7280;">@v.ProductName</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:600;">Rs @v.Price.ToString("N2")</div>
+                        <div style="font-size:12px;color:@(v.StockQuantity > 0 ? "#16a34a" : "#dc2626");">
+                            Stock: @v.StockQuantity
+                        </div>
+                    </div>
+                </div>
+            }
+            @if (!_variants.Any())
+            {
+                <p style="color:#9ca3af;padding:12px;">No products loaded.</p>
+            }
+        </div>
+    </div>
+
+    <!-- RIGHT: Cart -->
+    <div style="width:420px;" class="card">
+        <h4 style="margin-bottom:12px;">Cart</h4>
+
+        @if (!_cart.Any())
+        {
+            <p style="color:#9ca3af;">Cart is empty — click a product to add it.</p>
+        }
+        else
+        {
+            @foreach (var item in _cart)
+            {
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb;">
+                    <div style="flex:1;">
+                        <div style="font-weight:500;">@item.SKU</div>
+                        <div style="font-size:12px;color:#6b7280;">Rs @item.Price.ToString("N2")</div>
+                    </div>
+
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button class="btn" style="padding:2px 8px;" @onclick="() => ChangeQty(item, -1)">−</button>
+                        <span style="min-width:28px;text-align:center;font-weight:600;">@item.Quantity</span>
+                        <button class="btn" style="padding:2px 8px;" @onclick="() => ChangeQty(item, 1)">+</button>
+                    </div>
+
+                    <div style="min-width:90px;text-align:right;font-weight:600;">
+                        Rs @((item.Price * item.Quantity).ToString("N2"))
+                    </div>
+
+                    <button class="btn btn-danger" style="margin-left:8px;padding:2px 8px;"
+                            @onclick="() => RemoveItem(item)">✕</button>
+                </div>
+            }
+
+            <hr style="margin:12px 0;" />
+
+            <div style="font-size:18px;font-weight:700;margin-bottom:16px;">
+                Total: Rs @Total.ToString("N2")
+            </div>
+
+            <label style="display:block;font-size:13px;color:#374151;margin-bottom:4px;font-weight:500;">
+                Amount Received (Rs)
+            </label>
+            <input class="input full"
+                   type="number"
+                   min="0"
+                   step="1"
+                   placeholder="Enter cash received..."
+                   @bind="_paidAmount" />
+
+            @if (_paidAmount > 0 && _paidAmount >= Total)
+            {
+                <div style="margin-top:8px;color:#16a34a;font-weight:600;">
+                    Change: Rs @((_paidAmount - Total).ToString("N2"))
+                </div>
+            }
+            else if (_paidAmount > 0)
+            {
+                <div style="margin-top:8px;color:#dc2626;font-size:13px;">
+                    Short by Rs @((Total - _paidAmount).ToString("N2"))
+                </div>
+            }
+
+            <button class="btn btn-primary full"
+                    style="margin-top:14px;"
+                    @onclick="Checkout"
+                    disabled="@(_checking || _paidAmount < Total)">
+                @(_checking ? "Processing..." : "Complete Sale")
+            </button>
+
+            <button class="btn full" style="margin-top:8px;" @onclick="ClearCart">
+                Clear Cart
+            </button>
+        }
+
+        <!-- Receipt -->
+        @if (_lastReceipt != null)
+        {
+            <div style="margin-top:20px;padding:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
+                <div style="font-weight:700;color:#15803d;font-size:16px;margin-bottom:10px;">
+                    ✅ Sale Complete
+                </div>
+                <table style="width:100%;font-size:14px;">
+                    <tr><td>Total</td><td style="text-align:right;font-weight:600;">Rs @_lastReceipt.Total.ToString("N2")</td></tr>
+                    <tr><td>Paid</td><td style="text-align:right;font-weight:600;">Rs @_lastReceipt.Paid.ToString("N2")</td></tr>
+                    <tr style="color:#15803d;"><td><strong>Change</strong></td><td style="text-align:right;font-weight:700;">Rs @_lastReceipt.Change.ToString("N2")</td></tr>
+                </table>
+                <button class="btn" style="margin-top:12px;width:100%;" @onclick="() => _lastReceipt = null">New Sale</button>
+            </div>
+        }
+    </div>
+
+</div>
+
+@code {
+    List<VariantDto> _variants    = new();
+    List<CartItem>   _cart        = new();
+    string           _search      = string.Empty;
+    decimal          _paidAmount;
+    bool             _checking;
+    Receipt?         _lastReceipt;
+
+    protected override async Task OnInitializedAsync() => await LoadVariants();
+
+    async Task LoadVariants()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/products/variants");
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var dataEl = root.TryGetProperty("data", out var d) ? d : root;
+
+            _variants.Clear();
+            if (dataEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in dataEl.EnumerateArray())
+                {
+                    _variants.Add(new VariantDto
+                    {
+                        Id            = item.TryGetProperty("id",            out var id)  ? id.GetGuid()      : Guid.Empty,
+                        SKU           = item.TryGetProperty("sku",           out var sk)  ? sk.GetString()!   : "—",
+                        Price         = item.TryGetProperty("price",         out var pr)  ? pr.GetDecimal()   : 0,
+                        StockQuantity = item.TryGetProperty("stockQuantity", out var sq)  ? sq.GetInt32()     : 0,
+                        ProductName   = item.TryGetProperty("productName",   out var pn)  ? pn.GetString()!   : string.Empty
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Could not load products: {ex.Message}");
+        }
+    }
+
+    IEnumerable<VariantDto> FilteredVariants =>
+        string.IsNullOrWhiteSpace(_search)
+            ? _variants
+            : _variants.Where(v =>
+                v.SKU.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                v.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    void AddToCart(VariantDto v)
+    {
+        if (v.StockQuantity <= 0) { Toast.Show($"{v.SKU} is out of stock."); return; }
+
+        var existing = _cart.FirstOrDefault(x => x.ProductVariantId == v.Id);
+        if (existing != null)
+        {
+            if (existing.Quantity >= v.StockQuantity) { Toast.Show($"Only {v.StockQuantity} in stock."); return; }
+            existing.Quantity++;
+        }
+        else
+        {
+            _cart.Add(new CartItem { ProductVariantId = v.Id, SKU = v.SKU, Price = v.Price, Quantity = 1 });
+        }
+    }
+
+    void ChangeQty(CartItem item, int delta)
+    {
+        item.Quantity += delta;
+        if (item.Quantity <= 0) _cart.Remove(item);
+    }
+
+    void RemoveItem(CartItem item) => _cart.Remove(item);
+
+    void ClearCart() { _cart.Clear(); _paidAmount = 0; _lastReceipt = null; }
+
+    decimal Total => _cart.Sum(x => x.Price * x.Quantity);
+
+    async Task Checkout()
+    {
+        if (!_cart.Any()) return;
+        _checking = true;
+
+        var request = new
+        {
+            customerId = (Guid?)null,
+            paidAmount = _paidAmount,
+            items      = _cart.Select(x => new { productVariantId = x.ProductVariantId, quantity = x.Quantity }).ToList()
+        };
+
+        try
+        {
+            var res     = await Http.PostAsJsonAsync("api/sales/checkout", request);
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                using var doc  = JsonDocument.Parse(content);
+                var orderId    = Guid.Empty;
+                if (doc.RootElement.TryGetProperty("data", out var d)) orderId = d.GetGuid();
+
+                _lastReceipt = new Receipt { OrderId = orderId, Total = Total, Paid = _paidAmount, Change = _paidAmount - Total };
+                _cart.Clear();
+                _paidAmount = 0;
+                await LoadVariants();
+                Toast.Show("Sale completed!");
+            }
+            else
+            {
+                Toast.Show("Sale failed. Check stock and try again.");
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Error: {ex.Message}"); }
+
+        _checking = false;
+    }
+
+    class VariantDto
+    {
+        public Guid    Id            { get; set; }
+        public string  SKU           { get; set; } = string.Empty;
+        public string  ProductName   { get; set; } = string.Empty;
+        public decimal Price         { get; set; }
+        public int     StockQuantity { get; set; }
+    }
+
+    class CartItem
+    {
+        public Guid    ProductVariantId { get; set; }
+        public string  SKU             { get; set; } = string.Empty;
+        public decimal Price           { get; set; }
+        public int     Quantity        { get; set; }
+    }
+
+    class Receipt
+    {
+        public Guid    OrderId { get; set; }
+        public decimal Total   { get; set; }
+        public decimal Paid    { get; set; }
+        public decimal Change  { get; set; }
+    }
+}

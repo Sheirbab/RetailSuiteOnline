@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
 @inject AuthService Auth
 @inject NavigationManager Nav
@@ -8,11 +8,11 @@
 
 @if (!_checked)
 {
-    <p>Loading...</p>
+    <p style="padding:20px;color:#9ca3af;">Loading...</p>
 }
 else if (!Auth.IsAuthenticated)
 {
-    <p>Redirecting...</p>
+    <p style="padding:20px;color:#9ca3af;">Redirecting to login...</p>
 }
 else
 {
@@ -23,21 +23,11 @@ else
             <h2>RetailSuite</h2>
 
             <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
-            <NavLink href="/products">
-                <i class="lucide lucide-box"></i>Products
-            </NavLink>
-            <NavLink href="/inventory">
-                <i class="lucide lucide-box"></i>Inventory
-            </NavLink>
-            <NavLink href="/orders">
-                <i class="lucide lucide-box"></i>Orders
-            </NavLink>
-            <NavLink href="/customers">
-                <i class="lucide lucide-box"></i>Customers
-            </NavLink>
-            <NavLink href="/payments">
-                <i class="lucide lucide-box"></i>Payments
-            </NavLink>
+            <NavLink href="/pos">POS Terminal</NavLink>
+            <NavLink href="/products">Products</NavLink>
+            <NavLink href="/inventory">Inventory</NavLink>
+            <NavLink href="/orders">Orders</NavLink>
+            <NavLink href="/customers">Customers</NavLink>
         </div>
 
         <!-- Main -->
@@ -45,10 +35,10 @@ else
 
             <!-- Header -->
             <div class="header">
-                <span>Admin Panel</span>
+                <span style="font-weight:500;color:#374151;">Admin Panel</span>
 
                 <button class="btn btn-danger" @onclick="Logout">
-                    <i class="lucide lucide-log-out"></i> Logout
+                    Logout
                 </button>
             </div>
 
@@ -66,7 +56,6 @@ else
     </div>
 }
 
-
 @code {
     private bool _checked;
 
@@ -82,9 +71,7 @@ else
             _checked = true;
 
             if (!Auth.IsAuthenticated)
-            {
                 Nav.NavigateTo("/login", true);
-            }
 
             StateHasChanged();
         }
