@@ -1,0 +1,168 @@
+﻿@page "/pos"
+@inject HttpClient Http
+@inject ToastService Toast
+
+<h3>Point of Sale</h3>
+
+<div style="display:flex; gap:20px;">
+
+    <!-- LEFT: Product Selection -->
+    <div style="flex:1;" class="card">
+
+        <input class="input full"
+               placeholder="Search SKU..."
+               @bind="searchText" />
+
+        <div style="margin-top:10px; max-height:400px; overflow:auto;">
+            @foreach (var v in FilteredVariants)
+            {
+                <div style="padding:8px; border-bottom:1px solid #eee; cursor:pointer;"
+                     @onclick="() => AddToCart(v)">
+                    <b>@v.SKU</b> — Rs @v.Price
+                </div>
+            }
+        </div>
+
+    </div>
+
+    <!-- RIGHT: Cart -->
+    <div style="width:400px;" class="card">
+
+        <h4>Cart</h4>
+
+        @if (!cart.Any())
+        {
+            <p>No items</p>
+        }
+        else
+        {
+            @foreach (var item in cart)
+            {
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+
+                    <div>
+                        <div>@item.SKU</div>
+                        <small>Rs @item.Price</small>
+                    </div>
+
+                    <div>
+                        <button @onclick="() => ChangeQty(item, -1)">-</button>
+
+                        <span style="margin:0 10px;">@item.Quantity</span>
+
+                        <button @onclick="() => ChangeQty(item, 1)">+</button>
+                    </div>
+
+                    <div>
+                        Rs @(item.Price* item.Quantity)
+                    </div>
+
+                    <button @onclick="() => RemoveItem(item)">X</button>
+                </div>
+            }
+
+            <hr />
+
+            <h3>Total: Rs @Total</h3>
+
+            <button class="btn btn-primary full" @onclick="Checkout">
+                Checkout
+            </button>
+        }
+
+    </div>
+
+</div>
+
+@code {
+    List<VariantDto> variants = new();
+    List<CartItem> cart = new();
+
+    string searchText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Http.GetFromJsonAsync<List<VariantDto>>("api/products/variants");
+        if (result != null)
+            variants = result;
+    }
+
+    IEnumerable<VariantDto> FilteredVariants =>
+        string.IsNullOrWhiteSpace(searchText)
+            ? variants
+            : variants.Where(x => x.SKU.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+
+    void AddToCart(VariantDto v)
+    {
+        var existing = cart.FirstOrDefault(x => x.ProductVariantId == v.Id);
+
+        if (existing != null)
+        {
+            existing.Quantity++;
+        }
+        else
+        {
+            cart.Add(new CartItem
+            {
+                ProductVariantId = v.Id,
+                SKU = v.SKU,
+                Price = v.Price,
+                Quantity = 1
+            });
+        }
+    }
+
+    void ChangeQty(CartItem item, int delta)
+    {
+        item.Quantity += delta;
+
+        if (item.Quantity <= 0)
+            cart.Remove(item);
+    }
+
+    void RemoveItem(CartItem item)
+    {
+        cart.Remove(item);
+    }
+
+    decimal Total => cart.Sum(x => x.Price * x.Quantity);
+
+    async Task Checkout()
+    {
+        var request = new
+        {
+            items = cart.Select(x => new
+            {
+                productVariantId = x.ProductVariantId,
+                quantity = x.Quantity
+            }).ToList()
+        };
+
+        var res = await Http.PostAsJsonAsync("api/sales/checkout", request);
+
+        if (res.IsSuccessStatusCode)
+        {
+            Toast.Show("Sale completed");
+            cart.Clear();
+        }
+        else
+        {
+            Toast.Show("Sale failed");
+        }
+    }
+
+    public class VariantDto
+    {
+        public Guid Id { get; set; }
+        public string SKU { get; set; }
+        public decimal Price { get; set; }
+    }
+
+    public class CartItem
+    {
+        public Guid ProductVariantId { get; set; }
+        public string SKU { get; set; }
+        public decimal Price { get; set; }
+        public int Quantity { get; set; }
+    }
+}
