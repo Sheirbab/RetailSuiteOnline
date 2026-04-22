@@ -4,6 +4,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using RetailSuite.Api.Middleware;
+using RetailSuite.Api.Seeding;
 using RetailSuite.Api.MultiTenancy;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
@@ -73,9 +74,11 @@ try
     // ---------------------------------------------------------------
     builder.Services.AddAuthorization(options =>
     {
-        options.AddPolicy("AdminOnly",    policy => policy.RequireRole("Admin"));
-        options.AddPolicy("StaffOrAdmin", policy => policy.RequireRole("Admin", "Staff"));
-        options.AddPolicy("CustomerOnly", policy => policy.RequireRole("Customer"));
+        options.AddPolicy("SuperAdminOnly",    policy => policy.RequireRole("SuperAdmin"));
+        options.AddPolicy("SuperOrAdmin",      policy => policy.RequireRole("SuperAdmin", "Admin"));
+        options.AddPolicy("AdminOnly",         policy => policy.RequireRole("Admin"));
+        options.AddPolicy("StaffOrAdmin",      policy => policy.RequireRole("Admin", "Staff"));
+        options.AddPolicy("CustomerOnly",      policy => policy.RequireRole("Customer"));
     });
 
     // ---------------------------------------------------------------
@@ -136,6 +139,11 @@ try
     });
 
     var app = builder.Build();
+
+    // ---------------------------------------------------------------
+    // Seed super-admin (idempotent — no-op if already exists)
+    // ---------------------------------------------------------------
+    await SuperAdminSeeder.SeedAsync(app.Services);
 
     // ---------------------------------------------------------------
     // Middleware pipeline

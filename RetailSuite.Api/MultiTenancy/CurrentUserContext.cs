@@ -21,7 +21,7 @@ public class CurrentUserContext : ICurrentUserContext
         {
             var value = _httpContextAccessor.HttpContext?
                 .User?
-                .FindFirst(ClaimTypes.NameIdentifier)?
+                .FindFirst("userId")?
                 .Value;
 
             if (string.IsNullOrEmpty(value))

@@ -1,0 +1,271 @@
+@page "/admin/tenants"
+@layout MainLayout
+@inject HttpClient Http
+@inject AuthService AuthSvc
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+@code {
+    // ----------- state -----------
+    bool   _loading     = true;
+    bool   _showCreate  = false;
+    bool   _creating    = false;
+    string _search      = string.Empty;
+
+    List<TenantRow> _tenants = new();
+
+    // Create-tenant form fields
+    string _newName     = string.Empty;
+    string _newSubdomain = string.Empty;
+    string _newEmail    = string.Empty;
+
+    // Result of last creation (shown in a success box)
+    CreatedResult? _lastCreated;
+
+    IEnumerable<TenantRow> Filtered =>
+        string.IsNullOrWhiteSpace(_search)
+            ? _tenants
+            : _tenants.Where(t =>
+                t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                t.Subdomain.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnInitialized()
+    {
+        // Guard: only super admin may view this page
+        if (!AuthSvc.IsSuperAdmin)
+        {
+            Nav.NavigateTo("/", replace: true);
+            return;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await LoadTenantsAsync();
+    }
+
+    async Task LoadTenantsAsync()
+    {
+        _loading = true;
+        try
+        {
+            var json = await Http.GetStringAsync("api/tenants");
+            using var doc = JsonDocument.Parse(json);
+            var arr = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            _tenants.Clear();
+            if (arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var t in arr.EnumerateArray())
+                {
+                    _tenants.Add(new TenantRow
+                    {
+                        Id        = t.TryGetProperty("id",        out var id)  ? id.GetGuid()     : Guid.Empty,
+                        Name      = t.TryGetProperty("name",      out var nm)  ? nm.GetString()!  : "—",
+                        Subdomain = t.TryGetProperty("subdomain", out var sd)  ? sd.GetString()!  : "—",
+                        Status    = t.TryGetProperty("status",    out var st)  ? st.GetString()!  : "Unknown",
+                        CreatedAt = t.TryGetProperty("createdAt", out var ca)  ? ca.GetDateTime() : DateTime.MinValue,
+                        UserCount = t.TryGetProperty("userCount", out var uc)  ? uc.GetInt32()    : 0
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error loading tenants: {ex.Message}");
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    async Task CreateTenantAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newSubdomain) || string.IsNullOrWhiteSpace(_newEmail))
+        {
+            Toast.Show("All fields are required.");
+            return;
+        }
+
+        _creating = true;
+        _lastCreated = null;
+        try
+        {
+            var payload = new { tenantName = _newName, subdomain = _newSubdomain, adminEmail = _newEmail };
+            var res     = await Http.PostAsJsonAsync("api/tenants", payload);
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                using var doc  = JsonDocument.Parse(content);
+                var data       = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+                _lastCreated   = new CreatedResult
+                {
+                    TenantName   = data.TryGetProperty("tenantName",   out var tn) ? tn.GetString()! : _newName,
+                    AdminEmail   = data.TryGetProperty("adminEmail",   out var ae) ? ae.GetString()! : _newEmail,
+                    TempPassword = data.TryGetProperty("tempPassword", out var tp) ? tp.GetString()! : "—"
+                };
+
+                // Reset form and reload list
+                _newName = _newSubdomain = _newEmail = string.Empty;
+                _showCreate = false;
+                await LoadTenantsAsync();
+            }
+            else
+            {
+                using var doc = JsonDocument.Parse(content);
+                var msg = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Creation failed.";
+                Toast.Show(msg ?? "Creation failed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _creating = false;
+    }
+
+    async Task ToggleStatusAsync(TenantRow tenant)
+    {
+        var newStatus = tenant.Status == "Active" ? "Inactive" : "Active";
+        try
+        {
+            var res = await Http.PatchAsJsonAsync($"api/tenants/{tenant.Id}/status", new { status = newStatus });
+            if (res.IsSuccessStatusCode)
+            {
+                tenant.Status = newStatus;
+                Toast.Show($"{tenant.Name} set to {newStatus}.");
+                StateHasChanged();
+            }
+            else
+            {
+                Toast.Show("Failed to update status.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+    }
+
+    // inner models
+    class TenantRow
+    {
+        public Guid     Id        { get; set; }
+        public string   Name      { get; set; } = string.Empty;
+        public string   Subdomain { get; set; } = string.Empty;
+        public string   Status    { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public int      UserCount { get; set; }
+    }
+
+    class CreatedResult
+    {
+        public string TenantName   { get; set; } = string.Empty;
+        public string AdminEmail   { get; set; } = string.Empty;
+        public string TempPassword { get; set; } = string.Empty;
+    }
+}
+
+<h2 style="margin-bottom:20px;">🏢 Tenant Management</h2>
+
+@if (_lastCreated != null)
+{
+    <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:16px;margin-bottom:20px;">
+        <strong style="color:#065f46;">✅ Tenant Created Successfully</strong>
+        <div style="margin-top:8px;font-size:14px;color:#065f46;">
+            <div><strong>Tenant:</strong> @_lastCreated.TenantName</div>
+            <div><strong>Admin Email:</strong> @_lastCreated.AdminEmail</div>
+            <div>
+                <strong>Temp Password:</strong>
+                <code style="background:#d1fae5;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px;">@_lastCreated.TempPassword</code>
+            </div>
+            <div style="margin-top:6px;color:#6b7280;font-size:12px;">⚠️ Share this password securely — it won't be shown again.</div>
+        </div>
+        <button class="btn" style="margin-top:10px;font-size:12px;" @onclick="() => _lastCreated = null">Dismiss</button>
+    </div>
+}
+
+<!-- Toolbar -->
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <input class="input" style="width:260px;" placeholder="Search tenants..."
+           @bind="_search" @bind:event="oninput" />
+    <button class="btn btn-primary" @onclick="() => { _showCreate = !_showCreate; _lastCreated = null; }">
+        @(_showCreate ? "✕ Cancel" : "+ New Tenant")
+    </button>
+    <button class="btn" @onclick="LoadTenantsAsync" title="Refresh">↻ Refresh</button>
+</div>
+
+<!-- Create form -->
+@if (_showCreate)
+{
+    <div class="card" style="margin-bottom:20px;max-width:480px;">
+        <h4 style="margin-bottom:14px;">Create New Tenant</h4>
+        <input class="input full" placeholder="Company / Store Name *"
+               @bind="_newName" style="margin-bottom:8px;" />
+        <input class="input full" placeholder="Subdomain (e.g. mystore) *"
+               @bind="_newSubdomain" style="margin-bottom:8px;" />
+        <input class="input full" placeholder="Admin Email *"
+               type="email" @bind="_newEmail" style="margin-bottom:12px;" />
+        <button class="btn btn-primary" @onclick="CreateTenantAsync" disabled="@_creating">
+            @(_creating ? "Creating..." : "Create Tenant")
+        </button>
+    </div>
+}
+
+<!-- Tenant list -->
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (!Filtered.Any())
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No tenants found.</p>
+    </div>
+}
+else
+{
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table class="table" style="margin:0;">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Subdomain</th>
+                    <th>Users</th>
+                    <th>Created</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in Filtered)
+                {
+                    <tr>
+                        <td><strong>@t.Name</strong></td>
+                        <td style="color:#6b7280;font-family:monospace;">@t.Subdomain</td>
+                        <td>@t.UserCount</td>
+                        <td style="color:#6b7280;font-size:13px;">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <span style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;
+                                         background:@(t.Status == "Active" ? "#d1fae5" : "#fee2e2");
+                                         color:@(t.Status == "Active" ? "#065f46" : "#991b1b");">
+                                @t.Status
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn"
+                                    style="padding:3px 10px;font-size:12px;
+                                           @(t.Status == "Active" ? "color:#b91c1c;" : "color:#065f46;")"
+                                    @onclick="() => ToggleStatusAsync(t)">
+                                @(t.Status == "Active" ? "Deactivate" : "Activate")
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p style="margin-top:10px;color:#9ca3af;font-size:13px;">@Filtered.Count() tenant(s) total</p>
+}

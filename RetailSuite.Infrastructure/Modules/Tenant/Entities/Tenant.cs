@@ -14,7 +14,15 @@ public class Tenant
 
     public Tenant(string name, string subdomain)
     {
-        Name = name;
+        Name      = name;
         Subdomain = subdomain;
     }
+
+    public void Update(string name, string subdomain)
+    {
+        Name      = name;
+        Subdomain = subdomain;
+    }
+
+    public void SetStatus(string status) => Status = status;
 }

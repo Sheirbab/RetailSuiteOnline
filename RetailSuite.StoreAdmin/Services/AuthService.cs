@@ -21,7 +21,46 @@ public class AuthService
     public bool IsAuthenticated => !string.IsNullOrEmpty(Token);
     public string? Token { get; private set; }
 
+    /// <summary>
+    /// Role decoded from the JWT payload (e.g. "SuperAdmin", "Admin", "Staff", "Customer").
+    /// Returns empty string when not authenticated.
+    /// </summary>
+    public string Role => GetClaim("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
+                       ?? GetClaim("role")
+                       ?? string.Empty;
+
+    public bool IsSuperAdmin => Role == "SuperAdmin";
+
     public event Action? OnChange;
+
+    /// <summary>
+    /// Decodes a claim value from the stored JWT token without signature verification.
+    /// Safe for UI display purposes only — server always re-validates the signature.
+    /// </summary>
+    private string? GetClaim(string claimType)
+    {
+        if (string.IsNullOrEmpty(Token)) return null;
+        try
+        {
+            var parts = Token.Split('.');
+            if (parts.Length < 2) return null;
+
+            // JWT payload is base64url encoded
+            var payload = parts[1];
+            // Pad to multiple of 4
+            payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty(claimType, out var val))
+                return val.GetString();
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     /// <summary>Stores the token and sets the Authorization header on the shared HttpClient.</summary>
     public void SetToken(string token)

@@ -22,14 +22,25 @@ else
         <div class="sidebar">
             <h2>RetailSuite</h2>
 
-            <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
-            <NavLink href="/pos">POS Terminal</NavLink>
-            <NavLink href="/products">Products</NavLink>
-            <NavLink href="/inventory">Inventory</NavLink>
-            <NavLink href="/orders">Orders</NavLink>
-            <NavLink href="/customers">Customers</NavLink>
-            <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
-            <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>
+            @if (Auth.IsSuperAdmin)
+            {
+                <!-- Super Admin sees only platform-level management -->
+                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:8px 0 4px;display:block;">Platform</span>
+                <NavLink href="/admin/tenants" style="color:#fbbf24;">🏢 Tenant Management</NavLink>
+                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
+            }
+            else
+            {
+                <!-- Regular admin / staff nav -->
+                <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink href="/pos">POS Terminal</NavLink>
+                <NavLink href="/products">Products</NavLink>
+                <NavLink href="/inventory">Inventory</NavLink>
+                <NavLink href="/orders">Orders</NavLink>
+                <NavLink href="/customers">Customers</NavLink>
+                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
+                <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>
+            }
         </div>
 
         <!-- Main -->
@@ -37,7 +48,14 @@ else
 
             <!-- Header -->
             <div class="header">
-                <span style="font-weight:500;color:#374151;">Admin Panel</span>
+                @if (Auth.IsSuperAdmin)
+                {
+                    <span style="font-weight:600;color:#d97706;">⭐ Super Admin Portal</span>
+                }
+                else
+                {
+                    <span style="font-weight:500;color:#374151;">Admin Panel</span>
+                }
 
                 <button class="btn btn-danger" @onclick="Logout">
                     Logout
