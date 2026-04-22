@@ -1,9 +1,19 @@
 @page "/pos"
 @inject HttpClient Http
 @inject ToastService Toast
+@inject IJSRuntime JS
 @using System.Text.Json
+@implements IDisposable
 
 <h3 style="margin-bottom:20px;">Point of Sale</h3>
+
+<!-- Hidden barcode input — physical scanner sends keystrokes here -->
+<input id="barcodeInput"
+       style="position:absolute;left:-9999px;top:-9999px;opacity:0;width:1px;"
+       @onkeydown="OnBarcodeKeyDown"
+       @bind="_barcodeBuffer"
+       @bind:event="oninput"
+       autocomplete="off" />
 
 <div style="display:flex;gap:20px;align-items:flex-start;">
 
@@ -12,7 +22,7 @@
         <h4 style="margin-bottom:12px;">Products</h4>
 
         <input class="input full"
-               placeholder="Search SKU or product name..."
+               placeholder="Search SKU or product name... (or scan barcode)"
                @bind="_search"
                @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
 
@@ -23,6 +33,10 @@
                      @onclick="() => AddToCart(v)">
                     <div>
                         <strong>@v.SKU</strong>
+                        @if (!string.IsNullOrEmpty(v.Barcode))
+                        {
+                            <span style="font-size:11px;color:#9ca3af;margin-left:6px;">[@v.Barcode]</span>
+                        }
                         <div style="font-size:12px;color:#6b7280;">@v.ProductName</div>
                     </div>
                     <div style="text-align:right;">
@@ -121,12 +135,37 @@
                 <div style="font-weight:700;color:#15803d;font-size:16px;margin-bottom:10px;">
                     ✅ Sale Complete
                 </div>
-                <table style="width:100%;font-size:14px;">
-                    <tr><td>Total</td><td style="text-align:right;font-weight:600;">Rs @_lastReceipt.Total.ToString("N2")</td></tr>
-                    <tr><td>Paid</td><td style="text-align:right;font-weight:600;">Rs @_lastReceipt.Paid.ToString("N2")</td></tr>
-                    <tr style="color:#15803d;"><td><strong>Change</strong></td><td style="text-align:right;font-weight:700;">Rs @_lastReceipt.Change.ToString("N2")</td></tr>
-                </table>
-                <button class="btn" style="margin-top:12px;width:100%;" @onclick="() => _lastReceipt = null">New Sale</button>
+
+                <!-- Printable receipt area -->
+                <div id="receipt-printable">
+                    <h3 style="text-align:center;margin:0 0 8px;">RetailSuite</h3>
+                    <p style="text-align:center;margin:0 0 4px;font-size:12px;">@DateTime.Now.ToString("dd MMM yyyy HH:mm")</p>
+                    <hr />
+                    @foreach (var item in _lastReceipt.Items)
+                    {
+                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
+                            <span>@item.SKU × @item.Qty</span>
+                            <span>Rs @item.LineTotal.ToString("N2")</span>
+                        </div>
+                    }
+                    <hr />
+                    <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:4px;">
+                        <span>Total</span><span>Rs @_lastReceipt.Total.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px;">
+                        <span>Paid</span><span>Rs @_lastReceipt.Paid.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;color:#15803d;font-weight:700;">
+                        <span>Change</span><span>Rs @_lastReceipt.Change.ToString("N2")</span>
+                    </div>
+                    <hr />
+                    <p style="text-align:center;font-size:11px;color:#6b7280;">Thank you for shopping with us!</p>
+                </div>
+
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button class="btn btn-primary" style="flex:1;" @onclick="PrintReceipt">🖨 Print</button>
+                    <button class="btn" style="flex:1;" @onclick="() => _lastReceipt = null">New Sale</button>
+                </div>
             </div>
         }
     </div>
@@ -141,8 +180,29 @@
     bool             _checking;
     Receipt?         _lastReceipt;
 
+    // Barcode scanner state
+    string  _barcodeBuffer = string.Empty;
+    System.Timers.Timer? _barcodeTimer;
+
+    // -----------------------------------------------------------------------
+    // Lifecycle
+    // -----------------------------------------------------------------------
     protected override async Task OnInitializedAsync() => await LoadVariants();
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JS.InvokeVoidAsync("focusBarcodeInput");
+    }
+
+    public void Dispose()
+    {
+        _barcodeTimer?.Dispose();
+    }
+
+    // -----------------------------------------------------------------------
+    // Product loading
+    // -----------------------------------------------------------------------
     async Task LoadVariants()
     {
         try
@@ -161,6 +221,7 @@
                     {
                         Id            = item.TryGetProperty("id",            out var id)  ? id.GetGuid()      : Guid.Empty,
                         SKU           = item.TryGetProperty("sku",           out var sk)  ? sk.GetString()!   : "—",
+                        Barcode       = item.TryGetProperty("barcode",       out var bc)  ? bc.GetString()    : null,
                         Price         = item.TryGetProperty("price",         out var pr)  ? pr.GetDecimal()   : 0,
                         StockQuantity = item.TryGetProperty("stockQuantity", out var sq)  ? sq.GetInt32()     : 0,
                         ProductName   = item.TryGetProperty("productName",   out var pn)  ? pn.GetString()!   : string.Empty
@@ -174,12 +235,72 @@
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Barcode scanner
+    // -----------------------------------------------------------------------
+    void OnBarcodeKeyDown(KeyboardEventArgs e)
+    {
+        // Reset debounce timer on each keystroke
+        _barcodeTimer?.Dispose();
+        _barcodeTimer = new System.Timers.Timer(300);
+        _barcodeTimer.Elapsed += (_, _) =>
+        {
+            _barcodeTimer?.Dispose();
+            _barcodeTimer = null;
+
+            // A barcode is typically >3 chars; Enter key also triggers commit
+            if (_barcodeBuffer.Length > 2)
+            {
+                var code = _barcodeBuffer.Trim();
+                _barcodeBuffer = string.Empty;
+                InvokeAsync(() =>
+                {
+                    LookupAndAddByBarcode(code);
+                    StateHasChanged();
+                });
+            }
+            else
+            {
+                InvokeAsync(() => { _barcodeBuffer = string.Empty; });
+            }
+        };
+        _barcodeTimer.AutoReset = false;
+        _barcodeTimer.Start();
+
+        // Enter key immediate trigger
+        if (e.Key == "Enter" && _barcodeBuffer.Length > 0)
+        {
+            _barcodeTimer?.Dispose();
+            _barcodeTimer = null;
+            var code = _barcodeBuffer.Trim();
+            _barcodeBuffer = string.Empty;
+            LookupAndAddByBarcode(code);
+        }
+    }
+
+    void LookupAndAddByBarcode(string code)
+    {
+        // Try barcode field first, then SKU
+        var v = _variants.FirstOrDefault(x =>
+            (!string.IsNullOrEmpty(x.Barcode) && x.Barcode.Equals(code, StringComparison.OrdinalIgnoreCase)) ||
+            x.SKU.Equals(code, StringComparison.OrdinalIgnoreCase));
+
+        if (v == null)
+            Toast.Show($"Barcode '{code}' not found.");
+        else
+            AddToCart(v);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cart operations
+    // -----------------------------------------------------------------------
     IEnumerable<VariantDto> FilteredVariants =>
         string.IsNullOrWhiteSpace(_search)
             ? _variants
             : _variants.Where(v =>
                 v.SKU.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
-                v.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+                v.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrEmpty(v.Barcode) && v.Barcode.Contains(_search, StringComparison.OrdinalIgnoreCase)));
 
     void AddToCart(VariantDto v)
     {
@@ -209,16 +330,21 @@
 
     decimal Total => _cart.Sum(x => x.Price * x.Quantity);
 
+    // -----------------------------------------------------------------------
+    // Checkout
+    // -----------------------------------------------------------------------
     async Task Checkout()
     {
         if (!_cart.Any()) return;
         _checking = true;
 
+        var cartSnapshot = _cart.Select(x => new { x.ProductVariantId, x.SKU, x.Price, x.Quantity }).ToList();
+
         var request = new
         {
             customerId = (Guid?)null,
             paidAmount = _paidAmount,
-            items      = _cart.Select(x => new { productVariantId = x.ProductVariantId, quantity = x.Quantity }).ToList()
+            items      = cartSnapshot.Select(x => new { productVariantId = x.ProductVariantId, quantity = x.Quantity }).ToList()
         };
 
         try
@@ -232,7 +358,20 @@
                 var orderId    = Guid.Empty;
                 if (doc.RootElement.TryGetProperty("data", out var d)) orderId = d.GetGuid();
 
-                _lastReceipt = new Receipt { OrderId = orderId, Total = Total, Paid = _paidAmount, Change = _paidAmount - Total };
+                _lastReceipt = new Receipt
+                {
+                    OrderId = orderId,
+                    Total   = Total,
+                    Paid    = _paidAmount,
+                    Change  = _paidAmount - Total,
+                    Items   = cartSnapshot.Select(x => new ReceiptLine
+                    {
+                        SKU       = x.SKU,
+                        Qty       = x.Quantity,
+                        LineTotal = x.Price * x.Quantity
+                    }).ToList()
+                };
+
                 _cart.Clear();
                 _paidAmount = 0;
                 await LoadVariants();
@@ -248,10 +387,22 @@
         _checking = false;
     }
 
+    // -----------------------------------------------------------------------
+    // Receipt printing
+    // -----------------------------------------------------------------------
+    async Task PrintReceipt()
+    {
+        await JS.InvokeVoidAsync("printReceipt");
+    }
+
+    // -----------------------------------------------------------------------
+    // Inner classes
+    // -----------------------------------------------------------------------
     class VariantDto
     {
         public Guid    Id            { get; set; }
         public string  SKU           { get; set; } = string.Empty;
+        public string? Barcode       { get; set; }
         public string  ProductName   { get; set; } = string.Empty;
         public decimal Price         { get; set; }
         public int     StockQuantity { get; set; }
@@ -271,5 +422,13 @@
         public decimal Total   { get; set; }
         public decimal Paid    { get; set; }
         public decimal Change  { get; set; }
+        public List<ReceiptLine> Items { get; set; } = new();
+    }
+
+    class ReceiptLine
+    {
+        public string  SKU       { get; set; } = string.Empty;
+        public int     Qty       { get; set; }
+        public decimal LineTotal { get; set; }
     }
 }

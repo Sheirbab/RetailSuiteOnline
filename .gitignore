@@ -21,3 +21,5 @@ RetailSuite.Admin/bin/
 RetailSuite.StoreAdmin/bin/
 RetailSuite.StoreAdmin/obj/
 RetailSuite.Infrastructure/Migrations/
+RetailSuite.Tests/bin/
+RetailSuite.Tests/obj/

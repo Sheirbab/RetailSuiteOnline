@@ -8,6 +8,7 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddSingleton<CartService>();
 
 builder.Services.AddScoped(sp =>
 {
