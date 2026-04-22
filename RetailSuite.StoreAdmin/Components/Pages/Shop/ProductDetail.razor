@@ -1,0 +1,151 @@
+@page "/shop/product/{Id:guid}"
+@layout CustomerLayout
+@inject HttpClient Http
+@inject CartService Cart
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_product == null)
+{
+    <p>Product not found. <a href="/shop">← Back to shop</a></p>
+}
+else
+{
+    <div style="display:flex;gap:32px;flex-wrap:wrap;max-width:800px;">
+        <div style="flex:0 0 260px;">
+            @if (!string.IsNullOrEmpty(_product.ImageUrl))
+            {
+                <img src="@_product.ImageUrl" alt="@_product.Name"
+                     style="width:100%;border-radius:8px;border:1px solid #e5e7eb;" />
+            }
+            else
+            {
+                <div style="width:100%;height:200px;background:#f3f4f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:48px;">📦</div>
+            }
+        </div>
+        <div style="flex:1;min-width:220px;">
+            <h2 style="margin-bottom:8px;">@_product.Name</h2>
+            @if (!string.IsNullOrEmpty(_product.Description))
+            {
+                <p style="color:#6b7280;margin-bottom:16px;">@_product.Description</p>
+            }
+
+            @if (_product.Variants.Count > 1)
+            {
+                <div style="margin-bottom:12px;">
+                    <label style="font-weight:600;">Select variant:</label>
+                    <select class="input" style="width:200px;margin-top:4px;" @bind="_selectedVariantId">
+                        @foreach (var v in _product.Variants)
+                        {
+                            <option value="@v.Id">@v.SKU — Rs @v.Price.ToString("N2")</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (_selected != null)
+            {
+                <div style="font-size:24px;font-weight:700;margin-bottom:16px;">Rs @_selected.Price.ToString("N2")</div>
+            }
+
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;">
+                <input type="number" class="input" style="width:80px;" @bind="_qty" min="1" />
+                <button class="btn btn-primary" @onclick="AddToCart">Add to Cart</button>
+            </div>
+
+            <a href="/shop" style="color:#6b7280;font-size:14px;">← Continue shopping</a>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    bool              _loading = true;
+    ProductDetailDto? _product;
+    Guid         _selectedVariantId;
+    int          _qty = 1;
+
+    VariantDetail? _selected => _product?.Variants.FirstOrDefault(v => v.Id == _selectedVariantId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/products/{Id}");
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var data = root.TryGetProperty("data", out var d) ? d : root;
+
+            _product = new ProductDetailDto
+            {
+                Id          = data.TryGetProperty("id",          out var id)  ? id.GetGuid()    : Guid.Empty,
+                Name        = data.TryGetProperty("name",        out var nm)  ? nm.GetString()! : "—",
+                Description = data.TryGetProperty("description", out var desc)? desc.GetString(): null,
+                ImageUrl    = data.TryGetProperty("imageUrl",    out var img) ? img.GetString() : null,
+                Variants    = new()
+            };
+
+            if (data.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in vars.EnumerateArray())
+                {
+                    _product.Variants.Add(new VariantDetail
+                    {
+                        Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
+                        SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
+                        Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
+                    });
+                }
+            }
+
+            if (_product.Variants.Any())
+                _selectedVariantId = _product.Variants[0].Id;
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    void AddToCart()
+    {
+        if (_selected == null || _product == null) return;
+        if (_qty < 1) _qty = 1;
+
+        Cart.AddItem(new CartItem
+        {
+            VariantId   = _selected.Id,
+            ProductId   = _product.Id,
+            ProductName = _product.Name,
+            SKU         = _selected.SKU,
+            ImageUrl    = _product.ImageUrl,
+            UnitPrice   = _selected.Price,
+            Quantity    = _qty
+        });
+        Toast.Show($"{_product.Name} added to cart.");
+    }
+
+    class ProductDetailDto
+    {
+        public Guid   Id          { get; set; }
+        public string Name        { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? ImageUrl   { get; set; }
+        public List<VariantDetail> Variants { get; set; } = new();
+    }
+
+    class VariantDetail
+    {
+        public Guid    Id    { get; set; }
+        public string  SKU   { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+    }
+}

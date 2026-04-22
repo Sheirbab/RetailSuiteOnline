@@ -5,6 +5,7 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Infrastructure.Modules.Identity;
 
 [Authorize(Policy = "StaffOrAdmin")]
 [ApiController]
@@ -12,21 +13,35 @@ using RetailSuite.Shared;
 public class ProductsController : ControllerBase
 {
     private readonly RetailDbContext _db;
+    private readonly IWebHostEnvironment _env;
+    private readonly ICurrentUserContext _currentUser;
 
-    public ProductsController(RetailDbContext db)
+    public ProductsController(RetailDbContext db, IWebHostEnvironment env, ICurrentUserContext currentUser)
     {
         _db = db;
+        _env = env;
+        _currentUser = currentUser;
     }
 
-    // GET /api/products
+    // GET /api/products?page=1&pageSize=20
     [HttpGet]
-    public async Task<IActionResult> Get()
+    public async Task<IActionResult> Get(int page = 1, int pageSize = 20)
     {
-        var products = await _db.Products
-            .Include(p => p.Variants)
+        var query = _db.Products.Include(p => p.Variants).AsQueryable();
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderBy(p => p.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
-        return Ok(new ApiResponse<object>(true, null, products));
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            Total    = total,
+            Page     = page,
+            PageSize = pageSize,
+            Items    = items
+        }));
     }
 
     // GET /api/products/{id}
@@ -141,10 +156,49 @@ public class ProductsController : ControllerBase
             return NotFound(ApiResponse<object>.Fail("Product not found."));
 
         var variant = new ProductVariant(productId, request.SKU, request.Price);
+        if (request.TaxRate > 0) variant.SetTaxRate(request.TaxRate);
         product.AddVariant(variant);
         await _db.SaveChangesAsync();
 
         return Ok(new ApiResponse<Guid>(true, "Variant added.", variant.Id));
+    }
+
+    // POST /api/products/{id}/image
+    [HttpPost("{id}/image")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadImage(Guid id, IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("No file provided."));
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+        if (!allowedExtensions.Contains(ext))
+            return BadRequest(ApiResponse<object>.Fail("Only jpg, png, and webp images are allowed."));
+
+        if (file.Length > 5 * 1024 * 1024)
+            return BadRequest(ApiResponse<object>.Fail("Image must be under 5 MB."));
+
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null)
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        var tenantId = _currentUser.TenantId;
+        var uploadDir = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads", tenantId.ToString());
+        Directory.CreateDirectory(uploadDir);
+
+        var fileName = $"{Guid.NewGuid():N}{ext}";
+        var filePath  = Path.Combine(uploadDir, fileName);
+
+        await using (var stream = System.IO.File.Create(filePath))
+            await file.CopyToAsync(stream);
+
+        var relativeUrl = $"/uploads/{tenantId}/{fileName}";
+        product.SetImageUrl(relativeUrl);
+        await _db.SaveChangesAsync();
+
+        return Ok(new ApiResponse<string>(true, "Image uploaded.", relativeUrl));
     }
 
     // POST /api/products/{productId}/categories/{categoryId}

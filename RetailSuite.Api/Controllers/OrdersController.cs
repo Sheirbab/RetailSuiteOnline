@@ -132,5 +132,18 @@ namespace RetailSuite.Api.Controllers
             var orderId = await _orderService.CreateDraftAsync(request);
             return Ok(orderId);
         }
+
+        /// <summary>Process a return/refund for a completed or confirmed order.</summary>
+        [Authorize(Policy = "StaffOrAdmin")]
+        [HttpPost("{id}/return")]
+        public async Task<IActionResult> Return(Guid id, [FromBody] ReturnOrderRequest request)
+        {
+            var refundAmount = await _orderService.ProcessReturnAsync(id, request);
+            return Ok(new ApiResponse<object>(true, "Return processed successfully.", new
+            {
+                OrderId      = id,
+                RefundAmount = refundAmount
+            }));
+        }
     }
 }

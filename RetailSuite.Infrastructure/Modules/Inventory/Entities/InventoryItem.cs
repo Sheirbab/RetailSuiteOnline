@@ -1,4 +1,5 @@
-﻿using RetailSuite.Shared;
+﻿using RetailSuite.Infrastructure.Exceptions;
+using RetailSuite.Shared;
 
 namespace RetailSuite.Infrastructure.Modules.Inventory.Entities;
 
@@ -52,7 +53,7 @@ public class InventoryItem : TenantEntity
             throw new ArgumentException("Quantity must be positive.");
 
         if (CurrentStock < quantity)
-            throw new InvalidOperationException("Insufficient stock.");
+            throw new BusinessRuleException($"Insufficient stock. Available: {CurrentStock}, requested: {quantity}.");
 
         var costAmount = AverageCost * quantity;
 

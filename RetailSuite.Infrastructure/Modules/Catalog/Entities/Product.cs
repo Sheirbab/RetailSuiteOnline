@@ -7,6 +7,8 @@ public class Product : TenantEntity
     public string Name { get; private set; }
     public string Description { get; private set; }
     public bool IsActive { get; private set; } = true;
+    /// <summary>Relative URL of the product image, e.g. /uploads/{tenantId}/abc.jpg</summary>
+    public string? ImageUrl { get; private set; }
 
     private readonly List<ProductVariant> _variants = new();
     public IReadOnlyCollection<ProductVariant> Variants => _variants;
@@ -29,6 +31,8 @@ public class Product : TenantEntity
         Name = name;
         Description = description ?? "";
     }
+
+    public void SetImageUrl(string url) => ImageUrl = url;
 
     public void AddVariant(ProductVariant variant)
     {

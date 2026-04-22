@@ -24,10 +24,18 @@ public class InventoryController : ControllerBase
         _inventoryService = inventoryService;
     }
     [HttpGet("all")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(int page = 1, int pageSize = 50)
     {
-        var data = await _db.ProductVariants
+        var query = _db.ProductVariants
             .Include(v => v.Product)
+            .AsQueryable();
+
+        var total = await query.CountAsync();
+
+        var data = await query
+            .OrderBy(v => v.SKU)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(v => new InventoryItemDto
             {
                 Id = v.Id,
@@ -38,7 +46,7 @@ public class InventoryController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(data);
+        return Ok(new { Total = total, Page = page, PageSize = pageSize, Items = data });
     }
 
     // ---------------------------------------

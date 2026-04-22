@@ -1,4 +1,5 @@
-﻿using RetailSuite.Infrastructure.Modules.Customer.Entities;
+﻿using RetailSuite.Infrastructure.Exceptions;
+using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Shared;
 
@@ -13,6 +14,8 @@ public class Order : TenantEntity
     public OrderStatus Status { get; private set; }
 
     public decimal TotalAmount { get; private set; }
+    /// <summary>Total tax charged across all items. Populated when the order is confirmed/completed.</summary>
+    public decimal TaxAmount { get; private set; }
 
     public decimal PaidAmount { get; private set; }
     public decimal OutstandingAmount => TotalAmount - PaidAmount;
@@ -35,24 +38,26 @@ public class Order : TenantEntity
     public void AddItem(OrderItem item)
     {
         if (Status != OrderStatus.Draft)
-            throw new InvalidOperationException("Only draft orders can be modified.");
+            throw new BusinessRuleException("Only draft orders can be modified.");
 
         _items.Add(item);
         TotalAmount += item.LineTotal;
+        TaxAmount   += item.LineTaxAmount;
     }
     public void ClearItems()
     {
         if (Status != OrderStatus.Draft)
-            throw new InvalidOperationException("Only draft orders can be modified.");
+            throw new BusinessRuleException("Only draft orders can be modified.");
 
         _items.Clear();
         TotalAmount = 0;
+        TaxAmount   = 0;
     }
 
     public void Confirm()
     {
         if (Status != OrderStatus.Draft)
-            throw new InvalidOperationException("Only draft orders can be confirmed.");
+            throw new BusinessRuleException("Only draft orders can be confirmed.");
 
         Status = OrderStatus.Confirmed;
     }
@@ -60,7 +65,7 @@ public class Order : TenantEntity
     public void Cancel()
     {
         if (Status == OrderStatus.Cancelled)
-            throw new InvalidOperationException("Already cancelled.");
+            throw new BusinessRuleException("Order is already cancelled.");
 
         Status = OrderStatus.Cancelled;
     }
@@ -71,9 +76,21 @@ public class Order : TenantEntity
             throw new ArgumentException("Invalid payment.");
 
         if (PaidAmount + amount > TotalAmount)
-            throw new InvalidOperationException("Overpayment.");
+            throw new BusinessRuleException("Payment would exceed the order total.");
 
         PaidAmount += amount;
     }
     public void Complete() => Status = OrderStatus.Completed;
+
+    /// <summary>Records a partial/full return, reducing the paid amount accordingly.</summary>
+    public void ApplyReturn(decimal returnAmount)
+    {
+        if (returnAmount <= 0)
+            throw new BusinessRuleException("Return amount must be positive.");
+
+        if (returnAmount > PaidAmount)
+            throw new BusinessRuleException("Return amount exceeds the amount paid.");
+
+        PaidAmount -= returnAmount;
+    }
 }

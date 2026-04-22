@@ -66,11 +66,12 @@ public class AuthController : ControllerBase
             // 3. Seed Chart of Accounts
             var accounts = new List<Account>
             {
-                new Account("1000", "Cash",                  AccountType.Asset)   { TenantId = tenant.Id },
-                new Account("1100", "Inventory",             AccountType.Asset)   { TenantId = tenant.Id },
-                new Account("1200", "Accounts Receivable",   AccountType.Asset)   { TenantId = tenant.Id },
-                new Account("4000", "Revenue",               AccountType.Revenue) { TenantId = tenant.Id },
-                new Account("5000", "Cost of Goods Sold",    AccountType.Expense) { TenantId = tenant.Id },
+                new Account("1000", "Cash",                  AccountType.Asset)     { TenantId = tenant.Id },
+                new Account("1100", "Inventory",             AccountType.Asset)     { TenantId = tenant.Id },
+                new Account("1200", "Accounts Receivable",   AccountType.Asset)     { TenantId = tenant.Id },
+                new Account("2000", "Tax Payable",           AccountType.Liability) { TenantId = tenant.Id },
+                new Account("4000", "Revenue",               AccountType.Revenue)   { TenantId = tenant.Id },
+                new Account("5000", "Cost of Goods Sold",    AccountType.Expense)   { TenantId = tenant.Id },
             };
             _Db.Accounts.AddRange(accounts);
             await _Db.SaveChangesAsync();

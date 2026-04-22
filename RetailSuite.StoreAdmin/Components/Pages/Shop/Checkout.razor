@@ -1,0 +1,165 @@
+@page "/checkout"
+@layout CustomerLayout
+@inject HttpClient Http
+@inject CartService Cart
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+@if (_confirmed)
+{
+    <div class="card" style="text-align:center;padding:40px;">
+        <div style="font-size:48px;margin-bottom:16px;">✅</div>
+        <h2>Order Confirmed!</h2>
+        <p style="color:#6b7280;margin-bottom:8px;">Order Number: <strong>@_orderNumber</strong></p>
+        <p style="color:#6b7280;">A receipt has been sent to @_email</p>
+        <button class="btn btn-primary" style="margin-top:24px;" @onclick="GoShop">
+            Continue Shopping
+        </button>
+    </div>
+}
+else
+{
+    <div style="max-width:480px;">
+        <h2 style="margin-bottom:20px;">Checkout</h2>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:10px;margin-bottom:12px;color:#b91c1c;font-size:14px;">
+                @_error
+            </div>
+        }
+
+        <div class="card" style="margin-bottom:16px;">
+            <h4 style="margin-bottom:12px;">Your Details</h4>
+            <input class="input full" placeholder="First Name *" @bind="_firstName" style="margin-bottom:8px;" />
+            <input class="input full" placeholder="Last Name *"  @bind="_lastName"  style="margin-bottom:8px;" />
+            <input class="input full" placeholder="Email *"      @bind="_email"      type="email" style="margin-bottom:8px;" />
+            <input class="input full" placeholder="Password (min 8 chars) *" @bind="_password" type="password" style="margin-bottom:8px;" />
+            <input class="input full" placeholder="Phone (optional)"         @bind="_phone" />
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <h4 style="margin-bottom:12px;">Order Summary</h4>
+            @foreach (var item in Cart.Items)
+            {
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span>@item.ProductName × @item.Quantity</span>
+                    <span>Rs @item.LineTotal.ToString("N2")</span>
+                </div>
+            }
+            <hr style="margin:8px 0;" />
+            <div style="display:flex;justify-content:space-between;font-weight:700;">
+                <span>Total</span>
+                <span>Rs @Cart.TotalAmount.ToString("N2")</span>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;" @onclick="PlaceOrder" disabled="@_placing">
+            @(_placing ? "Placing Order..." : "Place Order")
+        </button>
+    </div>
+}
+
+@code {
+    bool    _placing;
+    bool    _confirmed;
+    string? _error;
+    string? _orderNumber;
+
+    string? _firstName;
+    string? _lastName;
+    string? _email;
+    string? _password;
+    string? _phone;
+
+    void GoShop() => Nav.NavigateTo("/shop");
+
+    async Task PlaceOrder()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_firstName) || string.IsNullOrWhiteSpace(_lastName) ||
+            string.IsNullOrWhiteSpace(_email)     || string.IsNullOrWhiteSpace(_password))
+        {
+            _error = "First name, last name, email and password are required.";
+            return;
+        }
+
+        if (_password.Length < 8)
+        {
+            _error = "Password must be at least 8 characters.";
+            return;
+        }
+
+        if (!Cart.Items.Any())
+        {
+            _error = "Your cart is empty.";
+            return;
+        }
+
+        _placing = true;
+        try
+        {
+            // 1. Register customer (or reuse existing — API deduplication handles this)
+            var regPayload = new
+            {
+                firstName = _firstName,
+                lastName  = _lastName,
+                email     = _email,
+                password  = _password,
+                phone     = _phone
+            };
+
+            var regRes = await Http.PostAsJsonAsync("api/customers/register", regPayload);
+            Guid customerId = Guid.Empty;
+
+            if (regRes.IsSuccessStatusCode)
+            {
+                var regContent = await regRes.Content.ReadAsStringAsync();
+                using var regDoc = JsonDocument.Parse(regContent);
+                if (regDoc.RootElement.TryGetProperty("data", out var dataEl))
+                    customerId = dataEl.GetGuid();
+            }
+            // If registration fails (e.g. duplicate) we still attempt checkout with Guid.Empty
+
+            // 2. Checkout
+            var checkoutPayload = new
+            {
+                customerId   = customerId == Guid.Empty ? (Guid?)null : customerId,
+                paidAmount   = Cart.TotalAmount,
+                items        = Cart.Items.Select(i => new
+                {
+                    productVariantId = i.VariantId,
+                    quantity         = i.Quantity
+                }).ToList()
+            };
+
+            var checkoutRes = await Http.PostAsJsonAsync("api/sales/checkout", checkoutPayload);
+            var checkoutContent = await checkoutRes.Content.ReadAsStringAsync();
+
+            if (checkoutRes.IsSuccessStatusCode)
+            {
+                using var checkDoc = JsonDocument.Parse(checkoutContent);
+                var orderId = checkDoc.RootElement.TryGetProperty("data", out var od)
+                    ? od.GetGuid() : Guid.Empty;
+
+                _orderNumber = $"POS-{orderId.ToString()[..8].ToUpper()}";
+                Cart.Clear();
+                _confirmed = true;
+            }
+            else
+            {
+                using var errDoc = JsonDocument.Parse(checkoutContent);
+                _error = errDoc.RootElement.TryGetProperty("message", out var msg)
+                    ? msg.GetString()
+                    : "Checkout failed. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
+        }
+        _placing = false;
+    }
+}

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RetailSuite.Infrastructure;
 
@@ -11,9 +12,11 @@ using RetailSuite.Infrastructure;
 namespace RetailSuite.Infrastructure.Migrations
 {
     [DbContext(typeof(RetailDbContext))]
-    partial class RetailDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260407123009_RetailSuite")]
+    partial class RetailSuite
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -401,10 +404,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
-                    b.Property<string>("ImageUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -505,9 +504,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal>("AverageCost")
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<string>("Barcode")
                         .HasColumnType("nvarchar(max)");
 
@@ -533,14 +529,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("StockQuantity")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("TaxRate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,4)")
-                        .HasDefaultValue(0m);
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -596,11 +584,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<decimal>("TaxAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,2)")
-                        .HasDefaultValue(0m);
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -643,11 +626,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<decimal>("TaxRate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,4)")
-                        .HasDefaultValue(0m);
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -666,7 +644,7 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", null)
                         .WithMany("Transactions")
                         .HasForeignKey("InventoryItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -675,7 +653,7 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Accounting.Entities.JournalEntry", null)
                         .WithMany("Lines")
                         .HasForeignKey("JournalEntryId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -684,7 +662,7 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Orders.Entities.Order", null)
                         .WithMany("Payments")
                         .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -701,7 +679,7 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductAttribute", null)
                         .WithMany()
                         .HasForeignKey("AttributeId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -710,19 +688,18 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Category", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", null)
                         .WithMany("Categories")
-                        .HasForeignKey("ProductId1")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .HasForeignKey("ProductId1");
 
                     b.Navigation("Category");
 
@@ -731,13 +708,11 @@ namespace RetailSuite.Infrastructure.Migrations
 
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.ProductVariant", b =>
                 {
-                    b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", "Product")
+                    b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", null)
                         .WithMany("Variants")
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.VariantAttributeValue", b =>
@@ -745,13 +720,13 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductAttributeValue", "ProductAttributeValue")
                         .WithMany()
                         .HasForeignKey("ProductAttributeValueId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductVariant", "ProductVariant")
                         .WithMany("AttributeValues")
                         .HasForeignKey("ProductVariantId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("ProductAttributeValue");
@@ -775,7 +750,7 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Modules.Orders.Entities.Order", null)
                         .WithMany("Items")
                         .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

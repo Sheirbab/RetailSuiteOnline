@@ -12,6 +12,8 @@ public class ProductVariant : TenantEntity
     public bool IsActive { get; private set; } = true;
     public int StockQuantity { get; set; }
     public decimal AverageCost { get; set; }
+    /// <summary>Tax rate as a fraction (e.g. 0.17 = 17% GST). Defaults to 0.</summary>
+    public decimal TaxRate { get; private set; } = 0;
     public Product Product { get; set; }
 
     private readonly List<VariantAttributeValue> _attributeValues = new();
@@ -43,5 +45,13 @@ public class ProductVariant : TenantEntity
             throw new ArgumentException("Invalid price.");
 
         Price = price;
+    }
+
+    public void SetTaxRate(decimal rate)
+    {
+        if (rate < 0 || rate > 1)
+            throw new ArgumentException("Tax rate must be between 0 and 1 (e.g. 0.17 for 17%).");
+
+        TaxRate = rate;
     }
 }

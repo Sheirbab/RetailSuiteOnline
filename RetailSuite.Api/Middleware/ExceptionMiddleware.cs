@@ -1,5 +1,6 @@
 ﻿namespace RetailSuite.Api.Middleware
 {
+    using RetailSuite.Infrastructure.Exceptions;
     using RetailSuite.Shared;
     using System.Net;
     using System.Text.Json;
@@ -25,16 +26,19 @@
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, ex.Message);
+                _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
 
                 context.Response.ContentType = "application/json";
 
                 context.Response.StatusCode = ex switch
                 {
-                    UnauthorizedAccessException => (int)HttpStatusCode.Unauthorized,
-                    InvalidOperationException => (int)HttpStatusCode.BadRequest,
-                    ArgumentException => (int)HttpStatusCode.BadRequest,
-                    _ => (int)HttpStatusCode.InternalServerError
+                    NotFoundException             => (int)HttpStatusCode.NotFound,
+                    ConflictException             => (int)HttpStatusCode.Conflict,
+                    BusinessRuleException         => 422, // Unprocessable Entity
+                    UnauthorizedAccessException   => (int)HttpStatusCode.Unauthorized,
+                    InvalidOperationException     => (int)HttpStatusCode.BadRequest,
+                    ArgumentException             => (int)HttpStatusCode.BadRequest,
+                    _                             => (int)HttpStatusCode.InternalServerError
                 };
 
                 var response = new ApiResponse<object>
@@ -43,8 +47,8 @@
                     Message = ex.Message
                 };
 
-                await context.Response.WriteAsync(
-                    JsonSerializer.Serialize(response));
+                var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
             }
         }
     }

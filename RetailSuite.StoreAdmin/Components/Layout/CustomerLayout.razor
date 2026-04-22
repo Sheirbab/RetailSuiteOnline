@@ -1,0 +1,42 @@
+@inherits LayoutComponentBase
+@inject CartService Cart
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="shop-layout">
+    <header class="shop-header">
+        <div class="shop-header-inner">
+            <a href="/shop" class="shop-brand">🛍 RetailSuite Store</a>
+            <nav class="shop-nav">
+                <a href="/shop">Shop</a>
+                <a href="/cart" class="cart-link">
+                    🛒 Cart
+                    @if (Cart.TotalCount > 0)
+                    {
+                        <span class="cart-badge">@Cart.TotalCount</span>
+                    }
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="shop-main">
+        @Body
+    </main>
+
+    <footer class="footer" style="margin-top:40px;">
+        <span>© @DateTime.Now.Year RetailSuite</span>
+    </footer>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Cart.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Cart.OnChange -= StateHasChanged;
+    }
+}

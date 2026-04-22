@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
@@ -243,7 +244,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null)
-                throw new Exception("Order not found.");
+                throw new NotFoundException("Order", orderId);
 
             order.ClearItems();
 
@@ -263,6 +264,89 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             }
 
             await _db.SaveChangesAsync();
+        }
+
+        // ---------------------------------------
+        // Process Return / Refund
+        // ---------------------------------------
+        public async Task<decimal> ProcessReturnAsync(Guid orderId, ReturnOrderRequest request)
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync();
+
+            var order = await _db.Orders
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null)
+                throw new NotFoundException("Order", orderId);
+
+            if (order.Status != OrderStatus.Completed && order.Status != OrderStatus.Confirmed)
+                throw new BusinessRuleException("Only confirmed or completed orders can be returned.");
+
+            // Build map of items to return (fall back to full order if no items specified)
+            var returnLines = request.Items.Any()
+                ? request.Items
+                : order.Items.Select(i => new ReturnLineItem
+                    { ProductVariantId = i.ProductVariantId, Quantity = i.Quantity }).ToList();
+
+            decimal totalReturnValue = 0;
+            decimal totalCogsRestored = 0;
+
+            // Get accounts
+            var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+            var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
+            var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
+
+            foreach (var line in returnLines)
+            {
+                var orderItem = order.Items.FirstOrDefault(i => i.ProductVariantId == line.ProductVariantId);
+                if (orderItem == null)
+                    throw new BusinessRuleException($"Variant {line.ProductVariantId} was not in the original order.");
+
+                if (line.Quantity <= 0 || line.Quantity > orderItem.Quantity)
+                    throw new BusinessRuleException($"Invalid return quantity for variant {line.ProductVariantId}.");
+
+                var inventoryItem = await _db.InventoryItems
+                    .FirstAsync(i => i.ProductVariantId == line.ProductVariantId);
+
+                var costRestored = inventoryItem.AverageCost * line.Quantity;
+
+                // Restore stock
+                inventoryItem.ReceiveStock(line.Quantity, inventoryItem.AverageCost);
+                totalCogsRestored += costRestored;
+
+                var lineValue = orderItem.UnitPrice * line.Quantity;
+                totalReturnValue += lineValue;
+
+                _db.InventoryTransactions.Add(new InventoryTransaction(
+                    inventoryItem.Id,
+                    line.ProductVariantId,
+                    line.Quantity,
+                    InventoryTransactionType.AdjustmentIncrease,
+                    order.Id.ToString(),
+                    $"Return for order {order.OrderNumber}"));
+            }
+
+            // Reversal journal entry: reverse revenue + COGS
+            await _accountingService.CreateJournalEntryAsync(
+                order.Id.ToString(),
+                $"Return for Order {order.OrderNumber}",
+                new List<(Guid, decimal, decimal)>
+                {
+                    (revenueAccount.Id,   totalReturnValue,  0),               // DR Revenue
+                    (cashAccount.Id,      0,                 totalReturnValue), // CR Cash (refund)
+                    (inventoryAccount.Id, totalCogsRestored, 0),               // DR Inventory
+                    (cogsAccount.Id,      0,                 totalCogsRestored) // CR COGS
+                });
+
+            // Reduce paid amount
+            order.ApplyReturn(totalReturnValue);
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return totalReturnValue;
         }
     }
 }

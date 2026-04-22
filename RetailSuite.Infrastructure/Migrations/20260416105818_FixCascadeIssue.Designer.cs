@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RetailSuite.Infrastructure;
 
@@ -11,9 +12,11 @@ using RetailSuite.Infrastructure;
 namespace RetailSuite.Infrastructure.Migrations
 {
     [DbContext(typeof(RetailDbContext))]
-    partial class RetailDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260416105818_FixCascadeIssue")]
+    partial class FixCascadeIssue
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -401,10 +404,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
-                    b.Property<string>("ImageUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -537,11 +536,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<int>("StockQuantity")
                         .HasColumnType("int");
 
-                    b.Property<decimal>("TaxRate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,4)")
-                        .HasDefaultValue(0m);
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -596,11 +590,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<decimal>("TaxAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,2)")
-                        .HasDefaultValue(0m);
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -642,11 +631,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<decimal>("TaxRate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,4)")
-                        .HasDefaultValue(0m);
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");

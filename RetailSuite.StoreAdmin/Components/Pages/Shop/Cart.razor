@@ -1,0 +1,81 @@
+@page "/cart"
+@layout CustomerLayout
+@inject CartService CartSvc
+@inject NavigationManager Nav
+@implements IDisposable
+
+<h2 style="margin-bottom:20px;">Your Cart</h2>
+
+@if (!CartSvc.Items.Any())
+{
+    <div class="card">
+        <p style="color:#9ca3af;">Your cart is empty. <a href="/shop">Browse products →</a></p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Unit Price</th>
+                    <th>Qty</th>
+                    <th>Line Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in CartSvc.Items)
+                {
+                    <tr>
+                        <td>
+                            @if (!string.IsNullOrEmpty(item.ImageUrl))
+                            {
+                                <img src="@item.ImageUrl" style="width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:8px;" />
+                            }
+                            <strong>@item.ProductName</strong>
+                        </td>
+                        <td>@item.SKU</td>
+                        <td>Rs @item.UnitPrice.ToString("N2")</td>
+                        <td>
+                            <input type="number" class="input" style="width:60px;"
+                                   value="@item.Quantity"
+                                   min="1"
+                                   @onchange="e => UpdateQtyFromEvent(item.VariantId, e)" />
+                        </td>
+                        <td><strong>Rs @item.LineTotal.ToString("N2")</strong></td>
+                        <td>
+                            <button class="btn btn-danger" style="padding:2px 8px;font-size:12px;"
+                                    @onclick="() => CartSvc.RemoveItem(item.VariantId)">✕</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div style="text-align:right;margin-top:16px;">
+            <div style="font-size:20px;font-weight:700;margin-bottom:12px;">
+                Total: Rs @CartSvc.TotalAmount.ToString("N2")
+            </div>
+            <button class="btn" @onclick="() => CartSvc.Clear()" style="margin-right:8px;">Clear Cart</button>
+            <button class="btn btn-primary" @onclick="GoCheckout">
+                Proceed to Checkout →
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => CartSvc.OnChange += StateHasChanged;
+    public void Dispose()                   => CartSvc.OnChange -= StateHasChanged;
+
+    void UpdateQty(Guid variantId, int qty) => CartSvc.UpdateQuantity(variantId, qty);
+    void UpdateQtyFromEvent(Guid variantId, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var qty) && qty >= 1)
+            CartSvc.UpdateQuantity(variantId, qty);
+    }
+    void GoCheckout() => Nav.NavigateTo("/checkout");
+}

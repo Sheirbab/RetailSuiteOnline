@@ -97,6 +97,9 @@ public class RetailDbContext : DbContext
             b.Property(p => p.Description)
                 .HasMaxLength(2000);
 
+            b.Property(p => p.ImageUrl)
+                .HasMaxLength(500);
+
             b.HasMany(p => p.Variants)
                 .WithOne()
                 .HasForeignKey(v => v.ProductId)
@@ -130,6 +133,10 @@ public class RetailDbContext : DbContext
 
             b.Property(v => v.CostPrice)
                 .HasColumnType("decimal(18,2)");
+
+            b.Property(v => v.TaxRate)
+                .HasColumnType("decimal(5,4)")
+                .HasDefaultValue(0m);
         });
 
         modelBuilder.Entity<Category>(b =>
@@ -285,6 +292,10 @@ public class RetailDbContext : DbContext
             b.Property(o => o.TotalAmount)
                 .HasColumnType("decimal(18,2)");
 
+            b.Property(o => o.TaxAmount)
+                .HasColumnType("decimal(18,2)")
+                .HasDefaultValue(0m);
+
             b.HasOne(o => o.Customer)
                     .WithMany()
                     .HasForeignKey(o => o.CustomerId)
@@ -312,6 +323,10 @@ public class RetailDbContext : DbContext
 
             b.Property(i => i.UnitPrice)
                 .HasColumnType("decimal(18,2)");
+
+            b.Property(i => i.TaxRate)
+                .HasColumnType("decimal(5,4)")
+                .HasDefaultValue(0m);
         });
 
         // =====================================================

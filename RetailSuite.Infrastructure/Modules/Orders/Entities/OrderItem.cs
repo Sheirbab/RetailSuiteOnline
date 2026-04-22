@@ -14,7 +14,11 @@ public class OrderItem : TenantEntity
 
     public int Quantity { get; private set; }
 
-    public decimal LineTotal => UnitPrice * Quantity;
+    /// <summary>Tax rate at time of sale (fraction, e.g. 0.17 = 17%). Captured from variant.</summary>
+    public decimal TaxRate { get; private set; } = 0;
+
+    public decimal LineTotal    => UnitPrice * Quantity;
+    public decimal LineTaxAmount => LineTotal * TaxRate;
 
     private OrderItem() { }
 
@@ -23,12 +27,14 @@ public class OrderItem : TenantEntity
         Guid productVariantId,
         string sku,
         decimal unitPrice,
-        int quantity)
+        int quantity,
+        decimal taxRate = 0)
     {
         OrderId = orderId;
         ProductVariantId = productVariantId;
         SKU = sku;
         UnitPrice = unitPrice;
         Quantity = quantity;
+        TaxRate = taxRate;
     }
 }

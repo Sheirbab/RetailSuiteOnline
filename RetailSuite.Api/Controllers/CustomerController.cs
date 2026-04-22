@@ -49,22 +49,32 @@ public class CustomersController : ControllerBase
     /// </summary>
     [Authorize(Policy = "StaffOrAdmin")]
     [HttpGet]
-    public async Task<IActionResult> List()
+    public async Task<IActionResult> List(int page = 1, int pageSize = 20)
     {
         var customers = await _customerService.GetAllAsync();
 
-        var result = customers.Select(c => new
-        {
-            c.Id,
-            c.FirstName,
-            c.LastName,
-            c.FullName,
-            c.Email,
-            c.Phone,
-            c.CreatedAt
-        });
+        var total = customers.Count;
+        var paged = customers
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id,
+                c.FirstName,
+                c.LastName,
+                c.FullName,
+                c.Email,
+                c.Phone,
+                c.CreatedAt
+            });
 
-        return Ok(new ApiResponse<object>(true, null, result));
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            Total    = total,
+            Page     = page,
+            PageSize = pageSize,
+            Data     = paged
+        }));
     }
 
     /// <summary>
