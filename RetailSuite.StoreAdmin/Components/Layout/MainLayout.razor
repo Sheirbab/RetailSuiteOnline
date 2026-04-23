@@ -8,11 +8,17 @@
 
 @if (!_checked)
 {
-    <p style="padding:20px;color:#9ca3af;">Loading...</p>
+    <!-- Still reading localStorage — show nothing to avoid flash -->
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f9fafb;">
+        <div class="spinner"></div>
+    </div>
 }
 else if (!Auth.IsAuthenticated)
 {
-    <p style="padding:20px;color:#9ca3af;">Redirecting to login...</p>
+    <!-- Will redirect immediately in OnAfterRenderAsync -->
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f9fafb;">
+        <p style="color:#9ca3af;">Redirecting to login...</p>
+    </div>
 }
 else
 {
@@ -24,14 +30,12 @@ else
 
             @if (Auth.IsSuperAdmin)
             {
-                <!-- Super Admin sees only platform-level management -->
                 <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:8px 0 4px;display:block;">Platform</span>
                 <NavLink href="/admin/tenants" style="color:#fbbf24;">🏢 Tenant Management</NavLink>
                 <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
             }
             else
             {
-                <!-- Regular admin / staff nav -->
                 <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
                 <NavLink href="/pos">POS Terminal</NavLink>
                 <NavLink href="/products">Products</NavLink>
@@ -57,7 +61,7 @@ else
                     <span style="font-weight:500;color:#374151;">Admin Panel</span>
                 }
 
-                <button class="btn btn-danger" @onclick="Logout">
+                <button class="btn btn-danger" @onclick="LogoutAsync">
                     Logout
                 </button>
             </div>
@@ -84,23 +88,25 @@ else
         Auth.OnChange += StateHasChanged;
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            _checked = true;
+        if (!firstRender) return;
 
-            if (!Auth.IsAuthenticated)
-                Nav.NavigateTo("/login", true);
+        // Restore token from localStorage — JS is available at this point
+        await Auth.InitializeAsync();
 
-            StateHasChanged();
-        }
+        _checked = true;
+
+        if (!Auth.IsAuthenticated)
+            Nav.NavigateTo("/login", replace: true);
+
+        StateHasChanged();
     }
 
-    void Logout()
+    async Task LogoutAsync()
     {
-        Auth.Logout();
-        Nav.NavigateTo("/login", true);
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login", replace: true);
     }
 
     public void Dispose()

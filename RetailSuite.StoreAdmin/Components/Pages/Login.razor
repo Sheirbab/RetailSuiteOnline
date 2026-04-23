@@ -44,8 +44,15 @@
     string? _error;
     bool    _loading;
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
+
+        // Restore any persisted token before deciding whether to redirect.
+        // This prevents the login page from flashing when the user is already
+        // authenticated (token is in localStorage but not yet in memory).
+        await Auth.InitializeAsync();
+
         if (Auth.IsAuthenticated)
             Nav.NavigateTo("/", replace: true);
     }
