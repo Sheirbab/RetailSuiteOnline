@@ -1,6 +1,7 @@
-﻿@page "/inventory"
+@page "/inventory"
 @inject HttpClient Http
 @inject ToastService Toast
+@using System.Text.Json
 
 <h3 style="margin-bottom:20px;">Inventory</h3>
 
@@ -8,7 +9,11 @@
 {
     <div class="spinner"></div>
 }
-else if (items != null)
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="color:#b91c1c;">⚠️ @_error</div>
+}
+else if (items != null && items.Any())
 {
     <div class="card">
         <table class="table">
@@ -21,23 +26,24 @@ else if (items != null)
                     <th>Actions</th>
                 </tr>
             </thead>
-
             <tbody>
                 @foreach (var item in items)
                 {
                     <tr>
                         <td>@item.ProductName</td>
-                        <td>@item.SKU</td>
-                        <td>@item.CurrentStock</td>
-                        <td>Rs @item.AverageCost</td>
-
+                        <td style="font-family:monospace;">@item.SKU</td>
                         <td>
-                            <button class="btn btn-primary"
+                            <span style="font-weight:600;color:@(item.CurrentStock <= 0 ? "#dc2626" : item.CurrentStock < 5 ? "#d97706" : "#16a34a");">
+                                @item.CurrentStock
+                            </span>
+                        </td>
+                        <td>Rs @item.AverageCost.ToString("N2")</td>
+                        <td style="display:flex;gap:6px;">
+                            <button class="btn btn-primary" style="padding:4px 10px;font-size:13px;"
                                     @onclick="() => OpenReceive(item)">
                                 Receive
                             </button>
-
-                            <button class="btn"
+                            <button class="btn" style="padding:4px 10px;font-size:13px;"
                                     @onclick="() => OpenAdjust(item)">
                                 Adjust
                             </button>
@@ -48,146 +54,181 @@ else if (items != null)
         </table>
     </div>
 }
+else if (!isLoading)
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No inventory items yet. Add products with variants first.</p>
+    </div>
+}
 
 <!-- RECEIVE MODAL -->
 <Modal Visible="@showReceive" OnClose="CloseReceive">
-    <h3>Receive Stock</h3>
-
-    <p>@selectedItem?.SKU</p>
-
-    <input class="input full" type="number"
-           placeholder="Quantity"
-           @bind="receiveQty" />
-
-    <input class="input full" type="number"
-           placeholder="Unit Cost"
-           @bind="receiveCost" />
-
-    <button class="btn btn-primary" @onclick="ReceiveStock">
-        Save
-    </button>
+    <h3 style="margin-bottom:12px;">Receive Stock</h3>
+    <p style="color:#6b7280;margin-bottom:12px;">@selectedItem?.ProductName — <code>@selectedItem?.SKU</code></p>
+    <input class="input full" type="number" placeholder="Quantity *"
+           @bind="receiveQty" style="margin-bottom:8px;" />
+    <input class="input full" type="number" placeholder="Unit Cost (Rs) *"
+           @bind="receiveCost" style="margin-bottom:12px;" />
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="ReceiveStock">Save</button>
+        <button class="btn" @onclick="CloseReceive">Cancel</button>
+    </div>
 </Modal>
 
 <!-- ADJUST MODAL -->
 <Modal Visible="@showAdjust" OnClose="CloseAdjust">
-    <h3>Adjust Stock</h3>
-
-    <p>@selectedItem?.SKU</p>
-
-    <input class="input full" type="number"
-           placeholder="Quantity (+/-)"
-           @bind="adjustQty" />
-
-    <button class="btn btn-primary" @onclick="AdjustStock">
-        Save
-    </button>
+    <h3 style="margin-bottom:12px;">Adjust Stock</h3>
+    <p style="color:#6b7280;margin-bottom:4px;">@selectedItem?.ProductName — <code>@selectedItem?.SKU</code></p>
+    <p style="color:#9ca3af;font-size:13px;margin-bottom:12px;">
+        Current stock: <strong>@selectedItem?.CurrentStock</strong>. Enter a positive number to add, negative to remove.
+    </p>
+    <input class="input full" type="number" placeholder="Quantity (e.g. +5 or -3)"
+           @bind="adjustQty" style="margin-bottom:12px;" />
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="AdjustStock">Save</button>
+        <button class="btn" @onclick="CloseAdjust">Cancel</button>
+    </div>
 </Modal>
 
 @code {
     List<InventoryItemDto>? items;
     bool isLoading = true;
+    string? _error;
 
     bool showReceive = false;
-    bool showAdjust = false;
+    bool showAdjust  = false;
 
     InventoryItemDto? selectedItem;
-
-    int receiveQty;
+    int     receiveQty;
     decimal receiveCost;
+    int     adjustQty;
 
-    int adjustQty;
-
-    protected override async Task OnInitializedAsync()
+    // -----------------------------------------------------------------------
+    // OnAfterRenderAsync — runs after Auth.InitializeAsync() in MainLayout,
+    // so HttpClient already has the Bearer token.
+    // -----------------------------------------------------------------------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await LoadInventory();
+        if (firstRender)
+            await LoadInventory();
     }
 
     async Task LoadInventory()
     {
         isLoading = true;
+        _error    = null;
 
-        items = await Http.GetFromJsonAsync<List<InventoryItemDto>>("api/inventory/all");
+        try
+        {
+            // API returns { Total, Page, PageSize, Items: [...] }
+            // (InventoryController returns the paginated envelope directly, no ApiResponse wrapper)
+            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            using var doc = JsonDocument.Parse(json);
+
+            var root = doc.RootElement;
+
+            // Handle both with and without ApiResponse envelope
+            var dataEl   = root.TryGetProperty("data",  out var d)  ? d  : root;
+            var itemsEl  = dataEl.TryGetProperty("items", out var arr) ? arr
+                         : dataEl.ValueKind == JsonValueKind.Array ? dataEl
+                         : default;
+
+            items = new List<InventoryItemDto>();
+
+            if (itemsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in itemsEl.EnumerateArray())
+                {
+                    items.Add(new InventoryItemDto
+                    {
+                        Id           = v.TryGetProperty("id",           out var id)  ? id.GetGuid()    : Guid.Empty,
+                        ProductName  = v.TryGetProperty("productName",  out var pn)  ? pn.GetString()  : "—",
+                        SKU          = v.TryGetProperty("sku",          out var sku) ? sku.GetString() : "—",
+                        CurrentStock = v.TryGetProperty("currentStock", out var cs)  ? cs.GetInt32()   : 0,
+                        AverageCost  = v.TryGetProperty("averageCost",  out var ac)  ? ac.GetDecimal() : 0
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load inventory: {ex.Message}";
+        }
 
         isLoading = false;
+        StateHasChanged();
     }
 
     void OpenReceive(InventoryItemDto item)
     {
         selectedItem = item;
-        receiveQty = 0;
-        receiveCost = 0;
-        showReceive = true;
+        receiveQty   = 0;
+        receiveCost  = 0;
+        showReceive  = true;
     }
-
-    void CloseReceive()
-    {
-        showReceive = false;
-    }
+    void CloseReceive() => showReceive = false;
 
     async Task ReceiveStock()
     {
-        var request = new
+        if (receiveQty <= 0) { Toast.Show("Quantity must be greater than 0."); return; }
+        if (receiveCost <= 0) { Toast.Show("Unit cost must be greater than 0."); return; }
+
+        var response = await Http.PostAsJsonAsync("api/inventory/receive", new
         {
             productVariantId = selectedItem?.Id,
-            quantity = receiveQty,
-            unitCost = receiveCost
-        };
-
-        var response = await Http.PostAsJsonAsync("api/inventory/receive", request);
+            quantity         = receiveQty,
+            unitCost         = receiveCost
+        });
 
         if (response.IsSuccessStatusCode)
         {
-            Toast.Show("Stock received");
+            Toast.Show("Stock received successfully.");
             showReceive = false;
             await LoadInventory();
         }
         else
         {
-            Toast.Show("Error receiving stock");
+            Toast.Show("Error receiving stock.");
         }
     }
 
     void OpenAdjust(InventoryItemDto item)
     {
         selectedItem = item;
-        adjustQty = 0;
-        showAdjust = true;
+        adjustQty    = 0;
+        showAdjust   = true;
     }
-
-    void CloseAdjust()
-    {
-        showAdjust = false;
-    }
+    void CloseAdjust() => showAdjust = false;
 
     async Task AdjustStock()
     {
-        var request = new
+        if (adjustQty == 0) { Toast.Show("Adjustment quantity cannot be zero."); return; }
+
+        var response = await Http.PostAsJsonAsync("api/inventory/adjust", new
         {
             productVariantId = selectedItem?.Id,
-            quantity = adjustQty,
-            type = adjustQty > 0 ? 1 : 2 // Increase / Decrease
-        };
-
-        var response = await Http.PostAsJsonAsync("api/inventory/adjust", request);
+            quantity         = Math.Abs(adjustQty),
+            type             = adjustQty > 0 ? 1 : 2   // 1 = Increase, 2 = Decrease
+        });
 
         if (response.IsSuccessStatusCode)
         {
-            Toast.Show("Stock adjusted");
+            Toast.Show("Stock adjusted successfully.");
             showAdjust = false;
             await LoadInventory();
         }
         else
         {
-            Toast.Show("Error adjusting stock");
+            Toast.Show("Error adjusting stock.");
         }
     }
 
-    public class InventoryItemDto
+    class InventoryItemDto
     {
-        public Guid Id { get; set; }
-        public string? ProductName { get; set; }
-        public string? SKU { get; set; }
-        public int? CurrentStock { get; set; }
-        public decimal? AverageCost { get; set; }
+        public Guid    Id           { get; set; }
+        public string? ProductName  { get; set; }
+        public string? SKU          { get; set; }
+        public int     CurrentStock { get; set; }
+        public decimal AverageCost  { get; set; }
     }
 }

@@ -187,12 +187,11 @@
     // -----------------------------------------------------------------------
     // Lifecycle
     // -----------------------------------------------------------------------
-    protected override async Task OnInitializedAsync() => await LoadVariants();
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-            await JS.InvokeVoidAsync("focusBarcodeInput");
+        if (!firstRender) return;
+        await LoadVariants();
+        await JS.InvokeVoidAsync("focusBarcodeInput");
     }
 
     public void Dispose()
@@ -233,6 +232,7 @@
         {
             Toast.Show($"Could not load products: {ex.Message}");
         }
+        StateHasChanged();
     }
 
     // -----------------------------------------------------------------------

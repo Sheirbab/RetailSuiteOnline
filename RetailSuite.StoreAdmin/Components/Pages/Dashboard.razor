@@ -39,30 +39,31 @@ else
 
     </div>
 
-    @if (_lowStockItems.Count > 0)
+    @if (_lowStockItems.Any())
     {
         <div class="card" style="margin-bottom:24px;">
             <h4 style="margin-bottom:12px;">⚠️ Low Stock Items</h4>
             <table class="table">
                 <thead>
-                    <tr>
-                        <th>Variant ID</th>
-                        <th>Stock</th>
-                        <th>Threshold</th>
-                    </tr>
+                    <tr><th>Product</th><th>SKU</th><th>Stock</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var item in _lowStockItems)
                     {
                         <tr>
-                            <td><code>@item.variantId.ToString()[..8]…</code></td>
-                            <td style="color:#dc2626;font-weight:600;">@item.stock</td>
-                            <td>@item.threshold</td>
+                            <td>@item.ProductName</td>
+                            <td style="font-family:monospace;">@item.SKU</td>
+                            <td style="color:#dc2626;font-weight:600;">@item.Stock</td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="card" style="color:#b91c1c;margin-bottom:16px;">⚠️ @_error</div>
     }
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -74,11 +75,6 @@ else
     </div>
 }
 
-@if (!string.IsNullOrEmpty(_error))
-{
-    <p style="color:#dc2626;margin-top:16px;">@_error</p>
-}
-
 @code {
     bool    _loading        = true;
     string? _error;
@@ -87,9 +83,19 @@ else
     int     _todaySales     = 0;
     decimal _todayRevenue   = 0;
     int     _lowStockCount  = 0;
-    List<(Guid variantId, int stock, int threshold)> _lowStockItems = new();
 
-    protected override async Task OnInitializedAsync() => await Load();
+    record LowStockItem(string ProductName, string SKU, int Stock);
+    List<LowStockItem> _lowStockItems = new();
+
+    // -----------------------------------------------------------------------
+    // OnAfterRenderAsync — JS / HttpClient Bearer token are available here.
+    // MainLayout calls Auth.InitializeAsync() in its own OnAfterRenderAsync
+    // before this fires, so the token is already set on the HttpClient.
+    // -----------------------------------------------------------------------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
 
     async Task Load()
     {
@@ -98,12 +104,12 @@ else
 
         try
         {
-            await Task.WhenAll(
-                LoadProducts(),
-                LoadValuation(),
-                LoadTodaySales(),
-                LoadLowStock()
-            );
+            // Run all three API calls in parallel
+            var productsTask  = LoadProducts();
+            var inventoryTask = LoadInventoryStats();
+            var salesTask     = LoadTodaySales();
+
+            await Task.WhenAll(productsTask, inventoryTask, salesTask);
         }
         catch (Exception ex)
         {
@@ -111,56 +117,63 @@ else
         }
 
         _loading = false;
+        StateHasChanged();
     }
 
+    // GET /api/products?page=1&pageSize=1  → ApiResponse<{ Total, Items }>
     async Task LoadProducts()
     {
-        var json = await Http.GetStringAsync("api/products");
+        var json = await Http.GetStringAsync("api/products?page=1&pageSize=1");
         using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        // API returns ApiResponse<T> with a "data" array
-        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
-            _totalProducts = data.GetArrayLength();
+        var root   = doc.RootElement;
+        var dataEl = root.TryGetProperty("data", out var d) ? d : root;
+        if (dataEl.TryGetProperty("total", out var total))
+            _totalProducts = total.GetInt32();
     }
 
-    async Task LoadValuation()
+    // GET /api/reports/inventory  → { totalStockValue, lowStockCount, items: [...] }
+    async Task LoadInventoryStats()
     {
-        var json = await Http.GetStringAsync("api/inventory/valuation");
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        // InventoryController returns raw object (not wrapped)
-        if (root.TryGetProperty("totalInventoryValue", out var val))
-            _inventoryValue = val.GetDecimal();
+        var json = await Http.GetStringAsync("api/reports/inventory");
+        using var doc  = JsonDocument.Parse(json);
+        var root   = doc.RootElement;
+        var dataEl = root.TryGetProperty("data", out var d) ? d : root;
+
+        if (dataEl.TryGetProperty("totalStockValue", out var tv))
+            _inventoryValue = tv.GetDecimal();
+
+        if (dataEl.TryGetProperty("lowStockCount", out var lsc))
+            _lowStockCount = lsc.GetInt32();
+
+        _lowStockItems.Clear();
+        if (dataEl.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in items.EnumerateArray())
+            {
+                var stock = item.TryGetProperty("currentStock", out var cs) ? cs.GetInt32() : 0;
+                var threshold = item.TryGetProperty("lowStockThreshold", out var thr) ? thr.GetInt32() : 5;
+                if (stock <= threshold)
+                {
+                    _lowStockItems.Add(new LowStockItem(
+                        item.TryGetProperty("productName", out var pn) ? pn.GetString() ?? "—" : "—",
+                        item.TryGetProperty("sku",         out var sk) ? sk.GetString() ?? "—" : "—",
+                        stock
+                    ));
+                }
+            }
+        }
     }
 
+    // GET /api/reports/sales?from=today&to=today  → { totalOrders, totalRevenue }
     async Task LoadTodaySales()
     {
-        var json = await Http.GetStringAsync("api/sales/today");
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        if (root.TryGetProperty("data", out var data))
-        {
-            if (data.TryGetProperty("salesCount",   out var sc)) _todaySales   = sc.GetInt32();
-            if (data.TryGetProperty("totalRevenue",  out var tr)) _todayRevenue = tr.GetDecimal();
-        }
-    }
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var json  = await Http.GetStringAsync($"api/reports/sales?from={today}&to={today}");
+        using var doc  = JsonDocument.Parse(json);
+        var root   = doc.RootElement;
+        var dataEl = root.TryGetProperty("data", out var d) ? d : root;
 
-    async Task LoadLowStock()
-    {
-        var json = await Http.GetStringAsync("api/inventory/low-stock");
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        _lowStockItems.Clear();
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in root.EnumerateArray())
-            {
-                var varId = item.TryGetProperty("productVariantId", out var pid) ? pid.GetGuid() : Guid.Empty;
-                var stock = item.TryGetProperty("currentStock",      out var cs)  ? cs.GetInt32() : 0;
-                var thr   = item.TryGetProperty("lowStockThreshold", out var th)  ? th.GetInt32() : 5;
-                _lowStockItems.Add((varId, stock, thr));
-            }
-            _lowStockCount = _lowStockItems.Count;
-        }
+        if (dataEl.TryGetProperty("totalOrders",  out var to)) _todaySales   = to.GetInt32();
+        if (dataEl.TryGetProperty("totalRevenue", out var tr)) _todayRevenue = tr.GetDecimal();
     }
 }

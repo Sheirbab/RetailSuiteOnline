@@ -82,7 +82,10 @@ else
     string? _password;
     string? _phone;
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
 
     async Task Load()
     {
@@ -115,6 +118,7 @@ else
             Toast.Show($"Error loading customers: {ex.Message}");
         }
         _loading = false;
+        StateHasChanged();
     }
 
     async Task RegisterCustomer()

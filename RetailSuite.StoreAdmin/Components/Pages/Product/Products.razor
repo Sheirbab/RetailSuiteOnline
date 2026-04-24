@@ -1,24 +1,23 @@
-﻿@page "/products"
+@page "/products"
 @inject HttpClient Http
 @inject ToastService Toast
+@using System.Text.Json
 
 <h3 style="margin-bottom:20px;">Products</h3>
 
-<!-- Add Product Button -->
 <button class="btn btn-primary" @onclick="() => showModal = true">
     + Add Product
 </button>
 
-<!-- Loading -->
 @if (isLoading)
 {
-    <div style="margin-top:20px;">
-        <div class="spinner"></div>
-    </div>
+    <div style="margin-top:20px;"><div class="spinner"></div></div>
 }
-
-<!-- Products Table -->
-@if (products != null)
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="margin-top:20px;color:#b91c1c;">⚠️ @_error</div>
+}
+else if (products != null && products.Any())
 {
     <div class="card" style="margin-top:20px;">
         <table class="table">
@@ -29,23 +28,17 @@
                     <th>Add Variant</th>
                 </tr>
             </thead>
-
             <tbody>
                 @foreach (var p in products)
                 {
                     <tr>
-                        <!-- Product Name -->
-                        <td>
-                            <strong>@p.Name</strong>
-                        </td>
-
-                        <!-- Variants -->
+                        <td><strong>@p.Name</strong></td>
                         <td>
                             @if (p.Variants != null && p.Variants.Any())
                             {
                                 @foreach (var v in p.Variants)
                                 {
-                                    <div>@v.SKU — Rs @v.Price</div>
+                                    <div>@v.SKU — Rs @v.Price.ToString("N2")</div>
                                 }
                             }
                             else
@@ -53,19 +46,17 @@
                                 <span style="color:#9ca3af;">No variants</span>
                             }
                         </td>
-
-                        <!-- Add Variant -->
                         <td>
-                            <input class="input" placeholder="SKU"
-                                   @bind="variantInputs[p.Id].Sku" />
-
-                            <input class="input" type="number" placeholder="Price"
-                                   @bind="variantInputs[p.Id].Price" />
-
-                            <button class="btn btn-primary"
-                                    @onclick="() => AddVariant(p.Id)">
-                                Add
-                            </button>
+                            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                                <input class="input" style="width:100px;" placeholder="SKU"
+                                       @bind="variantInputs[p.Id].Sku" />
+                                <input class="input" type="number" style="width:90px;" placeholder="Price"
+                                       @bind="variantInputs[p.Id].Price" />
+                                <button class="btn btn-primary" style="padding:6px 12px;"
+                                        @onclick="() => AddVariant(p.Id)">
+                                    Add
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -73,91 +64,129 @@
         </table>
     </div>
 }
+else if (!isLoading)
+{
+    <div class="card" style="margin-top:20px;">
+        <p style="color:#9ca3af;">No products yet. Click <strong>+ Add Product</strong> to get started.</p>
+    </div>
+}
 
-<!-- Modal -->
+<!-- Add Product Modal -->
 <Modal Visible="@showModal" OnClose="CloseModal">
     <h3 style="margin-bottom:15px;">Add Product</h3>
-
-    <input class="input full"
-           @bind="newProductName"
-           placeholder="Product Name" />
-
-    <input class="input full"
-           @bind="newProductDesc"
-           placeholder="Description" />
-
-    <div style="margin-top:10px;">
-        <button class="btn btn-primary" @onclick="CreateProduct">
-            Save
-        </button>
-
-        <button class="btn" @onclick="CloseModal">
-            Cancel
-        </button>
+    <input class="input full" @bind="newProductName" placeholder="Product Name" style="margin-bottom:8px;" />
+    <input class="input full" @bind="newProductDesc" placeholder="Description (optional)" style="margin-bottom:12px;" />
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="CreateProduct">Save</button>
+        <button class="btn" @onclick="CloseModal">Cancel</button>
     </div>
 </Modal>
 
 @code {
     List<ProductDto>? products;
     bool isLoading = true;
+    string? _error;
     bool showModal = false;
 
     string? newProductName;
     string? newProductDesc;
 
-    // Variant inputs per product (fixes shared input bug)
     Dictionary<Guid, VariantInput> variantInputs = new();
 
-    protected override async Task OnInitializedAsync()
+    // -----------------------------------------------------------------------
+    // Use OnAfterRenderAsync so Auth.InitializeAsync() has already run
+    // in MainLayout and the HttpClient has a Bearer token.
+    // -----------------------------------------------------------------------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await LoadProducts();
+        if (firstRender)
+            await LoadProducts();
     }
 
     async Task LoadProducts()
     {
         isLoading = true;
+        _error    = null;
 
-        products = await Http.GetFromJsonAsync<List<ProductDto>>("api/products");
-
-        // Initialize per-product inputs
-        if (products != null)
+        try
         {
-            foreach (var p in products)
+            // API returns ApiResponse<{ Total, Page, PageSize, Items: [...] }>
+            var json = await Http.GetStringAsync("api/products?page=1&pageSize=200");
+            using var doc = JsonDocument.Parse(json);
+
+            // Unwrap ApiResponse envelope if present
+            var root = doc.RootElement;
+            var dataEl = root.TryGetProperty("data", out var d) ? d : root;
+
+            // Get the items array (paginated envelope)
+            var itemsEl = dataEl.TryGetProperty("items", out var arr) ? arr
+                        : dataEl.ValueKind == JsonValueKind.Array ? dataEl
+                        : default;
+
+            products = new List<ProductDto>();
+
+            if (itemsEl.ValueKind == JsonValueKind.Array)
             {
-                if (!variantInputs.ContainsKey(p.Id))
+                foreach (var p in itemsEl.EnumerateArray())
                 {
-                    variantInputs[p.Id] = new VariantInput();
+                    var dto = new ProductDto
+                    {
+                        Id       = p.TryGetProperty("id",   out var id)   ? id.GetGuid()    : Guid.Empty,
+                        Name     = p.TryGetProperty("name", out var nm)   ? nm.GetString()! : "—",
+                        Variants = new List<VariantDto>()
+                    };
+
+                    if (p.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var v in vars.EnumerateArray())
+                        {
+                            dto.Variants.Add(new VariantDto
+                            {
+                                Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
+                                SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
+                                Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
+                            });
+                        }
+                    }
+
+                    products.Add(dto);
                 }
             }
+
+            // Ensure a variant-input slot exists for every product
+            foreach (var p in products)
+                variantInputs.TryAdd(p.Id, new VariantInput());
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load products: {ex.Message}";
         }
 
         isLoading = false;
+        StateHasChanged();
     }
 
     async Task CreateProduct()
     {
-        var request = new
+        if (string.IsNullOrWhiteSpace(newProductName))
         {
-            name = newProductName,
-            description = newProductDesc
-        };
+            Toast.Show("Product name is required.");
+            return;
+        }
 
-        var response = await Http.PostAsJsonAsync("api/products", request);
+        var response = await Http.PostAsJsonAsync("api/products",
+            new { name = newProductName, description = newProductDesc });
 
         if (response.IsSuccessStatusCode)
         {
-            Toast.Show("Product created successfully");
-
-            newProductName = "";
-            newProductDesc = "";
-
+            Toast.Show("Product created successfully.");
+            newProductName = newProductDesc = null;
             showModal = false;
-
             await LoadProducts();
         }
         else
         {
-            Toast.Show("Failed to create product");
+            Toast.Show("Failed to create product.");
         }
     }
 
@@ -165,53 +194,48 @@
     {
         var input = variantInputs[productId];
 
-        var request = new
+        if (string.IsNullOrWhiteSpace(input.Sku))
         {
-            sku = input.Sku,
-            price = input.Price
-        };
+            Toast.Show("SKU is required.");
+            return;
+        }
 
         var response = await Http.PostAsJsonAsync(
             $"api/products/{productId}/variants",
-            request);
+            new { sku = input.Sku, price = input.Price });
 
         if (response.IsSuccessStatusCode)
         {
-            Toast.Show("Variant added");
-
+            Toast.Show("Variant added.");
             variantInputs[productId] = new VariantInput();
-
             await LoadProducts();
         }
         else
         {
-            Toast.Show("Failed to add variant");
+            Toast.Show("Failed to add variant.");
         }
     }
 
-    void CloseModal()
-    {
-        showModal = false;
-    }
+    void CloseModal() => showModal = false;
 
     // DTOs
-    public class ProductDto
+    class ProductDto
     {
-        public Guid Id { get; set; }
-        public string? Name { get; set; }
-        public List<VariantDto>? Variants { get; set; }
+        public Guid         Id       { get; set; }
+        public string       Name     { get; set; } = string.Empty;
+        public List<VariantDto> Variants { get; set; } = new();
     }
 
-    public class VariantDto
+    class VariantDto
     {
-        public Guid Id { get; set; }
-        public string? SKU { get; set; }
+        public Guid    Id    { get; set; }
+        public string  SKU   { get; set; } = string.Empty;
         public decimal Price { get; set; }
     }
 
-    public class VariantInput
+    class VariantInput
     {
-        public string? Sku { get; set; }
-        public decimal Price { get; set; }
+        public string?  Sku   { get; set; }
+        public decimal  Price { get; set; }
     }
 }
