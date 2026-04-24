@@ -23,7 +23,7 @@
 
         <input class="input full"
                placeholder="Search SKU or product name... (or scan barcode)"
-               @bind="_search"
+               value="@_search"
                @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
 
         <div style="margin-top:10px;max-height:440px;overflow-y:auto;">

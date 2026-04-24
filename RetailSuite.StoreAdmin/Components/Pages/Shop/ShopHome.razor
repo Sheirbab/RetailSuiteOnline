@@ -9,7 +9,9 @@
 <h2 style="margin-bottom:16px;">Products</h2>
 
 <div style="margin-bottom:20px;">
-    <input class="input" style="width:300px;" placeholder="Search products..." @bind="_search" @bind:event="oninput" />
+    <input class="input" style="width:300px;" placeholder="Search products..."
+           value="@_search"
+           @oninput="e => { _search = e.Value?.ToString() ?? string.Empty; }" />
 </div>
 
 @if (_loading)
@@ -67,25 +69,36 @@ else
             ? _products
             : _products.Where(p => p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
+    // Use OnAfterRenderAsync so CustomerLayout.Auth.InitializeAsync() has already
+    // run and the HttpClient has a Bearer token before we hit the API.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
+        await LoadProducts();
+    }
+
+    async Task LoadProducts()
+    {
+        _loading = true;
         try
         {
-            var json = await Http.GetStringAsync("api/products?pageSize=200");
+            // API returns ApiResponse<{ Total, Page, PageSize, Items: [...] }>
+            // JSON shape: { "success": true, "data": { "total": N, "items": [...] } }
+            var json = await Http.GetStringAsync("api/products?page=1&pageSize=200");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            var arr = root.TryGetProperty("data", out var d) ? d
-                    : root.TryGetProperty("items", out var i) ? i
-                    : root;
+            // Unwrap ApiResponse envelope → data object → items array
+            var dataEl  = root.TryGetProperty("data",  out var d)   ? d   : root;
+            var itemsEl = dataEl.TryGetProperty("items", out var arr) ? arr
+                        : dataEl.ValueKind == JsonValueKind.Array    ? dataEl
+                        : default;
 
-            // Handle paginated response
-            if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
-                arr = itemsEl;
+            _products.Clear();
 
-            if (arr.ValueKind == JsonValueKind.Array)
+            if (itemsEl.ValueKind == JsonValueKind.Array)
             {
-                foreach (var p in arr.EnumerateArray())
+                foreach (var p in itemsEl.EnumerateArray())
                 {
                     decimal minPrice = 0;
                     if (p.TryGetProperty("variants", out var variants) && variants.ValueKind == JsonValueKind.Array)
@@ -99,16 +112,16 @@ else
 
                     _products.Add(new ProductRow
                     {
-                        Id       = p.TryGetProperty("id",       out var id)  ? id.GetGuid()     : Guid.Empty,
-                        Name     = p.TryGetProperty("name",     out var nm)  ? nm.GetString()!  : "—",
-                        ImageUrl = p.TryGetProperty("imageUrl", out var img) ? img.GetString()  : null,
+                        Id       = p.TryGetProperty("id",       out var id)  ? id.GetGuid()    : Guid.Empty,
+                        Name     = p.TryGetProperty("name",     out var nm)  ? nm.GetString()! : "—",
+                        ImageUrl = p.TryGetProperty("imageUrl", out var img) ? img.GetString() : null,
                         MinPrice = minPrice,
                         Variants = p.TryGetProperty("variants", out var vrs) && vrs.ValueKind == JsonValueKind.Array
                             ? vrs.EnumerateArray().Select(v => new VariantRow
                             {
-                                Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()     : Guid.Empty,
-                                SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()!  : "—",
-                                Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal()  : 0
+                                Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
+                                SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
+                                Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
                             }).ToList()
                             : new()
                     });
@@ -120,6 +133,7 @@ else
             Toast.Show($"Error loading products: {ex.Message}");
         }
         _loading = false;
+        StateHasChanged();
     }
 
     void GoToProduct(Guid id) => Nav.NavigateTo($"/shop/product/{id}");

@@ -109,7 +109,13 @@ try
     // ---------------------------------------------------------------
     // MVC + Swagger
     // ---------------------------------------------------------------
-    builder.Services.AddControllers();
+    builder.Services.AddControllers()
+        .AddJsonOptions(o =>
+        {
+            // Prevent circular-reference exceptions when EF nav-props point back to parent
+            o.JsonSerializerOptions.ReferenceHandler =
+                System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        });
     builder.Services.AddEndpointsApiExplorer();
 
     builder.Services.AddSwaggerGen(c =>

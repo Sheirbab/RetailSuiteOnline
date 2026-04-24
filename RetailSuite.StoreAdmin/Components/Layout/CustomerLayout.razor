@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject CartService Cart
 @inject NavigationManager Nav
+@inject AuthService Auth
 @implements IDisposable
 
 <div class="shop-layout">
@@ -33,6 +34,14 @@
     protected override void OnInitialized()
     {
         Cart.OnChange += StateHasChanged;
+    }
+
+    // Restore the Bearer token from localStorage so shop-page API calls succeed.
+    // Child pages use OnAfterRenderAsync(firstRender) so this fires first.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.InitializeAsync();
     }
 
     public void Dispose()

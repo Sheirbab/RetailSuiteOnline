@@ -73,7 +73,15 @@ else
 
     VariantDetail? _selected => _product?.Variants.FirstOrDefault(v => v.Id == _selectedVariantId);
 
-    protected override async Task OnInitializedAsync()
+    // Use OnAfterRenderAsync so CustomerLayout.Auth.InitializeAsync() has already
+    // run and the HttpClient has a Bearer token before we call the API.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadProduct();
+    }
+
+    async Task LoadProduct()
     {
         try
         {
@@ -113,6 +121,7 @@ else
             Toast.Show($"Error: {ex.Message}");
         }
         _loading = false;
+        StateHasChanged();
     }
 
     void AddToCart()
