@@ -398,7 +398,7 @@ public class RetailDbContext : DbContext
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
                     ?.MakeGenericMethod(entityType.ClrType);
 
-                method?.Invoke(null, new object[] { modelBuilder, tenantId ?? new Guid() });
+                method?.Invoke(null, new object[] { modelBuilder, _tenantContext });
             }
         }
 
@@ -413,12 +413,12 @@ public class RetailDbContext : DbContext
 
     private static void ApplyTenantFilter<TEntity>(
       ModelBuilder modelBuilder,
-      Guid? tenantId)
+      ITenantContext tenantContext)
       where TEntity : TenantEntity
     {
         modelBuilder.Entity<TEntity>()
             .HasQueryFilter(e =>
-                (tenantId == null || e.TenantId == tenantId)
+                (tenantContext.TenantId == null || e.TenantId == tenantContext.TenantId)
                 && !e.IsDeleted);
     }
 
