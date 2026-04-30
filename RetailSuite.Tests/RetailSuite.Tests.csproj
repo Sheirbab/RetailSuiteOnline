@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\RetailSuite.Api\RetailSuite.Api.csproj" />
     <ProjectReference Include="..\RetailSuite.Infrastructure\RetailSuite.Infrastructure.csproj" />
     <ProjectReference Include="..\RetailSuite.Shared\RetailSuite.Shared.csproj" />
   </ItemGroup>

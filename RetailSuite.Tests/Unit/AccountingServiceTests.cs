@@ -55,8 +55,8 @@ public class AccountingServiceTests
                 (account2.Id, 0,   200m)
             });
 
-        Assert.Equal(1, await db.JournalEntries.CountAsync());
-        Assert.Equal(2, await db.JournalEntryLines.CountAsync());
+        Assert.Equal(1, await db.JournalEntries.IgnoreQueryFilters().CountAsync());
+        Assert.Equal(2, await db.JournalEntryLines.IgnoreQueryFilters().CountAsync());
     }
 
     [Fact]
