@@ -38,14 +38,6 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         {
             _logger.LogInformation("Order {OrderId} confirmed", orderId);
 
-            var userId = _currentUser.UserId;
-
-            var customer = await _db.Customers
-                .FirstOrDefaultAsync(c => c.UserId == userId);
-
-            if (customer == null)
-                throw new Exception("Customer profile not found.");
-
             using var transaction = await _db.Database.BeginTransactionAsync();
 
             var order = await _db.Orders

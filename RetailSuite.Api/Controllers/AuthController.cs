@@ -94,9 +94,37 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new ApiResponse<string>(false, "Email and password are required.", null));
 
-        var user = await _Db.Users
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.Email == request.Email);
+        User? user;
+        if (!string.IsNullOrWhiteSpace(request.Subdomain))
+        {
+            var tenant = await _Db.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Subdomain == request.Subdomain);
+
+            if (tenant == null)
+                return Unauthorized(new ApiResponse<string>(false, "Invalid email or password.", null));
+
+            user = await _Db.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == request.Email && u.TenantId == tenant.Id);
+        }
+        else
+        {
+            var users = await _Db.Users
+                .IgnoreQueryFilters()
+                .Where(u => u.Email == request.Email)
+                .ToListAsync();
+
+            if (users.Count > 1)
+            {
+                return BadRequest(new ApiResponse<string>(
+                    false,
+                    "Multiple accounts found for this email. Please provide subdomain to login.",
+                    null));
+            }
+
+            user = users.SingleOrDefault();
+        }
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return Unauthorized(new ApiResponse<string>(false, "Invalid email or password.", null));

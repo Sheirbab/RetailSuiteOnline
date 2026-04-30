@@ -63,6 +63,19 @@ public class PaymentsController : ControllerBase
     [HttpGet("order/{orderId}")]
     public async Task<IActionResult> GetByOrder(Guid orderId)
     {
+        if (_currentUser.Role == "Customer")
+        {
+            var customer = await _db.Customers
+                .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
+
+            if (customer == null)
+                return Forbid();
+
+            var isOwner = await _db.Orders.AnyAsync(o => o.Id == orderId && o.CustomerId == customer.Id);
+            if (!isOwner)
+                return Forbid();
+        }
+
         var payments = await _db.Payments
             .Where(p => p.OrderId == orderId)
             .OrderByDescending(p => p.CreatedAt)
@@ -78,6 +91,15 @@ public class PaymentsController : ControllerBase
 
         if (order == null)
             return NotFound();
+
+        if (_currentUser.Role == "Customer")
+        {
+            var customer = await _db.Customers
+                .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
+
+            if (customer == null || order.CustomerId != customer.Id)
+                return Forbid();
+        }
 
         return Ok(new
         {
