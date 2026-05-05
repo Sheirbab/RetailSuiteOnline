@@ -54,4 +54,9 @@ public class ProductVariant : TenantEntity
 
         TaxRate = rate;
     }
+
+    public void SetBarcode(string? barcode)
+    {
+        Barcode = barcode;
+    }
 }

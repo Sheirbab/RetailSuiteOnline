@@ -14,6 +14,7 @@ using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Payments;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Shared;
 using Serilog;
@@ -150,6 +151,15 @@ try
     // Seed super-admin (idempotent — no-op if already exists)
     // ---------------------------------------------------------------
     await SuperAdminSeeder.SeedAsync(app.Services);
+
+    // ---------------------------------------------------------------
+    // Seed demo data (idempotent — no-op if demo tenant exists)
+    // ---------------------------------------------------------------
+    await using (var scope = app.Services.CreateAsyncScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<RetailDbContext>();
+        await DemoDataSeeder.SeedDemoDataAsync(db);
+    }
 
     // ---------------------------------------------------------------
     // Middleware pipeline
