@@ -223,6 +223,10 @@ public static class DemoDataSeeder
             var inventoryItem = new InventoryItem(allVariants[i].Id, lowStockThreshold: 10) { TenantId = demoTenant.Id };
             inventoryItem.ReceiveStock(stockQuantities[i], allVariants[i].CostPrice);
             inventoryItems.Add(inventoryItem);
+
+            // Sync stock quantity to ProductVariant for POS display
+            allVariants[i].StockQuantity = stockQuantities[i];
+            allVariants[i].AverageCost = allVariants[i].CostPrice;
         }
 
         context.InventoryItems.AddRange(inventoryItems);
