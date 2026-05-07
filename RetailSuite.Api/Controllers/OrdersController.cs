@@ -31,33 +31,61 @@ namespace RetailSuite.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(Guid id)
         {
-            var order = await _db.Orders
-                .Include(o => o.Items)
-                .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.Id == id);
-
-            if (order == null)
-                return NotFound();
-
+            // For customers, check authorization first (before querying for the resource)
             if (_currentUser.Role == "Customer")
             {
                 var customer = await _db.Customers
                     .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
 
-                if (customer == null || order.CustomerId != customer.Id)
+                // If no customer profile, access is forbidden
+                if (customer == null)
                     return Forbid();
+
+                // Customer can only access their own orders
+                var order = await _db.Orders
+                    .Include(o => o.Items)
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.Id == id);
+
+                if (order == null)
+                    return NotFound();
+
+                // Check if customer owns this order
+                if (order.CustomerId != customer.Id)
+                    return Forbid(); // Resource exists but user doesn't have access
+
+                return Ok(new
+                {
+                    order.Id,
+                    order.OrderNumber,
+                    order.Status,
+                    order.TotalAmount,
+                    order.PaidAmount,
+                    order.OutstandingAmount,
+                    Items = order.Items,
+                    Payments = order.Payments
+                });
             }
+
+            // Staff/Admin can see any order
+            var adminOrder = await _db.Orders
+                .Include(o => o.Items)
+                .Include(o => o.Payments)
+                .FirstOrDefaultAsync(o => o.Id == id);
+
+            if (adminOrder == null)
+                return NotFound();
 
             return Ok(new
             {
-                order.Id,
-                order.OrderNumber,
-                order.Status,
-                order.TotalAmount,
-                order.PaidAmount,
-                order.OutstandingAmount,
-                Items = order.Items,
-                Payments = order.Payments
+                adminOrder.Id,
+                adminOrder.OrderNumber,
+                adminOrder.Status,
+                adminOrder.TotalAmount,
+                adminOrder.PaidAmount,
+                adminOrder.OutstandingAmount,
+                Items = adminOrder.Items,
+                Payments = adminOrder.Payments
             });
         }
         [Authorize(Policy = "StaffOrAdmin")]
@@ -131,19 +159,24 @@ namespace RetailSuite.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(Guid id, CreateOrderRequest request)
         {
+            // For customers, check authorization
             if (_currentUser.Role == "Customer")
             {
+                var customer = await _db.Customers
+                    .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
+
+                if (customer == null)
+                    return Forbid();
+
                 var order = await _db.Orders
                     .FirstOrDefaultAsync(o => o.Id == id);
 
                 if (order == null)
                     return NotFound();
 
-                var customer = await _db.Customers
-                    .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
-
-                if (customer == null || order.CustomerId != customer.Id)
-                    return Forbid();
+                // Check if customer owns this order
+                if (order.CustomerId != customer.Id)
+                    return Forbid(); // Resource exists but user doesn't have access
             }
 
             await _orderService.UpdateDraftAsync(id, request);

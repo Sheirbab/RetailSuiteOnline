@@ -86,26 +86,45 @@ public class PaymentsController : ControllerBase
     [HttpGet("order/{orderId}/outstanding")]
     public async Task<IActionResult> GetOutstanding(Guid orderId)
     {
-        var order = await _db.Orders
-            .FirstOrDefaultAsync(o => o.Id == orderId);
-
-        if (order == null)
-            return NotFound();
-
+        // For customers, check authorization
         if (_currentUser.Role == "Customer")
         {
             var customer = await _db.Customers
                 .FirstOrDefaultAsync(c => c.UserId == _currentUser.UserId);
 
-            if (customer == null || order.CustomerId != customer.Id)
+            if (customer == null)
                 return Forbid();
+
+            var order = await _db.Orders
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null)
+                return NotFound();
+
+            // Check if customer owns this order
+            if (order.CustomerId != customer.Id)
+                return Forbid(); // Resource exists but user doesn't have access
+
+            return Ok(new
+            {
+                order.TotalAmount,
+                order.PaidAmount,
+                order.OutstandingAmount
+            });
         }
+
+        // Staff/Admin can see any order
+        var adminOrder = await _db.Orders
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
+        if (adminOrder == null)
+            return NotFound();
 
         return Ok(new
         {
-            order.TotalAmount,
-            order.PaidAmount,
-            order.OutstandingAmount
+            adminOrder.TotalAmount,
+            adminOrder.PaidAmount,
+            adminOrder.OutstandingAmount
         });
     }
     [Authorize(Policy = "AdminOnly")]
