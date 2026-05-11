@@ -220,8 +220,12 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application failed to start.");
+    if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing")
+        throw;
 }
 finally
 {
     Log.CloseAndFlush();
 }
+
+public partial class Program { }

@@ -44,11 +44,23 @@ public static class SuperAdminSeeder
         var role         = (int)UserRole.SuperAdmin;
         var createdAt    = DateTime.UtcNow;
 
-        // Raw SQL bypasses the EF interceptor that overwrites TenantId from
-        // the request-scoped ITenantContext (which is null at startup).
-        await db.Database.ExecuteSqlInterpolatedAsync($@"
-            INSERT INTO Users (Id, TenantId, Email, PasswordHash, Role, IsDeleted, CreatedAt)
-            VALUES ({id}, {tenantId}, {email}, {passwordHash}, {role}, 0, {createdAt})");
+        if (db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            db.Users.Add(new RetailSuite.Infrastructure.Modules.Identity.Entities.User(
+                tenantId,
+                email,
+                passwordHash,
+                UserRole.SuperAdmin));
+            await db.SaveChangesAsync();
+        }
+        else
+        {
+            // Raw SQL bypasses the EF interceptor that overwrites TenantId from
+            // the request-scoped ITenantContext (which is null at startup).
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT INTO Users (Id, TenantId, Email, PasswordHash, Role, IsDeleted, CreatedAt)
+                VALUES ({id}, {tenantId}, {email}, {passwordHash}, {role}, 0, {createdAt})");
+        }
 
         Log.Information("SuperAdmin seeded — email: {Email}", email);
     }

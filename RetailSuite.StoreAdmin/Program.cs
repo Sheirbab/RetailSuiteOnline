@@ -12,9 +12,12 @@ builder.Services.AddSingleton<CartService>();
 
 builder.Services.AddScoped(sp =>
 {
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var apiBaseUrl = configuration["Api:BaseUrl"] ?? "https://localhost:59777/";
+
     return new HttpClient
     {
-        BaseAddress = new Uri("https://localhost:59777/") // your API port
+        BaseAddress = new Uri(apiBaseUrl)
     };
 });
 

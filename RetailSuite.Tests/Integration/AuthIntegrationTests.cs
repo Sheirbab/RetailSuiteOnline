@@ -1,38 +1,57 @@
-// Integration tests require a running SQL Server database and are excluded from the default test run.
-// They serve as a template for full end-to-end verification.
-// To run: dotnet test --filter "Category=Integration"
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace RetailSuite.Tests.Integration;
 
-/// <summary>
-/// Integration tests for the Auth controller.
-/// These tests are marked as Explicit and will not run in standard CI unless enabled.
-/// To make these runnable, configure a test SQL Server instance in the environment
-/// and add Microsoft.AspNetCore.Mvc.Testing to the test project.
-/// </summary>
 public class AuthIntegrationTests
 {
-    // Placeholder — full implementation requires WebApplicationFactory<Program>
-    // and an accessible SQL Server (or SQLite) for EF Core.
-
-    [Fact(Skip = "Integration test — requires running infrastructure. Remove Skip to enable.")]
+    [Fact]
     public async Task Signup_ReturnsJwtToken()
     {
-        // Arrange
-        // var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => { ... });
-        // var client  = factory.CreateClient();
+        await using var factory = new ApiTestFactory();
+        var client = factory.CreateClient();
+        var subdomain = $"auth-{Guid.NewGuid():N}";
 
-        // Act
-        // var res = await client.PostAsJsonAsync("/api/auth/signup", new { ... });
+        var response = await client.PostAsJsonAsync("/api/auth/signup", new
+        {
+            tenantName = "Auth Test Store",
+            subdomain,
+            email = $"admin-{subdomain}@example.com",
+            password = "Test@12345"
+        });
 
-        // Assert
-        // res.EnsureSuccessStatusCode();
-        await Task.CompletedTask;
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.True(doc.RootElement.GetProperty("success").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("data").GetString()));
     }
 
-    [Fact(Skip = "Integration test — requires running infrastructure. Remove Skip to enable.")]
+    [Fact]
     public async Task Login_WithWrongPassword_Returns401()
     {
-        await Task.CompletedTask;
+        await using var factory = new ApiTestFactory();
+        var client = factory.CreateClient();
+        var subdomain = $"login-{Guid.NewGuid():N}";
+        var email = $"admin-{subdomain}@example.com";
+
+        var signup = await client.PostAsJsonAsync("/api/auth/signup", new
+        {
+            tenantName = "Login Test Store",
+            subdomain,
+            email,
+            password = "Test@12345"
+        });
+        signup.EnsureSuccessStatusCode();
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email,
+            password = "Wrong@12345",
+            subdomain
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

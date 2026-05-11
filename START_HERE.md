@@ -16,7 +16,7 @@ Your RetailSuite demo store is **fully configured** with:
 
 ### Admin Account
 ```
-URL: https://localhost:7096/
+URL: https://localhost:7060/
 
 Email:    admin@demo-store.com
 Password: Demo@12345
@@ -39,7 +39,19 @@ cd D:\Shehriyar\Project\RetailSuite_Starter
 dotnet run --project RetailSuite.Api/RetailSuite.Api.csproj
 ```
 
-### Step 2: Watch the Console
+### Step 2: Start the StoreAdmin UI
+```bash
+cd D:\Shehriyar\Project\RetailSuite_Starter
+dotnet run --project RetailSuite.StoreAdmin/RetailSuite.StoreAdmin.csproj --launch-profile https
+```
+
+StoreAdmin reads the API base URL from `RetailSuite.StoreAdmin/appsettings*.json`:
+
+```
+Api:BaseUrl = https://localhost:59777/
+```
+
+### Step 3: Watch the API Console
 Look for:
 ```
 ✓ Created demo tenant: Demo Store (demo-store)
@@ -47,8 +59,8 @@ Look for:
 ✓ Created 6 products with 20 total variants
 ```
 
-### Step 3: Login & Test
-1. Open: https://localhost:7096/
+### Step 4: Login & Test
+1. Open: https://localhost:7060/
 2. Use credentials above
 3. Go to **Point of Sale**
 4. Search for products (try: "TSHIRT-SM", "RUNSHOES-7", or scan "8901234001001")
@@ -201,7 +213,7 @@ Look for:
 ## ❓ FAQ
 
 **Q: How do I login?**  
-A: Go to https://localhost:7096/, use admin@demo-store.com / Demo@12345
+A: Go to https://localhost:7060/, use admin@demo-store.com / Demo@12345
 
 **Q: Can I test checkout?**  
 A: Yes! All products are ready. Add to cart and complete checkout.
@@ -232,7 +244,7 @@ dotnet run --project RetailSuite.Api/RetailSuite.Api.csproj
 
 ### Login URL
 ```
-https://localhost:7096/
+https://localhost:7060/
 ```
 
 ### Admin Credentials
@@ -292,7 +304,7 @@ Your RetailSuite demo store is **fully configured and ready to use**.
 dotnet run --project RetailSuite.Api/RetailSuite.Api.csproj
 ```
 
-Then go to: https://localhost:7096/
+Then go to: https://localhost:7060/
 
 Login with:
 - **Email**: admin@demo-store.com
