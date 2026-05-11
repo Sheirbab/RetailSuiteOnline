@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
@@ -18,19 +19,24 @@ namespace RetailSuite.Api.Controllers
         private readonly OrderService _orderService;
         private readonly RetailDbContext _db;
         private readonly ICurrentUserContext _currentUser;
+        private readonly ILogger<OrdersController> _logger;
 
         public OrdersController(
             OrderService orderService,
             RetailDbContext db,
-            ICurrentUserContext currentUser)
+            ICurrentUserContext currentUser,
+            ILogger<OrdersController> logger)
         {
             _orderService = orderService;
             _db = db;
             _currentUser = currentUser;
+            _logger = logger;
         }
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(Guid id)
         {
+            _logger.LogInformation("Fetching order {OrderId} by {UserRole} {UserId}", id, _currentUser.Role, _currentUser.UserId);
+
             // For customers, check authorization first (before querying for the resource)
             if (_currentUser.Role == "Customer")
             {
@@ -39,7 +45,10 @@ namespace RetailSuite.Api.Controllers
 
                 // If no customer profile, access is forbidden
                 if (customer == null)
+                {
+                    _logger.LogWarning("Order access denied: Customer profile not found for UserId {UserId}", _currentUser.UserId);
                     return Forbid();
+                }
 
                 // Customer can only access their own orders
                 var order = await _db.Orders
@@ -48,11 +57,19 @@ namespace RetailSuite.Api.Controllers
                     .FirstOrDefaultAsync(o => o.Id == id);
 
                 if (order == null)
+                {
+                    _logger.LogInformation("Order {OrderId} not found", id);
                     return NotFound();
+                }
 
                 // Check if customer owns this order
                 if (order.CustomerId != customer.Id)
+                {
+                    _logger.LogWarning("Order access denied: CustomerId {CustomerId} attempting to access OrderId {OrderId}", customer.Id, id);
                     return Forbid(); // Resource exists but user doesn't have access
+                }
+
+                _logger.LogInformation("Order {OrderId} retrieved successfully for customer {CustomerId}", id, customer.Id);
 
                 return Ok(new
                 {

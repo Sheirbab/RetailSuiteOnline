@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
@@ -8,13 +9,16 @@ public class PaymentService
 {
     private readonly RetailDbContext _db;
     private readonly AccountingService _accountingService;
+    private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         RetailDbContext db,
-        AccountingService accountingService)
+        AccountingService accountingService,
+        ILogger<PaymentService> logger)
     {
         _db = db;
         _accountingService = accountingService;
+        _logger = logger;
     }
 
     public async Task ReceivePaymentAsync(
@@ -22,16 +26,24 @@ public class PaymentService
      decimal amount,
      string method)
     {
+        _logger.LogInformation("Processing payment for Order {OrderId}: {Amount:C} via {PaymentMethod}", orderId, amount, method);
+
         using var transaction = await _db.Database.BeginTransactionAsync();
 
         var order = await _db.Orders
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
         if (order == null)
+        {
+            _logger.LogWarning("Payment processing failed: Order {OrderId} not found", orderId);
             throw new Exception("Order not found.");
+        }
 
         if (order.Status == OrderStatus.Cancelled)
+        {
+            _logger.LogWarning("Payment processing failed: Order {OrderId} is cancelled", orderId);
             throw new Exception("Cannot pay a cancelled order.");
+        }
 
         order.RegisterPayment(amount);
 
@@ -52,6 +64,8 @@ public class PaymentService
 
         await _db.SaveChangesAsync();
         await transaction.CommitAsync();
+
+        _logger.LogInformation("Payment {PaymentId} successfully recorded for Order {OrderId}", payment.Id, orderId);
     }
     public async Task DeletePaymentAsync(Guid paymentId)
     {

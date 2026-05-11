@@ -22,6 +22,8 @@ public class RetailDbContext : DbContext
         _tenantContext = tenantContext;
     }
 
+    private Guid? CurrentTenantId => _tenantContext.TenantId;
+
     // -----------------------------
     // Catalog
     // -----------------------------
@@ -65,12 +67,9 @@ public class RetailDbContext : DbContext
             b.Property(x => x.PasswordHash).IsRequired();
         });
 
-
-        Guid? tenantId = _tenantContext.TenantId;
-
         modelBuilder.Entity<User>()
             .HasQueryFilter(u =>
-                tenantId == null || u.TenantId == tenantId);
+                CurrentTenantId == null || u.TenantId == CurrentTenantId);
 
         modelBuilder.Entity<Tenant>(b =>
         {
@@ -388,17 +387,16 @@ public class RetailDbContext : DbContext
         // GLOBAL TENANT FILTER
         // =====================================================
 
-        modelBuilder.Entity<TenantEntity>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantContext.TenantId);
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             if (typeof(TenantEntity).IsAssignableFrom(entityType.ClrType))
             {
                 var method = typeof(RetailDbContext)
                     .GetMethod(nameof(ApplyTenantFilter),
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                     ?.MakeGenericMethod(entityType.ClrType);
 
-                method?.Invoke(null, new object[] { modelBuilder, _tenantContext });
+                method?.Invoke(this, new object[] { modelBuilder });
             }
         }
 
@@ -411,14 +409,13 @@ public class RetailDbContext : DbContext
         }
     }
 
-    private static void ApplyTenantFilter<TEntity>(
-      ModelBuilder modelBuilder,
-      ITenantContext tenantContext)
+    private void ApplyTenantFilter<TEntity>(
+      ModelBuilder modelBuilder)
       where TEntity : TenantEntity
     {
         modelBuilder.Entity<TEntity>()
             .HasQueryFilter(e =>
-                (tenantContext.TenantId == null || e.TenantId == tenantContext.TenantId)
+                (CurrentTenantId == null || e.TenantId == CurrentTenantId)
                 && !e.IsDeleted);
     }
 

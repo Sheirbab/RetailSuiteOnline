@@ -24,6 +24,7 @@ using System.Text;
 // Configure Serilog before the host is built
 // ---------------------------------------------------------------
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
     .WriteTo.Console()
     .CreateBootstrapLogger();
 
@@ -35,9 +36,18 @@ try
     // Serilog
     // ---------------------------------------------------------------
     builder.Host.UseSerilog((ctx, cfg) => cfg
-        .ReadFrom.Configuration(ctx.Configuration)
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "RetailSuite.Api")
+        .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
         .WriteTo.Console()
-        .WriteTo.File("logs/retailsuite-.log", rollingInterval: RollingInterval.Day));
+        .WriteTo.File(
+            "logs/retailsuite-.log",
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}"));
 
     // ---------------------------------------------------------------
     // Database

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 using RetailSuite.Api.Controllers;
 using RetailSuite.Infrastructure;
@@ -53,7 +54,8 @@ public class ControllerAuthorizationTests
         await db.SaveChangesAsync();
 
         var currentUser = CreateCustomerContext(callerUserId, tenantId);
-        var controller = new OrdersController(orderService: null!, db, currentUser.Object);
+        var mockLogger = new Mock<ILogger<OrdersController>>();
+        var controller = new OrdersController(orderService: null!, db, currentUser.Object, mockLogger.Object);
 
         var result = await controller.Get(order.Id);
 
@@ -78,7 +80,8 @@ public class ControllerAuthorizationTests
         await db.SaveChangesAsync();
 
         var currentUser = CreateCustomerContext(callerUserId, tenantId);
-        var controller = new OrdersController(orderService: null!, db, currentUser.Object);
+        var mockLogger = new Mock<ILogger<OrdersController>>();
+        var controller = new OrdersController(orderService: null!, db, currentUser.Object, mockLogger.Object);
 
         var result = await controller.Update(order.Id, new CreateOrderRequest());
 

@@ -29,6 +29,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
             var customerId = request.CustomerId ?? Guid.Empty;
+            string? receiptEmail = null;
 
             var order = new Order(orderNumber, customerId);
 
@@ -43,6 +44,8 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                     .FirstAsync(i => i.ProductVariantId == variant.Id);
 
                 var costAmount = inventoryItem.IssueStock(itemReq.Quantity);
+                variant.StockQuantity = inventoryItem.CurrentStock;
+                variant.AverageCost = inventoryItem.AverageCost;
                 totalCogs += costAmount;
 
                 var orderItem = new OrderItem(
@@ -100,30 +103,24 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 $"POS Sale {order.OrderNumber}",
                 journalLines);
 
+            if (customerId != Guid.Empty)
+            {
+                var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+                receiptEmail = customer?.Email;
+            }
+
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            // Send receipt email (fire-and-forget — never breaks the sale)
-            if (customerId != Guid.Empty)
+            if (!string.IsNullOrWhiteSpace(receiptEmail))
             {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
-                        if (customer?.Email != null)
-                        {
-                            var body = $@"
+                var body = $@"
 <h2>Receipt — {order.OrderNumber}</h2>
 <p>Thank you for your purchase!</p>
 <p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>
 <p><strong>Tax:</strong> Rs {order.TaxAmount:N2}</p>
 <p><strong>Date:</strong> {DateTime.UtcNow:dd MMM yyyy HH:mm} UTC</p>";
-                            await _emailService.SendAsync(customer.Email, $"Receipt: {order.OrderNumber}", body);
-                        }
-                    }
-                    catch { /* email failure must not affect sale */ }
-                });
+                await _emailService.SendAsync(receiptEmail, $"Receipt: {order.OrderNumber}", body);
             }
 
             return order.Id;

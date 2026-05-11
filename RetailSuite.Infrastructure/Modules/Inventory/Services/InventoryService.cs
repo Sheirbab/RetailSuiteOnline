@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 
 namespace RetailSuite.Infrastructure.Modules.Inventory.Services
@@ -6,10 +7,12 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
     public class InventoryService
     {
         private readonly RetailDbContext _db;
+        private readonly ILogger<InventoryService> _logger;
 
-        public InventoryService(RetailDbContext db)
+        public InventoryService(RetailDbContext db, ILogger<InventoryService> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         // ----------------------------------------------------
@@ -22,12 +25,20 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
             string? referenceId = null,
             string? notes = null)
         {
+            _logger.LogInformation("Adjusting stock for ProductVariantId {ProductVariantId}: {QuantityChange} units ({TransactionType})", 
+                productVariantId, quantityChange, transactionType);
 
             var inventoryItem = await _db.InventoryItems
                 .FirstOrDefaultAsync(i => i.ProductVariantId == productVariantId);
+            var variant = await _db.ProductVariants
+                .FirstOrDefaultAsync(v => v.Id == productVariantId);
+
+            if (variant == null)
+                throw new InvalidOperationException("Product variant not found.");
 
             if (inventoryItem == null)
             {
+                _logger.LogInformation("Creating new inventory item for ProductVariantId {ProductVariantId}", productVariantId);
                 inventoryItem = new InventoryItem(productVariantId);
                 _db.InventoryItems.Add(inventoryItem);
                 await _db.SaveChangesAsync();
@@ -35,7 +46,11 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
 
             // Prevent negative stock
             if (inventoryItem.CurrentStock + quantityChange < 0)
+            {
+                _logger.LogWarning("Stock adjustment failed: insufficient stock for ProductVariantId {ProductVariantId}. Current: {CurrentStock}, Change: {QuantityChange}", 
+                    productVariantId, inventoryItem.CurrentStock, quantityChange);
                 throw new InvalidOperationException("Insufficient stock.");
+            }
 
             var ledgerEntry = new InventoryTransaction(
                 inventoryItem.Id,
@@ -46,10 +61,15 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
                 notes);
 
             inventoryItem.ApplyTransaction(quantityChange);
+            variant.StockQuantity = inventoryItem.CurrentStock;
+            variant.AverageCost = inventoryItem.AverageCost;
 
             _db.InventoryTransactions.Add(ledgerEntry);
 
             await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Stock adjustment completed for ProductVariantId {ProductVariantId}. New stock level: {NewStock}", 
+                productVariantId, inventoryItem.CurrentStock);
         }
 
         // ----------------------------------------------------
@@ -82,6 +102,11 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
         {
             var inventoryItem = await _db.InventoryItems
                 .FirstOrDefaultAsync(i => i.ProductVariantId == productVariantId);
+            var variant = await _db.ProductVariants
+                .FirstOrDefaultAsync(v => v.Id == productVariantId);
+
+            if (variant == null)
+                throw new InvalidOperationException("Product variant not found.");
 
             if (inventoryItem == null)
             {
@@ -90,14 +115,9 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Services
                 await _db.SaveChangesAsync();
             }
 
-            var purchaseValue = quantity * unitCost;
-
-            var newTotalValue = inventoryItem.TotalStockValue + purchaseValue;
-            var newStock = inventoryItem.CurrentStock + quantity;
-
-            inventoryItem.ApplyTransaction(quantity);
-
             inventoryItem.ReceiveStock(quantity, unitCost);
+            variant.StockQuantity = inventoryItem.CurrentStock;
+            variant.AverageCost = inventoryItem.AverageCost;
 
             var ledgerEntry = new InventoryTransaction(
             inventoryItem.Id,
