@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
@@ -16,18 +17,21 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         private readonly InventoryService _inventoryService;
         private readonly AccountingService _accountingService;
         private readonly ICurrentUserContext _currentUser;
+        private readonly INotificationService _notifications;
         private readonly ILogger<OrderService> _logger;
         public OrderService(
         RetailDbContext db,
         InventoryService inventoryService,
         AccountingService accountingService,
         ICurrentUserContext currentUser,
+        INotificationService notifications,
         ILogger<OrderService> logger)
         {
             _db = db;
             _inventoryService = inventoryService;
             _accountingService = accountingService;
             _currentUser = currentUser;
+            _notifications = notifications;
             _logger = logger;
         }
 
@@ -99,6 +103,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            // Best-effort notification — never throws.
+            await _notifications.SendOrderConfirmedAsync(order.Id);
         }
 
         // ---------------------------------------
@@ -125,6 +132,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 order.Cancel();
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Best-effort notification — never throws.
+                await _notifications.SendOrderCancelledAsync(order.Id);
                 return;
             }
 
@@ -193,6 +203,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            // Best-effort notification — never throws.
+            await _notifications.SendOrderCancelledAsync(order.Id);
         }
         public async Task<Guid> CreateDraftAsync(CreateOrderRequest request)
         {
@@ -337,6 +350,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            // Best-effort notification — never throws.
+            await _notifications.SendReturnProcessedAsync(order.Id, totalReturnValue);
 
             return totalReturnValue;
         }

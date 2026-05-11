@@ -75,35 +75,33 @@ try
     builder.Services.AddScoped<CustomerService>();
 
     // ---------------------------------------------------------------
-    // Payment gateway configuration
+    // Payment gateway configuration (config-driven)
     // ---------------------------------------------------------------
-    // Configure Stripe options from appsettings
+    // Bind per-gateway options from appsettings
+    builder.Services.Configure<PaymentOptions>(builder.Configuration.GetSection(PaymentOptions.Section));
     builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.Section));
+    builder.Services.Configure<EasyPaisaOptions>(builder.Configuration.GetSection(EasyPaisaOptions.Section));
+    builder.Services.Configure<JazzCashOptions>(builder.Configuration.GetSection(JazzCashOptions.Section));
 
-    // Register Stripe-related services
+    // Stripe webhook handler
     builder.Services.AddScoped<StripeWebhookHandler>();
     builder.Services.AddScoped<IStripeWebhookHandler>(sp => sp.GetRequiredService<StripeWebhookHandler>());
 
-    // Use Stripe in production, FakePaymentGateway in development (will be resolved later)
-    builder.Services.AddScoped<IPaymentGateway>(serviceProvider =>
-    {
-        var environment = serviceProvider.GetRequiredService<IWebHostEnvironment>();
-        if (environment.IsProduction())
-        {
-            return serviceProvider.GetRequiredService<StripePaymentGateway>();
-        }
-        else
-        {
-            return serviceProvider.GetRequiredService<FakePaymentGateway>();
-        }
-    });
-
-    // Register both implementations
+    // Register each gateway implementation. EasyPaisa and JazzCash need HttpClient.
     builder.Services.AddScoped<StripePaymentGateway>();
     builder.Services.AddScoped<FakePaymentGateway>();
+    builder.Services.AddScoped<CashPaymentGateway>();
+    builder.Services.AddHttpClient<EasyPaisaPaymentGateway>();
+    builder.Services.AddHttpClient<JazzCashPaymentGateway>();
+
+    // Factory selects the active gateway based on Payments:Provider in appsettings.
+    builder.Services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
+    builder.Services.AddScoped<IPaymentGateway>(sp =>
+        sp.GetRequiredService<IPaymentGatewayFactory>().GetActive());
 
     // Email service (configure smtp settings in appsettings.json)
     builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+    builder.Services.AddScoped<INotificationService, NotificationService>();
 
     // ---------------------------------------------------------------
     // Authorization policies

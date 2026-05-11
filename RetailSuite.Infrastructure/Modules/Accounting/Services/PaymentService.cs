@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure;
+using RetailSuite.Infrastructure.Email;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
@@ -9,15 +10,18 @@ public class PaymentService
 {
     private readonly RetailDbContext _db;
     private readonly AccountingService _accountingService;
+    private readonly INotificationService _notifications;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         RetailDbContext db,
         AccountingService accountingService,
+        INotificationService notifications,
         ILogger<PaymentService> logger)
     {
         _db = db;
         _accountingService = accountingService;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -66,6 +70,9 @@ public class PaymentService
         await transaction.CommitAsync();
 
         _logger.LogInformation("Payment {PaymentId} successfully recorded for Order {OrderId}", payment.Id, orderId);
+
+        // Best-effort notification — never throws.
+        await _notifications.SendPaymentReceivedAsync(payment.Id);
     }
     public async Task DeletePaymentAsync(Guid paymentId)
     {

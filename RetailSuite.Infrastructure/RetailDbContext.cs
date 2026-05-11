@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
@@ -56,6 +57,11 @@ public class RetailDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
+
+    // -----------------------------
+    // Notifications
+    // -----------------------------
+    public DbSet<EmailNotification> EmailNotifications => Set<EmailNotification>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>(b =>
@@ -381,6 +387,27 @@ public class RetailDbContext : DbContext
                 .HasMaxLength(100);
             b.Property(p => p.TransactionReference)
                 .HasMaxLength(200);
+        });
+
+        // =====================================================
+        // EMAIL NOTIFICATIONS CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<EmailNotification>(b =>
+        {
+            b.ToTable("EmailNotifications");
+            b.HasKey(e => e.Id);
+
+            b.Property(e => e.ToAddress).IsRequired().HasMaxLength(250);
+            b.Property(e => e.Subject).IsRequired().HasMaxLength(300);
+            b.Property(e => e.TemplateKey).IsRequired().HasMaxLength(100);
+            b.Property(e => e.Body).IsRequired();
+            b.Property(e => e.ErrorMessage).HasMaxLength(1000);
+            b.Property(e => e.RelatedEntityType).HasMaxLength(100);
+            b.Property(e => e.RelatedEntityId).HasMaxLength(100);
+
+            b.HasIndex(e => new { e.TenantId, e.Status });
+            b.HasIndex(e => e.CreatedAt);
         });
 
         // =====================================================
