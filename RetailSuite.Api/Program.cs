@@ -74,8 +74,33 @@ try
     builder.Services.AddScoped<SaleService>();
     builder.Services.AddScoped<CustomerService>();
 
-    // Payment gateway (swap FakePaymentGateway for a real provider before launch)
-    builder.Services.AddScoped<IPaymentGateway, FakePaymentGateway>();
+    // ---------------------------------------------------------------
+    // Payment gateway configuration
+    // ---------------------------------------------------------------
+    // Configure Stripe options from appsettings
+    builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.Section));
+
+    // Register Stripe-related services
+    builder.Services.AddScoped<StripeWebhookHandler>();
+    builder.Services.AddScoped<IStripeWebhookHandler>(sp => sp.GetRequiredService<StripeWebhookHandler>());
+
+    // Use Stripe in production, FakePaymentGateway in development (will be resolved later)
+    builder.Services.AddScoped<IPaymentGateway>(serviceProvider =>
+    {
+        var environment = serviceProvider.GetRequiredService<IWebHostEnvironment>();
+        if (environment.IsProduction())
+        {
+            return serviceProvider.GetRequiredService<StripePaymentGateway>();
+        }
+        else
+        {
+            return serviceProvider.GetRequiredService<FakePaymentGateway>();
+        }
+    });
+
+    // Register both implementations
+    builder.Services.AddScoped<StripePaymentGateway>();
+    builder.Services.AddScoped<FakePaymentGateway>();
 
     // Email service (configure smtp settings in appsettings.json)
     builder.Services.AddScoped<IEmailService, SmtpEmailService>();
