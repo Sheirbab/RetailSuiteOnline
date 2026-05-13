@@ -12,6 +12,7 @@ using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Identity.Services;
+using RetailSuite.Infrastructure.Modules.Images.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
@@ -76,6 +77,10 @@ try
     builder.Services.AddScoped<PaymentService>();
     builder.Services.AddScoped<SaleService>();
     builder.Services.AddScoped<CustomerService>();
+
+    builder.Services.Configure<ImageStorageOptions>(builder.Configuration.GetSection(ImageStorageOptions.Section));
+    builder.Services.AddScoped<IImageValidationService, ImageValidationService>();
+    builder.Services.AddScoped<IImageStorageService, LocalImageStorageService>();
 
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)

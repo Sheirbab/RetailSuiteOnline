@@ -31,6 +31,7 @@ public class RetailDbContext : DbContext
     // Catalog
     // -----------------------------
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
@@ -142,6 +143,23 @@ public class RetailDbContext : DbContext
                 .WithOne()
                 .HasForeignKey(v => v.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductImage>(b =>
+        {
+            b.ToTable("ProductImages");
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.RelativePath).IsRequired().HasMaxLength(500);
+            b.Property(i => i.MimeType).IsRequired().HasMaxLength(80);
+
+            b.HasOne<Product>()
+                .WithMany()
+                .HasForeignKey(i => i.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(i => new { i.TenantId, i.ProductId, i.SortOrder });
+            b.HasIndex(i => new { i.ProductId, i.IsPrimary });
         });
 
         modelBuilder.Entity<ProductVariant>(b =>
