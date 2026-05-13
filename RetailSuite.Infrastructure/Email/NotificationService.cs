@@ -118,6 +118,109 @@ public class NotificationService : INotificationService
             relatedEntityId: order?.Id.ToString());
     }
 
+    public async Task SendVerifyEmailAsync(
+        string toAddress,
+        string recipientName,
+        string tenantName,
+        string verificationUrl,
+        int expiryHours,
+        Guid? tenantId = null,
+        Guid? userId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress) || string.IsNullOrWhiteSpace(verificationUrl))
+        {
+            _logger.LogWarning("VerifyEmail skipped — toAddress or verificationUrl is empty.");
+            return;
+        }
+
+        var subject = "Verify your email address";
+        var body = EmailTemplates.VerifyEmail(
+            recipientName, tenantName, verificationUrl, expiryHours);
+
+        await DispatchAsync(
+            toAddress,
+            subject,
+            EmailTemplateKeys.VerifyEmail,
+            body,
+            relatedEntityType: "User",
+            relatedEntityId: userId?.ToString());
+    }
+
+    public async Task SendWelcomeTenantAsync(
+        string toAddress,
+        string recipientName,
+        string tenantName,
+        string loginUrl,
+        Guid? tenantId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress))
+        {
+            _logger.LogWarning("WelcomeTenant skipped — toAddress is empty.");
+            return;
+        }
+
+        var subject = $"Welcome to RetailSuite — {tenantName}";
+        var body = EmailTemplates.WelcomeTenant(recipientName, tenantName, loginUrl);
+
+        await DispatchAsync(
+            toAddress,
+            subject,
+            EmailTemplateKeys.WelcomeTenant,
+            body,
+            relatedEntityType: "Tenant",
+            relatedEntityId: tenantId?.ToString());
+    }
+
+    // ----- Subscription billing ----------------------------------
+
+    public async Task SendInvoiceIssuedAsync(
+        string toAddress, string recipientName, string tenantName,
+        string invoiceNumber, decimal amount, string currency, DateTime dueDate, string payUrl,
+        Guid? tenantId = null, Guid? invoiceId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress)) return;
+        var subject = $"Invoice {invoiceNumber} — {currency} {amount:N2}";
+        var body = EmailTemplates.InvoiceIssued(recipientName, tenantName, invoiceNumber, amount, currency, dueDate, payUrl);
+        await DispatchAsync(toAddress, subject, EmailTemplateKeys.InvoiceIssued, body,
+            relatedEntityType: "SubscriptionInvoice", relatedEntityId: invoiceId?.ToString());
+    }
+
+    public async Task SendInvoicePaidAsync(
+        string toAddress, string recipientName, string tenantName,
+        string invoiceNumber, decimal amount, string currency, string method,
+        Guid? tenantId = null, Guid? invoiceId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress)) return;
+        var subject = $"Payment received — {invoiceNumber}";
+        var body = EmailTemplates.InvoicePaid(recipientName, tenantName, invoiceNumber, amount, currency, method);
+        await DispatchAsync(toAddress, subject, EmailTemplateKeys.InvoicePaid, body,
+            relatedEntityType: "SubscriptionInvoice", relatedEntityId: invoiceId?.ToString());
+    }
+
+    public async Task SendInvoiceOverdueAsync(
+        string toAddress, string recipientName, string tenantName,
+        string invoiceNumber, decimal amount, string currency, DateTime dueDate, string payUrl,
+        Guid? tenantId = null, Guid? invoiceId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress)) return;
+        var subject = $"Invoice overdue — {invoiceNumber}";
+        var body = EmailTemplates.InvoiceOverdue(recipientName, tenantName, invoiceNumber, amount, currency, dueDate, payUrl);
+        await DispatchAsync(toAddress, subject, EmailTemplateKeys.InvoiceOverdue, body,
+            relatedEntityType: "SubscriptionInvoice", relatedEntityId: invoiceId?.ToString());
+    }
+
+    public async Task SendTenantSuspendedAsync(
+        string toAddress, string recipientName, string tenantName,
+        string invoiceNumber, string payUrl,
+        Guid? tenantId = null, Guid? invoiceId = null)
+    {
+        if (string.IsNullOrWhiteSpace(toAddress)) return;
+        var subject = $"Account suspended — {tenantName}";
+        var body = EmailTemplates.TenantSuspended(recipientName, tenantName, invoiceNumber, payUrl);
+        await DispatchAsync(toAddress, subject, EmailTemplateKeys.TenantSuspended, body,
+            relatedEntityType: "Tenant", relatedEntityId: tenantId?.ToString());
+    }
+
     // -------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------

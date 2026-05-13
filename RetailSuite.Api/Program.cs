@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
@@ -10,8 +11,10 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Identity.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Payments;
 using RetailSuite.Infrastructure.Seeders;
@@ -104,6 +107,25 @@ try
     builder.Services.AddScoped<INotificationService, NotificationService>();
 
     // ---------------------------------------------------------------
+    // Identity — email verification
+    // ---------------------------------------------------------------
+    builder.Services.Configure<VerificationOptions>(builder.Configuration.GetSection(VerificationOptions.Section));
+    builder.Services.AddScoped<IVerificationTokenService, VerificationTokenService>();
+    builder.Services.AddSingleton<IAuthorizationHandler, VerifiedEmailHandler>();
+
+    // ---------------------------------------------------------------
+    // Subscriptions
+    // ---------------------------------------------------------------
+    builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+    builder.Services.AddScoped<IEntitlementService, EntitlementService>();
+
+    // Subscription billing (Sub-phase 3c)
+    builder.Services.Configure<BillingOptions>(builder.Configuration.GetSection(BillingOptions.Section));
+    builder.Services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
+    builder.Services.AddScoped<ISubscriptionBillingService, SubscriptionBillingService>();
+    builder.Services.AddHostedService<SubscriptionRenewalHostedService>();
+
+    // ---------------------------------------------------------------
     // Authorization policies
     // ---------------------------------------------------------------
     builder.Services.AddAuthorization(options =>
@@ -113,6 +135,15 @@ try
         options.AddPolicy("AdminOnly",         policy => policy.RequireRole("Admin"));
         options.AddPolicy("StaffOrAdmin",      policy => policy.RequireRole("Admin", "Staff"));
         options.AddPolicy("CustomerOnly",      policy => policy.RequireRole("Customer"));
+
+        // Sub-phase 3a — gate tenant-side APIs behind verified email.
+        // Apply via [Authorize(Policy = "RequireVerifiedEmail")] on controllers/actions
+        // that should be locked until the user clicks the verification link.
+        options.AddPolicy("RequireVerifiedEmail", policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.Requirements.Add(new VerifiedEmailRequirement());
+        });
     });
 
     // ---------------------------------------------------------------
@@ -186,6 +217,16 @@ try
     await SuperAdminSeeder.SeedAsync(app.Services);
 
     // ---------------------------------------------------------------
+    // Seed subscription plans (idempotent — only adds missing codes)
+    // ---------------------------------------------------------------
+    await using (var scope = app.Services.CreateAsyncScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<RetailDbContext>();
+        var seederLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        await SubscriptionPlanSeeder.SeedAsync(db, seederLogger);
+    }
+
+    // ---------------------------------------------------------------
     // Seed demo data (idempotent — no-op if demo tenant exists)
     // ---------------------------------------------------------------
     await using (var scope = app.Services.CreateAsyncScope())
@@ -212,6 +253,10 @@ try
 
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // Block requests from Suspended / Cancelled tenants (Sub-phase 3b).
+    // Runs after auth so we have tenantId in claims; allowlists auth/webhooks/subscriptions/swagger.
+    app.UseMiddleware<SubscriptionEnforcementMiddleware>();
 
     app.MapControllers();
 

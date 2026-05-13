@@ -1,11 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using RetailSuite.Infrastructure;
+using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Identity.Dtos;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
+using RetailSuite.Infrastructure.Modules.Identity.Services;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Modules.Accounting.Entities;
@@ -22,13 +27,25 @@ public class AuthController : ControllerBase
 {
     private readonly RetailDbContext _Db;
     private readonly IConfiguration _config;
+    private readonly IVerificationTokenService _tokenService;
+    private readonly INotificationService _notifications;
+    private readonly ISubscriptionService _subs;
+    private readonly VerificationOptions _verifyOptions;
 
     public AuthController(
         RetailDbContext Db,
-        IConfiguration config)
+        IConfiguration config,
+        IVerificationTokenService tokenService,
+        INotificationService notifications,
+        ISubscriptionService subs,
+        IOptions<VerificationOptions> verifyOptions)
     {
-        _Db = Db;
-        _config = config;
+        _Db             = Db;
+        _config         = config;
+        _tokenService   = tokenService;
+        _notifications  = notifications;
+        _subs           = subs;
+        _verifyOptions  = verifyOptions.Value;
     }
 
     [HttpPost("signup")]
@@ -45,25 +62,33 @@ public class AuthController : ControllerBase
         if (request.Password.Length < 8)
             return BadRequest(new ApiResponse<string>(false, "Password must be at least 8 characters.", null));
 
-        if (await _Db.Tenants.AnyAsync(t => t.Subdomain == request.Subdomain))
+        var email     = request.Email.Trim().ToLowerInvariant();
+        var subdomain = request.Subdomain.Trim().ToLowerInvariant();
+
+        if (await _Db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == subdomain))
             return BadRequest(new ApiResponse<string>(false, "Subdomain already taken.", null));
 
         using var transaction = await _Db.Database.BeginTransactionAsync();
 
         try
         {
-            // 1. Create Tenant
-            var tenant = new Tenant(request.TenantName, request.Subdomain);
+            // 1. Create Tenant — starts as PendingVerification.
+            var tenant = new Tenant(
+                request.TenantName.Trim(),
+                subdomain,
+                billingEmail: string.IsNullOrWhiteSpace(request.BillingEmail) ? email : request.BillingEmail.Trim().ToLowerInvariant(),
+                countryCode: string.IsNullOrWhiteSpace(request.CountryCode) ? "PK" : request.CountryCode);
+            tenant.SetStatus(TenantStatus.PendingVerification);
             _Db.Tenants.Add(tenant);
             await _Db.SaveChangesAsync();
 
-            // 2. Create Admin User
+            // 2. Create Admin User — unverified.
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-            var user = new User(tenant.Id, request.Email, passwordHash, UserRole.Admin);
+            var user = new User(tenant.Id, email, passwordHash, UserRole.Admin);
             _Db.Users.Add(user);
             await _Db.SaveChangesAsync();
 
-            // 3. Seed Chart of Accounts
+            // 3. Seed Chart of Accounts (unchanged).
             var accounts = new List<Account>
             {
                 new Account("1000", "Cash",                  AccountType.Asset)     { TenantId = tenant.Id },
@@ -76,16 +101,183 @@ public class AuthController : ControllerBase
             _Db.Accounts.AddRange(accounts);
             await _Db.SaveChangesAsync();
 
+            // 4. Issue verification token (must be done inside the txn so we can roll back on failure).
+            var plaintextToken = await _tokenService.IssueAsync(tenant.Id, user.Id, TokenPurpose.VerifyEmail);
+
+            // 5. Create initial subscription — defaults to FREE plan, Monthly cycle.
+            //    The subscription starts in Trialing if the plan has trial days, else Active.
+            //    Tenant.Status remains PendingVerification until email is verified.
+            var planCode = string.IsNullOrWhiteSpace(request.PlanCode)
+                ? "FREE"
+                : request.PlanCode.Trim().ToUpperInvariant();
+
+            var billingCycle = Enum.TryParse<BillingCycle>(request.BillingCycle, ignoreCase: true, out var cycle)
+                ? cycle
+                : BillingCycle.Monthly;
+
+            await _subs.CreateInitialSubscriptionAsync(tenant.Id, planCode, billingCycle);
+
             await transaction.CommitAsync();
 
+            // 6. Fire verification email — best-effort, outside the transaction.
+            var verifyUrl = BuildVerificationUrl(plaintextToken);
+            await _notifications.SendVerifyEmailAsync(
+                toAddress: user.Email,
+                recipientName: user.Email,
+                tenantName: tenant.Name,
+                verificationUrl: verifyUrl,
+                expiryHours: _verifyOptions.TokenTtlHours,
+                tenantId: tenant.Id,
+                userId: user.Id);
+
+            // 7. Return a JWT scoped as "unverified" — user can call /verify-email and /resend-verification
+            //    but anything behind [Authorize(Policy="RequireVerifiedEmail")] will return 403.
             var token = GenerateJwt(user);
-            return Ok(new ApiResponse<string>(true, "Account created successfully.", token));
+            return Ok(new ApiResponse<object>(true, "Account created. Please check your email to verify.", new
+            {
+                Token              = token,
+                RequiresVerification = true,
+                TenantId           = tenant.Id,
+                Subdomain          = tenant.Subdomain
+            }));
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    // -------------------------------------------------------------
+    // POST /api/auth/verify-email  — public
+    // -------------------------------------------------------------
+    [HttpPost("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return BadRequest(new ApiResponse<string>(false, "Token is required.", null));
+
+        var token = await _tokenService.ValidateAsync(request.Token, TokenPurpose.VerifyEmail);
+        if (token is null)
+            return BadRequest(new ApiResponse<string>(false, "Invalid or expired token.", null));
+
+        var user = await _Db.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == token.UserId);
+
+        if (user is null)
+            return NotFound(new ApiResponse<string>(false, "User not found.", null));
+
+        var tenant = await _Db.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == user.TenantId);
+
+        using var tx = await _Db.Database.BeginTransactionAsync();
+        try
+        {
+            user.MarkEmailVerified();
+            await _tokenService.MarkUsedAsync(token);
+
+            // Move tenant out of PendingVerification on first successful verify.
+            // If the subscription is in Trialing, mirror that on the Tenant; otherwise Active.
+            if (tenant != null && tenant.Status == TenantStatus.PendingVerification)
+            {
+                var activeSub = await _subs.GetActiveAsync(tenant.Id);
+                var newStatus = activeSub?.Status == SubscriptionStatus.Trialing
+                    ? TenantStatus.Trialing
+                    : TenantStatus.Active;
+                tenant.SetStatus(newStatus);
+            }
+
+            await _Db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
+        // Welcome email — best-effort.
+        if (tenant != null)
+        {
+            await _notifications.SendWelcomeTenantAsync(
+                toAddress: user.Email,
+                recipientName: user.Email,
+                tenantName: tenant.Name,
+                loginUrl: $"{_verifyOptions.PublicBaseUrl.TrimEnd('/')}/login",
+                tenantId: tenant.Id);
+        }
+
+        // Re-issue JWT so the new IsEmailVerified claim is reflected immediately.
+        var newToken = GenerateJwt(user);
+        return Ok(new ApiResponse<object>(true, "Email verified.", new { Token = newToken }));
+    }
+
+    // -------------------------------------------------------------
+    // POST /api/auth/resend-verification  — public
+    // -------------------------------------------------------------
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest(new ApiResponse<string>(false, "Email is required.", null));
+
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        // Find the user (tenant-scoped if subdomain provided, else first match).
+        User? user;
+        if (!string.IsNullOrWhiteSpace(request.Subdomain))
+        {
+            var tenant = await _Db.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Subdomain == request.Subdomain);
+            if (tenant is null)
+                return Ok(new ApiResponse<string>(true, "If an account exists, a verification email has been sent.", null));
+
+            user = await _Db.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == email && u.TenantId == tenant.Id);
+        }
+        else
+        {
+            user = await _Db.Users
+                .IgnoreQueryFilters()
+                .Where(u => u.Email == email)
+                .OrderBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync();
+        }
+
+        // Always return generic 200 to avoid leaking which emails exist.
+        if (user is null || user.IsEmailVerified)
+            return Ok(new ApiResponse<string>(true, "If an account exists, a verification email has been sent.", null));
+
+        if (await _tokenService.IsResendThrottledAsync(user.Id, TokenPurpose.VerifyEmail))
+            return StatusCode(429, new ApiResponse<string>(false, "Please wait before requesting another email.", null));
+
+        var tenantForUser = await _Db.Tenants
+            .IgnoreQueryFilters()
+            .FirstAsync(t => t.Id == user.TenantId);
+
+        var plaintextToken = await _tokenService.IssueAsync(user.TenantId, user.Id, TokenPurpose.VerifyEmail);
+        var verifyUrl = BuildVerificationUrl(plaintextToken);
+
+        await _notifications.SendVerifyEmailAsync(
+            toAddress: user.Email,
+            recipientName: user.Email,
+            tenantName: tenantForUser.Name,
+            verificationUrl: verifyUrl,
+            expiryHours: _verifyOptions.TokenTtlHours,
+            tenantId: tenantForUser.Id,
+            userId: user.Id);
+
+        return Ok(new ApiResponse<string>(true, "If an account exists, a verification email has been sent.", null));
+    }
+
+    private string BuildVerificationUrl(string plaintextToken)
+    {
+        var baseUrl = _verifyOptions.PublicBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/verify-email?token={Uri.EscapeDataString(plaintextToken)}";
     }
 
     [HttpPost("login")]
@@ -141,7 +333,8 @@ public class AuthController : ControllerBase
         {
             new Claim("userId",   user.Id.ToString()),
             new Claim("tenantId", user.TenantId.ToString()),
-            new Claim(ClaimTypes.Role, user.Role.ToString())
+            new Claim(ClaimTypes.Role, user.Role.ToString()),
+            new Claim("email_verified", user.IsEmailVerified ? "true" : "false")
         };
 
         var key  = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"] ?? ""));

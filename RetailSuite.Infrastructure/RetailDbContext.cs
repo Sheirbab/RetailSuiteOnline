@@ -3,6 +3,7 @@ using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
@@ -57,6 +58,15 @@ public class RetailDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<TenantVerificationToken> TenantVerificationTokens => Set<TenantVerificationToken>();
+
+    // -----------------------------
+    // Subscriptions
+    // -----------------------------
+    public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
+    public DbSet<SubscriptionInvoice> SubscriptionInvoices => Set<SubscriptionInvoice>();
+    public DbSet<SubscriptionPayment> SubscriptionPayments => Set<SubscriptionPayment>();
 
     // -----------------------------
     // Notifications
@@ -71,6 +81,7 @@ public class RetailDbContext : DbContext
             b.HasIndex(x => x.Email);
             b.Property(x => x.Email).IsRequired();
             b.Property(x => x.PasswordHash).IsRequired();
+            b.Property(x => x.IsEmailVerified).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<User>()
@@ -84,6 +95,22 @@ public class RetailDbContext : DbContext
             b.Property(x => x.Name).IsRequired().HasMaxLength(200);
             b.Property(x => x.Subdomain).IsRequired().HasMaxLength(100);
             b.HasIndex(x => x.Subdomain).IsUnique();
+            b.Property(x => x.BillingEmail).HasMaxLength(250);
+            b.Property(x => x.CountryCode).HasMaxLength(2).HasDefaultValue("PK");
+        });
+
+        modelBuilder.Entity<TenantVerificationToken>(b =>
+        {
+            b.ToTable("TenantVerificationTokens");
+            b.HasKey(t => t.Id);
+
+            b.Property(t => t.TokenHash).IsRequired().HasMaxLength(128);
+            b.Property(t => t.Purpose).IsRequired();
+            b.Property(t => t.ExpiresAt).IsRequired();
+
+            b.HasIndex(t => t.TokenHash).IsUnique();
+            b.HasIndex(t => new { t.TenantId, t.UserId, t.Purpose });
+            b.HasIndex(t => t.ExpiresAt);
         });
 
         // =====================================================
@@ -408,6 +435,92 @@ public class RetailDbContext : DbContext
 
             b.HasIndex(e => new { e.TenantId, e.Status });
             b.HasIndex(e => e.CreatedAt);
+        });
+
+        // =====================================================
+        // SUBSCRIPTIONS CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<SubscriptionPlan>(b =>
+        {
+            b.ToTable("SubscriptionPlans");
+            b.HasKey(p => p.Id);
+
+            b.Property(p => p.Code).IsRequired().HasMaxLength(50);
+            b.HasIndex(p => p.Code).IsUnique();
+
+            b.Property(p => p.Name).IsRequired().HasMaxLength(150);
+            b.Property(p => p.Description).HasMaxLength(1000);
+            b.Property(p => p.Currency).IsRequired().HasMaxLength(3);
+
+            b.Property(p => p.MonthlyPrice).HasColumnType("decimal(18,2)");
+            b.Property(p => p.YearlyPrice).HasColumnType("decimal(18,2)");
+
+            b.HasIndex(p => p.IsActive);
+        });
+
+        modelBuilder.Entity<TenantSubscription>(b =>
+        {
+            b.ToTable("TenantSubscriptions");
+            b.HasKey(s => s.Id);
+
+            b.Property(s => s.PlanCode).IsRequired().HasMaxLength(50);
+            b.Property(s => s.Currency).IsRequired().HasMaxLength(3);
+            b.Property(s => s.LastPrice).HasColumnType("decimal(18,2)");
+
+            b.HasOne<SubscriptionPlan>()
+                .WithMany()
+                .HasForeignKey(s => s.PlanId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(s => new { s.TenantId, s.Status });
+            b.HasIndex(s => s.NextBillingAt);
+            // One active subscription per tenant — enforce via filtered unique index.
+            b.HasIndex(s => s.TenantId)
+                .HasFilter("[Status] IN (0, 1, 2, 4)")  // Trialing|Active|PastDue|GracePeriod
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<SubscriptionInvoice>(b =>
+        {
+            b.ToTable("SubscriptionInvoices");
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.InvoiceNumber).IsRequired().HasMaxLength(50);
+            b.Property(i => i.PlanCode).IsRequired().HasMaxLength(50);
+            b.Property(i => i.Reason).HasMaxLength(250);
+            b.Property(i => i.Currency).IsRequired().HasMaxLength(3);
+
+            b.Property(i => i.Subtotal).HasColumnType("decimal(18,2)");
+            b.Property(i => i.TaxAmount).HasColumnType("decimal(18,2)");
+            b.Property(i => i.Total).HasColumnType("decimal(18,2)");
+            b.Property(i => i.AmountPaid).HasColumnType("decimal(18,2)");
+
+            b.HasIndex(i => new { i.TenantId, i.InvoiceNumber }).IsUnique();
+            b.HasIndex(i => new { i.TenantId, i.Status });
+            b.HasIndex(i => i.DueDate);
+        });
+
+        modelBuilder.Entity<SubscriptionPayment>(b =>
+        {
+            b.ToTable("SubscriptionPayments");
+            b.HasKey(p => p.Id);
+
+            b.Property(p => p.PaymentMethod).IsRequired().HasMaxLength(50);
+            b.Property(p => p.Provider).IsRequired().HasMaxLength(50);
+            b.Property(p => p.ProviderTxnRef).HasMaxLength(200);
+            b.Property(p => p.Currency).IsRequired().HasMaxLength(3);
+            b.Property(p => p.FailureReason).HasMaxLength(500);
+
+            b.Property(p => p.Amount).HasColumnType("decimal(18,2)");
+
+            b.HasOne<SubscriptionInvoice>()
+                .WithMany()
+                .HasForeignKey(p => p.InvoiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(p => new { p.TenantId, p.InvoiceId });
+            b.HasIndex(p => p.ProviderTxnRef);
         });
 
         // =====================================================
