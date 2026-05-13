@@ -82,10 +82,10 @@ public class NotificationService : INotificationService
         if (order is null || customer is null || string.IsNullOrWhiteSpace(customer.Email))
             return;
 
-        var subject = $"Payment Received — {order?.OrderNumber}";
+        var subject = $"Payment Received — {order.OrderNumber}";
         var body = EmailTemplates.PaymentReceived(
             customer.FullName,
-            order?.OrderNumber,
+            order.OrderNumber,
             payment.Amount,
             payment.PaymentMethod,
             payment.TransactionReference);
@@ -105,9 +105,9 @@ public class NotificationService : INotificationService
         if (order is null || customer is null || string.IsNullOrWhiteSpace(customer.Email))
             return;
 
-        var subject = $"Return Processed — {order?.OrderNumber}";
+        var subject = $"Return Processed — {order.OrderNumber}";
         var body = EmailTemplates.ReturnProcessed(
-            customer.FullName, order?.OrderNumber, refundAmount);
+            customer.FullName, order.OrderNumber, refundAmount);
 
         await DispatchAsync(
             customer.Email,

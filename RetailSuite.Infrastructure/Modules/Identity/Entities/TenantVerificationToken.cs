@@ -32,6 +32,8 @@ public class TenantVerificationToken : TenantEntity
         TokenPurpose purpose,
         DateTime expiresAt)
     {
+        Id        = Guid.NewGuid();
+        CreatedAt = DateTime.UtcNow;
         TenantId  = tenantId;
         UserId    = userId;
         TokenHash = tokenHash;

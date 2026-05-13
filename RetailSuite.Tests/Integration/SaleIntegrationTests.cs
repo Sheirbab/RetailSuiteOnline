@@ -71,8 +71,8 @@ public class SaleIntegrationTests
         response.EnsureSuccessStatusCode();
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return doc.RootElement.GetProperty("data").GetString()
-            ?? throw new InvalidOperationException("Signup did not return a token.");
+        var token = doc.RootElement.GetProperty("data").GetProperty("token").GetString();
+        return token ?? throw new InvalidOperationException("Signup did not return a token.");
     }
 
     private static async Task<Guid> CreateProductAsync(HttpClient client)

@@ -67,7 +67,7 @@ public class StripePaymentGateway : IPaymentGateway
 
             return new PaymentResult(
                 false,
-                null,
+                string.Empty,
                 $"Stripe error: {ex.StripeError?.Message ?? ex.Message}");
         }
         catch (Exception ex)
@@ -78,7 +78,7 @@ public class StripePaymentGateway : IPaymentGateway
 
             return new PaymentResult(
                 false,
-                null,
+                string.Empty,
                 $"Payment processing error: {ex.Message}");
         }
     }
@@ -131,7 +131,7 @@ public class StripePaymentGateway : IPaymentGateway
 
             return new PaymentResult(
                 false,
-                null,
+                string.Empty,
                 $"Stripe refund error: {ex.StripeError?.Message ?? ex.Message}");
         }
         catch (Exception ex)
@@ -142,7 +142,7 @@ public class StripePaymentGateway : IPaymentGateway
 
             return new PaymentResult(
                 false,
-                null,
+                string.Empty,
                 $"Refund processing error: {ex.Message}");
         }
     }

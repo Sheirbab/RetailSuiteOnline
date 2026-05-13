@@ -25,7 +25,10 @@ public class AuthIntegrationTests
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.True(doc.RootElement.GetProperty("success").GetBoolean());
-        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("data").GetString()));
+        var data = doc.RootElement.GetProperty("data");
+        var token = data.GetProperty("token").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(token));
+        Assert.True(data.GetProperty("requiresVerification").GetBoolean());
     }
 
     [Fact]
