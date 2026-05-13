@@ -605,6 +605,62 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.ToTable("SubscriptionPayments", (string)null);
                 });
 
+            modelBuilder.Entity("RetailSuite.Infrastructure.Payments.WebhookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValue("");
+
+                    b.Property<string>("ExternalEventId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("MatchedOrderPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("MatchedSubscriptionPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Processed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProcessingError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("RawPayload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Provider", "ExternalEventId")
+                        .IsUnique();
+
+                    b.ToTable("WebhookEvents", (string)null);
+                });
+
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Subscriptions.Entities.TenantSubscription", b =>
                 {
                     b.HasOne("RetailSuite.Infrastructure.Modules.Subscriptions.Entities.SubscriptionPlan", null)

@@ -90,6 +90,11 @@ try
     builder.Services.AddScoped<StripeWebhookHandler>();
     builder.Services.AddScoped<IStripeWebhookHandler>(sp => sp.GetRequiredService<StripeWebhookHandler>());
 
+    // Sub-phase 3d — EasyPaisa + JazzCash webhook handlers + reconciler.
+    builder.Services.AddScoped<IEasyPaisaWebhookHandler, EasyPaisaWebhookHandler>();
+    builder.Services.AddScoped<IJazzCashWebhookHandler, JazzCashWebhookHandler>();
+    builder.Services.AddScoped<ISubscriptionPaymentReconciler, SubscriptionPaymentReconciler>();
+
     // Register each gateway implementation. EasyPaisa and JazzCash need HttpClient.
     builder.Services.AddScoped<StripePaymentGateway>();
     builder.Services.AddScoped<FakePaymentGateway>();

@@ -5,6 +5,7 @@ using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
+using RetailSuite.Infrastructure.Payments;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
@@ -67,6 +68,11 @@ public class RetailDbContext : DbContext
     public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
     public DbSet<SubscriptionInvoice> SubscriptionInvoices => Set<SubscriptionInvoice>();
     public DbSet<SubscriptionPayment> SubscriptionPayments => Set<SubscriptionPayment>();
+
+    // -----------------------------
+    // Webhook ingestion (idempotency + audit)
+    // -----------------------------
+    public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
 
     // -----------------------------
     // Notifications
@@ -521,6 +527,22 @@ public class RetailDbContext : DbContext
 
             b.HasIndex(p => new { p.TenantId, p.InvoiceId });
             b.HasIndex(p => p.ProviderTxnRef);
+        });
+
+        modelBuilder.Entity<WebhookEvent>(b =>
+        {
+            b.ToTable("WebhookEvents");
+            b.HasKey(w => w.Id);
+
+            b.Property(w => w.Provider).IsRequired().HasMaxLength(50);
+            b.Property(w => w.ExternalEventId).IsRequired().HasMaxLength(200);
+            b.Property(w => w.EventType).HasMaxLength(100);
+            b.Property(w => w.RawPayload).IsRequired();
+            b.Property(w => w.ProcessingError).HasMaxLength(1000);
+
+            // Idempotency: (Provider, ExternalEventId) is unique.
+            b.HasIndex(w => new { w.Provider, w.ExternalEventId }).IsUnique();
+            b.HasIndex(w => w.CreatedAt);
         });
 
         // =====================================================

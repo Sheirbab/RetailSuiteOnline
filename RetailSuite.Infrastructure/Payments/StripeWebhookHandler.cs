@@ -23,13 +23,16 @@ public class StripeWebhookHandler : IStripeWebhookHandler
 {
     private readonly ILogger<StripeWebhookHandler> _logger;
     private readonly IEmailService _emailService;
+    private readonly ISubscriptionPaymentReconciler _reconciler;
 
     public StripeWebhookHandler(
         ILogger<StripeWebhookHandler> logger,
-        IEmailService emailService)
+        IEmailService emailService,
+        ISubscriptionPaymentReconciler reconciler)
     {
         _logger = logger;
         _emailService = emailService;
+        _reconciler = reconciler;
     }
 
     /// <summary>
@@ -100,8 +103,13 @@ public class StripeWebhookHandler : IStripeWebhookHandler
             charge.Currency.ToUpper(),
             charge.Description);
 
-        // TODO: Update order payment status in database
-        // For now, just log and send email
+        // Sub-phase 3d: reconcile against any pending SubscriptionPayment we issued for this charge.
+        // The reconciler is a no-op if no matching SubscriptionPayment exists (e.g. order-level charge).
+        await _reconciler.ReconcileAsync(
+            providerTxnRef: charge.Id,
+            succeeded:      true,
+            amount:         charge.Amount / 100m,
+            failureReason:  null);
 
         // Extract customer email from metadata (if available)
         var customerEmail = charge.Metadata?.ContainsKey("customer_email") == true
@@ -148,7 +156,12 @@ public class StripeWebhookHandler : IStripeWebhookHandler
             charge.FailureMessage,
             charge.Description);
 
-        // TODO: Update order payment status to failed
+        // Sub-phase 3d: reconcile failure against any pending SubscriptionPayment for this charge.
+        await _reconciler.ReconcileAsync(
+            providerTxnRef: charge.Id,
+            succeeded:      false,
+            amount:         charge.Amount / 100m,
+            failureReason:  charge.FailureMessage ?? "Stripe declined the charge");
 
         // Extract customer email from metadata
         var customerEmail = charge.Metadata?.ContainsKey("customer_email") == true
