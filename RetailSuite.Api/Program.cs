@@ -11,10 +11,12 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Barcodes.Services;
 using RetailSuite.Infrastructure.Modules.Identity.Services;
 using RetailSuite.Infrastructure.Modules.Images.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Receiving.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Payments;
@@ -81,6 +83,13 @@ try
     builder.Services.Configure<ImageStorageOptions>(builder.Configuration.GetSection(ImageStorageOptions.Section));
     builder.Services.AddScoped<IImageValidationService, ImageValidationService>();
     builder.Services.AddScoped<IImageStorageService, LocalImageStorageService>();
+
+    // Barcode generation (ZXing + SkiaSharp under the hood).
+    builder.Services.AddSingleton<IBarcodeService, BarcodeService>();
+
+    // Suppliers + Receiving (purchase orders).
+    builder.Services.AddScoped<IReceivingOrderNumberGenerator, ReceivingOrderNumberGenerator>();
+    builder.Services.AddScoped<IReceivingOrderService, ReceivingOrderService>();
 
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)

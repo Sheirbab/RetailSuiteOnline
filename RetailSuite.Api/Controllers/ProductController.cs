@@ -157,6 +157,12 @@ public class ProductsController : ControllerBase
 
         var variant = new ProductVariant(productId, request.SKU, request.Price);
         if (request.TaxRate > 0) variant.SetTaxRate(request.TaxRate);
+
+        // Auto-fill Barcode = SKU when caller didn't supply one (the common case).
+        // Code128 accepts arbitrary printable ASCII, so the SKU is a safe default.
+        // Stored on the entity so labels and scanning resolve to a stable value.
+        variant.SetBarcode(request.SKU);
+
         product.AddVariant(variant);
         await _db.SaveChangesAsync();
 

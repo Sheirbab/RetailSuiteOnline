@@ -127,6 +127,45 @@ public class InventoryController : ControllerBase
 
         return Ok();
     }
+
+    // ---------------------------------------
+    // Ad-hoc bulk receive (no PO required)
+    // ---------------------------------------
+    /// <summary>
+    /// Receive many variants at once without creating a formal receiving order.
+    /// Useful for quick "truck arrived, just add the stock" workflows.
+    /// Each line writes its own InventoryTransaction sharing the same ReferenceId
+    /// (typically the supplier invoice number) so the batch is auditable.
+    /// </summary>
+    [HttpPost("receive-bulk")]
+    public async Task<IActionResult> ReceiveStockBulk(
+        [FromBody] RetailSuite.Infrastructure.Modules.Receiving.Dtos.AdHocBulkReceiveRequest request)
+    {
+        if (request?.Items == null || request.Items.Count == 0)
+            return BadRequest(new { error = "Items must not be empty." });
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            foreach (var line in request.Items)
+            {
+                if (line.Quantity <= 0) continue;
+                await _inventoryService.ReceiveStockAsync(
+                    line.ProductVariantId,
+                    line.Quantity,
+                    line.UnitCost,
+                    request.ReferenceId);
+            }
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
+        return Ok(new { Received = request.Items.Count, Reference = request.ReferenceId });
+    }
     [HttpGet("valuation")]
     public async Task<IActionResult> GetValuation()
     {

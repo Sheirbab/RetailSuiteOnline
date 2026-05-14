@@ -3,7 +3,9 @@ using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Receiving.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
+using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Payments;
 using RetailSuite.Modules.Accounting.Entities;
@@ -74,6 +76,13 @@ public class RetailDbContext : DbContext
     // Webhook ingestion (idempotency + audit)
     // -----------------------------
     public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
+
+    // -----------------------------
+    // Suppliers + Receiving (purchase orders)
+    // -----------------------------
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<ReceivingOrder> ReceivingOrders => Set<ReceivingOrder>();
+    public DbSet<ReceivingOrderItem> ReceivingOrderItems => Set<ReceivingOrderItem>();
 
     // -----------------------------
     // Notifications
@@ -561,6 +570,72 @@ public class RetailDbContext : DbContext
             // Idempotency: (Provider, ExternalEventId) is unique.
             b.HasIndex(w => new { w.Provider, w.ExternalEventId }).IsUnique();
             b.HasIndex(w => w.CreatedAt);
+        });
+
+        // =====================================================
+        // SUPPLIERS + RECEIVING CONFIGURATION
+        // =====================================================
+
+        modelBuilder.Entity<Supplier>(b =>
+        {
+            b.ToTable("Suppliers");
+            b.HasKey(s => s.Id);
+
+            b.Property(s => s.Name).IsRequired().HasMaxLength(200);
+            b.Property(s => s.ContactPerson).HasMaxLength(150);
+            b.Property(s => s.Phone).HasMaxLength(50);
+            b.Property(s => s.Email).HasMaxLength(200);
+            b.Property(s => s.Address).HasMaxLength(500);
+            b.Property(s => s.Notes).HasMaxLength(1000);
+
+            b.HasIndex(s => new { s.TenantId, s.Name });
+        });
+
+        modelBuilder.Entity<ReceivingOrder>(b =>
+        {
+            b.ToTable("ReceivingOrders");
+            b.HasKey(r => r.Id);
+
+            b.Property(r => r.OrderNumber).IsRequired().HasMaxLength(50);
+            b.Property(r => r.SupplierReference).HasMaxLength(100);
+            b.Property(r => r.Notes).HasMaxLength(1000);
+            b.Property(r => r.Currency).IsRequired().HasMaxLength(3);
+
+            b.Property(r => r.ExpectedTotal).HasColumnType("decimal(18,2)");
+            b.Property(r => r.ReceivedTotal).HasColumnType("decimal(18,2)");
+
+            // OrderNumber must be unique within a tenant.
+            b.HasIndex(r => new { r.TenantId, r.OrderNumber }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status });
+            b.HasIndex(r => r.SupplierId);
+
+            b.HasOne<Supplier>()
+                .WithMany()
+                .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(r => r.Items)
+                .WithOne()
+                .HasForeignKey(i => i.ReceivingOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReceivingOrderItem>(b =>
+        {
+            b.ToTable("ReceivingOrderItems");
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.Sku).IsRequired().HasMaxLength(100);
+            b.Property(i => i.Notes).HasMaxLength(500);
+            b.Property(i => i.UnitCost).HasColumnType("decimal(18,4)");
+
+            b.HasIndex(i => i.ReceivingOrderId);
+            b.HasIndex(i => i.ProductVariantId);
+
+            b.HasOne<ProductVariant>()
+                .WithMany()
+                .HasForeignKey(i => i.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =====================================================
