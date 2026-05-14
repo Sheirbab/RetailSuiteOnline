@@ -1,0 +1,419 @@
+@page "/receiving-orders/{Id:guid}"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@using System.Text.Json
+
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;">
+    <h3 style="margin:0;">@(order?.OrderNumber ?? "Receiving order")</h3>
+    <a class="btn" href="/receiving-orders">&larr; Back</a>
+</div>
+
+@if (isLoading)
+{
+    <div class="spinner"></div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="color:#b91c1c;">⚠️ @_error</div>
+}
+else if (order != null)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <div><strong>Status:</strong> @StatusBadge(order.Status)</div>
+            <div><strong>Expected total:</strong> Rs @order.ExpectedTotal.ToString("N2")</div>
+            <div><strong>Received total:</strong> Rs @order.ReceivedTotal.ToString("N2")</div>
+            @if (!string.IsNullOrEmpty(order.SupplierReference))
+            {
+                <div><strong>Supplier ref:</strong> @order.SupplierReference</div>
+            }
+        </div>
+
+        <!-- Lifecycle actions -->
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+            @if (order.Status == "Draft")
+            {
+                <button class="btn btn-primary" @onclick="SubmitAsync"
+                        disabled="@(order.Items.Count == 0)">Submit (lock for receiving)</button>
+                <button class="btn btn-danger" @onclick="CancelAsync">Cancel</button>
+            }
+            else if (order.Status == "Open" || order.Status == "PartiallyReceived")
+            {
+                <button class="btn btn-danger" @onclick="CancelAsync">Cancel</button>
+                <button class="btn" @onclick="CloseAsync">Force close (short)</button>
+            }
+        </div>
+    </div>
+
+    <!-- Lines table -->
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin-top:0;">Line items</h4>
+
+        @if (order.Items.Count == 0)
+        {
+            <p style="color:#9ca3af;">No items yet. Add some below.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Expected</th>
+                        <th>Received</th>
+                        <th>Outstanding</th>
+                        <th>Unit cost</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ln in order.Items)
+                    {
+                        <tr>
+                            <td style="font-family:monospace;">@ln.Sku</td>
+                            <td>@ln.ExpectedQuantity</td>
+                            <td><strong>@ln.ReceivedQuantity</strong></td>
+                            <td>@ln.OutstandingQuantity</td>
+                            <td>Rs @ln.UnitCost.ToString("N2")</td>
+                            <td>@ln.Status</td>
+                            <td style="text-align:right;">
+                                @if (order.Status == "Draft")
+                                {
+                                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;"
+                                            @onclick="() => RemoveLineAsync(ln.Id)">Remove</button>
+                                }
+                                else if ((order.Status == "Open" || order.Status == "PartiallyReceived")
+                                         && ln.OutstandingQuantity > 0)
+                                {
+                                    <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+                                        <input class="input" type="number"
+                                               min="1" max="@ln.OutstandingQuantity"
+                                               style="width:90px;"
+                                               @bind="lineQtyInputs[ln.Id]" />
+                                        <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;"
+                                                @onclick="() => ReceiveLineAsync(ln.Id)">Receive</button>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @if (order.Status == "Draft")
+    {
+        <div class="card">
+            <h4 style="margin-top:0;">Add line</h4>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                <div style="flex:2;min-width:240px;">
+                    <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Variant (SKU)</label>
+                    <input class="input full" @bind="lineSearch" @bind:event="oninput"
+                           placeholder="Type SKU or product name…" />
+                    @if (!string.IsNullOrWhiteSpace(lineSearch) && variants != null)
+                    {
+                        <div style="border:1px solid #e5e7eb;border-radius:6px;max-height:160px;overflow-y:auto;margin-top:4px;background:#fff;">
+                            @foreach (var v in FilteredVariants.Take(15))
+                            {
+                                <div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f3f4f6;"
+                                     @onclick="() => PickVariant(v)">
+                                    <strong>@v.Sku</strong> <span style="color:#6b7785;">@v.ProductName</span>
+                                </div>
+                            }
+                            @if (!FilteredVariants.Any())
+                            {
+                                <div style="padding:8px;color:#9ca3af;">No matches.</div>
+                            }
+                        </div>
+                    }
+                    @if (newLine.ProductVariantId != Guid.Empty)
+                    {
+                        <div style="margin-top:4px;font-size:12px;color:#15803d;">
+                            ✓ Selected: <strong>@newLine.PickedSku</strong>
+                        </div>
+                    }
+                </div>
+
+                <div>
+                    <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Expected qty</label>
+                    <input class="input" type="number" min="1" style="width:120px;" @bind="newLine.ExpectedQuantity" />
+                </div>
+                <div>
+                    <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Unit cost</label>
+                    <input class="input" type="number" min="0" step="0.01" style="width:140px;" @bind="newLine.UnitCost" />
+                </div>
+                <button class="btn btn-primary" @onclick="AddLineAsync">Add line</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    OrderDto? order;
+    bool isLoading = true;
+    string? _error;
+
+    Dictionary<Guid, int> lineQtyInputs = new();
+
+    // Variant picker for adding lines.
+    List<VariantRow>? variants;
+    string lineSearch = "";
+    NewLine newLine = new();
+
+    IEnumerable<VariantRow> FilteredVariants
+        => string.IsNullOrWhiteSpace(lineSearch)
+           ? Enumerable.Empty<VariantRow>()
+           : (variants ?? new()).Where(v =>
+                v.Sku.Contains(lineSearch, StringComparison.OrdinalIgnoreCase)
+             || v.ProductName.Contains(lineSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadVariantsAsync();
+            await LoadAsync();
+        }
+    }
+
+    async Task LoadAsync()
+    {
+        isLoading = true;
+        _error = null;
+        try
+        {
+            var json = await Http.GetStringAsync($"api/receiving-orders/{Id}");
+            order = ParseOrder(json);
+
+            // Refresh qty input map so we always have an entry for each line.
+            lineQtyInputs.Clear();
+            if (order != null)
+                foreach (var ln in order.Items)
+                    lineQtyInputs[ln.Id] = ln.OutstandingQuantity;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load: {ex.Message}";
+        }
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    async Task LoadVariantsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            variants = new List<VariantRow>();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("items", out var items)
+                && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in items.EnumerateArray())
+                {
+                    variants.Add(new VariantRow
+                    {
+                        Id          = e.TryGetProperty("id",          out var id) ? id.GetGuid()       : Guid.Empty,
+                        ProductName = e.TryGetProperty("productName", out var pn) ? (pn.GetString() ?? "") : "",
+                        Sku         = e.TryGetProperty("sku",         out var sk) ? (sk.GetString() ?? "") : "",
+                        AverageCost = e.TryGetProperty("averageCost", out var ac) ? ac.GetDecimal() : 0m
+                    });
+                }
+            }
+        }
+        catch { variants = new(); }
+    }
+
+    void PickVariant(VariantRow v)
+    {
+        newLine.ProductVariantId = v.Id;
+        newLine.PickedSku        = v.Sku;
+        if (newLine.UnitCost <= 0 && v.AverageCost > 0)
+            newLine.UnitCost = v.AverageCost;
+        lineSearch = "";
+    }
+
+    async Task AddLineAsync()
+    {
+        if (newLine.ProductVariantId == Guid.Empty)
+        {
+            Toast.Show("Pick a variant first.");
+            return;
+        }
+        if (newLine.ExpectedQuantity <= 0)
+        {
+            Toast.Show("Expected quantity must be > 0.");
+            return;
+        }
+
+        var body = new
+        {
+            productVariantId = newLine.ProductVariantId,
+            expectedQuantity = newLine.ExpectedQuantity,
+            unitCost         = newLine.UnitCost
+        };
+        var resp = await Http.PostAsJsonAsync($"api/receiving-orders/{Id}/lines", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Line added.");
+            newLine = new NewLine();
+            await LoadAsync();
+        }
+        else
+        {
+            Toast.Show("Failed to add line.");
+        }
+    }
+
+    async Task RemoveLineAsync(Guid lineId)
+    {
+        var resp = await Http.DeleteAsync($"api/receiving-orders/{Id}/lines/{lineId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Line removed.");
+            await LoadAsync();
+        }
+        else
+        {
+            Toast.Show("Failed to remove line.");
+        }
+    }
+
+    async Task SubmitAsync()
+    {
+        var resp = await Http.PostAsync($"api/receiving-orders/{Id}/submit", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Submitted. Now record receipts as goods arrive."); await LoadAsync(); }
+        else Toast.Show("Submit failed.");
+    }
+
+    async Task CancelAsync()
+    {
+        var resp = await Http.PostAsync($"api/receiving-orders/{Id}/cancel", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Cancelled."); await LoadAsync(); }
+        else Toast.Show("Cancel failed.");
+    }
+
+    async Task CloseAsync()
+    {
+        var resp = await Http.PostAsync($"api/receiving-orders/{Id}/close", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Closed."); await LoadAsync(); }
+        else Toast.Show("Close failed.");
+    }
+
+    async Task ReceiveLineAsync(Guid lineId)
+    {
+        var qty = lineQtyInputs.TryGetValue(lineId, out var q) ? q : 0;
+        if (qty <= 0)
+        {
+            Toast.Show("Quantity must be > 0.");
+            return;
+        }
+
+        var body = new { receivedQuantity = qty };
+        var resp = await Http.PostAsJsonAsync(
+            $"api/receiving-orders/{Id}/lines/{lineId}/receive", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Received {qty} units. Stock updated.");
+            await LoadAsync();
+        }
+        else
+        {
+            var body2 = await resp.Content.ReadAsStringAsync();
+            Toast.Show($"Receive failed: {body2}");
+        }
+    }
+
+    static string StatusBadge(string status)
+    {
+        var (bg, fg) = status switch
+        {
+            "Draft"             => ("#e5e7eb", "#374151"),
+            "Open"              => ("#dbeafe", "#1d4ed8"),
+            "PartiallyReceived" => ("#fef3c7", "#a16207"),
+            "Closed"            => ("#dcfce7", "#15803d"),
+            "Cancelled"         => ("#fee2e2", "#b91c1c"),
+            _                   => ("#e5e7eb", "#374151")
+        };
+        return $"<span style=\"background:{bg};color:{fg};font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;\">{status}</span>";
+    }
+
+    static OrderDto? ParseOrder(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var data = root.TryGetProperty("data", out var d) ? d : root;
+        if (data.ValueKind != JsonValueKind.Object) return null;
+
+        var o = new OrderDto
+        {
+            Id                = data.TryGetProperty("id",                out var id) ? id.GetGuid()       : Guid.Empty,
+            OrderNumber       = data.TryGetProperty("orderNumber",       out var on) ? (on.GetString() ?? "") : "",
+            Status            = data.TryGetProperty("status",            out var st) ? (st.GetString() ?? "") : "",
+            SupplierReference = data.TryGetProperty("supplierReference", out var sr) ? sr.GetString()   : null,
+            ExpectedTotal     = data.TryGetProperty("expectedTotal",     out var et) ? et.GetDecimal() : 0m,
+            ReceivedTotal     = data.TryGetProperty("receivedTotal",     out var rt) ? rt.GetDecimal() : 0m
+        };
+
+        if (data.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var ln in items.EnumerateArray())
+            {
+                o.Items.Add(new LineDto
+                {
+                    Id                  = ln.TryGetProperty("id",                  out var lid) ? lid.GetGuid()      : Guid.Empty,
+                    Sku                 = ln.TryGetProperty("sku",                 out var sk)  ? (sk.GetString() ?? "") : "",
+                    ExpectedQuantity    = ln.TryGetProperty("expectedQuantity",    out var eq)  ? eq.GetInt32()  : 0,
+                    ReceivedQuantity    = ln.TryGetProperty("receivedQuantity",    out var rq)  ? rq.GetInt32()  : 0,
+                    OutstandingQuantity = ln.TryGetProperty("outstandingQuantity", out var oq)  ? oq.GetInt32()  : 0,
+                    UnitCost            = ln.TryGetProperty("unitCost",            out var uc)  ? uc.GetDecimal(): 0m,
+                    Status              = ln.TryGetProperty("status",              out var lst) ? (lst.GetString() ?? "") : ""
+                });
+            }
+        }
+        return o;
+    }
+
+    class OrderDto
+    {
+        public Guid    Id { get; set; }
+        public string  OrderNumber { get; set; } = "";
+        public string  Status { get; set; } = "";
+        public string? SupplierReference { get; set; }
+        public decimal ExpectedTotal { get; set; }
+        public decimal ReceivedTotal { get; set; }
+        public List<LineDto> Items { get; set; } = new();
+    }
+
+    class LineDto
+    {
+        public Guid    Id { get; set; }
+        public string  Sku { get; set; } = "";
+        public int     ExpectedQuantity { get; set; }
+        public int     ReceivedQuantity { get; set; }
+        public int     OutstandingQuantity { get; set; }
+        public decimal UnitCost { get; set; }
+        public string  Status { get; set; } = "";
+    }
+
+    class VariantRow
+    {
+        public Guid    Id { get; set; }
+        public string  ProductName { get; set; } = "";
+        public string  Sku { get; set; } = "";
+        public decimal AverageCost { get; set; }
+    }
+
+    class NewLine
+    {
+        public Guid    ProductVariantId { get; set; }
+        public string  PickedSku { get; set; } = "";
+        public int     ExpectedQuantity { get; set; } = 1;
+        public decimal UnitCost { get; set; } = 0;
+    }
+}

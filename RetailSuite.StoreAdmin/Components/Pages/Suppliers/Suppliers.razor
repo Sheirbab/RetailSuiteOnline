@@ -1,0 +1,236 @@
+@page "/suppliers"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:20px;">Suppliers</h3>
+
+<button class="btn btn-primary" @onclick="OpenCreate">+ Add supplier</button>
+
+@if (isLoading)
+{
+    <div style="margin-top:20px;"><div class="spinner"></div></div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="margin-top:20px;color:#b91c1c;">⚠️ @_error</div>
+}
+else if (suppliers != null && suppliers.Any())
+{
+    <div class="card" style="margin-top:20px;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Contact</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in suppliers.OrderBy(x => x.Name))
+                {
+                    <tr>
+                        <td><strong>@s.Name</strong></td>
+                        <td>@(s.ContactPerson ?? "—")</td>
+                        <td>@(s.Phone ?? "—")</td>
+                        <td>@(s.Email ?? "—")</td>
+                        <td>
+                            @if (s.IsActive)
+                            {
+                                <span style="background:#dcfce7;color:#15803d;font-size:11px;padding:2px 8px;border-radius:4px;">Active</span>
+                            }
+                            else
+                            {
+                                <span style="background:#fee2e2;color:#b91c1c;font-size:11px;padding:2px 8px;border-radius:4px;">Inactive</span>
+                            }
+                        </td>
+                        <td style="text-align:right;">
+                            <button class="btn" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="() => OpenEdit(s)">Edit</button>
+                            @if (s.IsActive)
+                            {
+                                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;"
+                                        @onclick="() => Deactivate(s.Id)">Deactivate</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="card" style="margin-top:20px;">
+        <p style="color:#9ca3af;">No suppliers yet. Click <strong>+ Add supplier</strong> to get started.</p>
+    </div>
+}
+
+<Modal Visible="@showModal" OnClose="CloseModal">
+    <h3 style="margin-bottom:15px;">@(editing == null ? "Add supplier" : "Edit supplier")</h3>
+    <input class="input full" @bind="form.Name"          placeholder="Name *" style="margin-bottom:8px;" />
+    <input class="input full" @bind="form.ContactPerson" placeholder="Contact person" style="margin-bottom:8px;" />
+    <input class="input full" @bind="form.Phone"         placeholder="Phone" style="margin-bottom:8px;" />
+    <input class="input full" @bind="form.Email"         placeholder="Email" style="margin-bottom:8px;" />
+    <input class="input full" @bind="form.Address"       placeholder="Address" style="margin-bottom:8px;" />
+    <textarea class="input full" @bind="form.Notes"      placeholder="Notes" rows="3" style="margin-bottom:12px;"></textarea>
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="Save">Save</button>
+        <button class="btn" @onclick="CloseModal">Cancel</button>
+    </div>
+</Modal>
+
+@code {
+    List<SupplierRow>? suppliers;
+    bool isLoading = true;
+    string? _error;
+
+    bool showModal;
+    SupplierRow? editing;
+    SupplierForm form = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        isLoading = true;
+        _error = null;
+        try
+        {
+            var json = await Http.GetStringAsync("api/suppliers");
+            suppliers = ParseList(json);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load suppliers: {ex.Message}";
+            suppliers = new();
+        }
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    void OpenCreate()
+    {
+        editing = null;
+        form = new SupplierForm();
+        showModal = true;
+    }
+
+    void OpenEdit(SupplierRow s)
+    {
+        editing = s;
+        form = new SupplierForm
+        {
+            Name          = s.Name,
+            ContactPerson = s.ContactPerson,
+            Phone         = s.Phone,
+            Email         = s.Email,
+            Address       = s.Address,
+            Notes         = s.Notes
+        };
+        showModal = true;
+    }
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(form.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+
+        HttpResponseMessage resp;
+        if (editing == null)
+        {
+            resp = await Http.PostAsJsonAsync("api/suppliers", form);
+        }
+        else
+        {
+            resp = await Http.PatchAsJsonAsync($"api/suppliers/{editing.Id}", form);
+        }
+
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show(editing == null ? "Supplier created." : "Supplier updated.");
+            CloseModal();
+            await LoadAsync();
+        }
+        else
+        {
+            Toast.Show("Save failed.");
+        }
+    }
+
+    async Task Deactivate(Guid id)
+    {
+        var resp = await Http.DeleteAsync($"api/suppliers/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Supplier deactivated.");
+            await LoadAsync();
+        }
+        else
+        {
+            Toast.Show("Failed to deactivate.");
+        }
+    }
+
+    void CloseModal()
+    {
+        showModal = false;
+        editing = null;
+    }
+
+    static List<SupplierRow> ParseList(string json)
+    {
+        var result = new List<SupplierRow>();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var data = root.TryGetProperty("data", out var d) ? d : root;
+        if (data.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var e in data.EnumerateArray())
+        {
+            result.Add(new SupplierRow
+            {
+                Id            = e.TryGetProperty("id",            out var id) ? id.GetGuid()       : Guid.Empty,
+                Name          = e.TryGetProperty("name",          out var n)  ? (n.GetString() ?? "") : "",
+                ContactPerson = e.TryGetProperty("contactPerson", out var cp) ? cp.GetString()   : null,
+                Phone         = e.TryGetProperty("phone",         out var p)  ? p.GetString()    : null,
+                Email         = e.TryGetProperty("email",         out var em) ? em.GetString()   : null,
+                Address       = e.TryGetProperty("address",       out var ad) ? ad.GetString()   : null,
+                Notes         = e.TryGetProperty("notes",         out var nt) ? nt.GetString()   : null,
+                IsActive      = e.TryGetProperty("isActive",      out var ia) && ia.GetBoolean()
+            });
+        }
+        return result;
+    }
+
+    class SupplierRow
+    {
+        public Guid    Id { get; set; }
+        public string  Name { get; set; } = "";
+        public string? ContactPerson { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string? Address { get; set; }
+        public string? Notes { get; set; }
+        public bool    IsActive { get; set; }
+    }
+
+    class SupplierForm
+    {
+        public string? Name { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string? Address { get; set; }
+        public string? Notes { get; set; }
+    }
+}

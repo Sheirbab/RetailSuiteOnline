@@ -1,0 +1,127 @@
+@page "/receiving-orders/new"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@using System.Text.Json
+
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+    <h3 style="margin:0;">New receiving order</h3>
+    <a class="btn" href="/receiving-orders">&larr; Back</a>
+</div>
+
+<div class="card" style="max-width:680px;">
+    <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Supplier</label>
+    <select class="input full" @bind="form.SupplierId" style="margin-bottom:12px;">
+        <option value="">— Select supplier (optional) —</option>
+        @if (suppliers != null)
+        {
+            @foreach (var s in suppliers.OrderBy(x => x.Name))
+            {
+                <option value="@s.Id">@s.Name</option>
+            }
+        }
+    </select>
+
+    <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Supplier reference (their PO #)</label>
+    <input class="input full" @bind="form.SupplierReference"
+           placeholder="e.g. INV-2026-1234" style="margin-bottom:12px;" />
+
+    <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Expected delivery date</label>
+    <input class="input full" type="date" @bind="form.ExpectedDate" style="margin-bottom:12px;" />
+
+    <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Notes</label>
+    <textarea class="input full" rows="3" @bind="form.Notes"
+              placeholder="Any internal notes (visible only to staff)" style="margin-bottom:16px;"></textarea>
+
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" @onclick="CreateAsync">Create draft</button>
+        <a class="btn" href="/receiving-orders">Cancel</a>
+    </div>
+    <p style="margin-top:10px;font-size:12px;color:#6b7785;">
+        After creating the draft you'll add line items, then submit the order. Stock isn't moved
+        until you record receipts against the open order.
+    </p>
+</div>
+
+@code {
+    List<SupplierRow>? suppliers;
+    FormModel form = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadSuppliersAsync();
+    }
+
+    async Task LoadSuppliersAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/suppliers?active=true");
+            suppliers = ParseSuppliers(json);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Non-fatal — order can still be created without a supplier.
+            suppliers = new();
+        }
+    }
+
+    async Task CreateAsync()
+    {
+        var body = new
+        {
+            supplierId        = string.IsNullOrEmpty(form.SupplierId) ? (Guid?)null : Guid.Parse(form.SupplierId),
+            supplierReference = form.SupplierReference,
+            expectedDate      = form.ExpectedDate,
+            notes             = form.Notes
+        };
+
+        var resp = await Http.PostAsJsonAsync("api/receiving-orders", body);
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Failed to create order.");
+            return;
+        }
+
+        var json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var data = doc.RootElement.GetProperty("data");
+        var id = data.GetProperty("id").GetGuid();
+
+        Toast.Show("Draft created. Add line items next.");
+        Nav.NavigateTo($"/receiving-orders/{id}");
+    }
+
+    static List<SupplierRow> ParseSuppliers(string json)
+    {
+        var result = new List<SupplierRow>();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var data = root.TryGetProperty("data", out var d) ? d : root;
+        if (data.ValueKind != JsonValueKind.Array) return result;
+        foreach (var e in data.EnumerateArray())
+        {
+            result.Add(new SupplierRow
+            {
+                Id   = e.TryGetProperty("id",   out var id) ? id.GetGuid()       : Guid.Empty,
+                Name = e.TryGetProperty("name", out var n)  ? (n.GetString() ?? "") : ""
+            });
+        }
+        return result;
+    }
+
+    class FormModel
+    {
+        public string?  SupplierId { get; set; }
+        public string?  SupplierReference { get; set; }
+        public DateTime? ExpectedDate { get; set; }
+        public string?  Notes { get; set; }
+    }
+
+    class SupplierRow
+    {
+        public Guid   Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+}

@@ -26,6 +26,7 @@ else if (products != null && products.Any())
                     <th>Product</th>
                     <th>Variants</th>
                     <th>Add Variant</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -57,6 +58,10 @@ else if (products != null && products.Any())
                                     Add
                                 </button>
                             </div>
+                        </td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/products/{p.Id}/images")">📷 Images</a>
                         </td>
                     </tr>
                 }

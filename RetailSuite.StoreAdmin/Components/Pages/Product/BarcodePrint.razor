@@ -1,0 +1,181 @@
+@page "/barcodes/print"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject IJSRuntime JS
+@using System.Text.Json
+
+<h3 style="margin-bottom:20px;">Print barcodes</h3>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="color:#b91c1c;margin-bottom:16px;">⚠️ @_error</div>
+}
+
+<div class="card" style="margin-bottom:20px;">
+    <h4 style="margin-top:0;">1. Select variants</h4>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input class="input" style="flex:1;" placeholder="Search by SKU or product name..."
+               @bind="searchTerm" @bind:event="oninput" />
+    </div>
+
+    @if (variants == null)
+    {
+        <div class="spinner"></div>
+    }
+    else
+    {
+        <div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;">
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th style="width:40px;"></th>
+                        <th>Product</th>
+                        <th>SKU</th>
+                        <th>Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in FilteredVariants)
+                    {
+                        <tr>
+                            <td>
+                                <input type="checkbox"
+                                       checked="@selectedIds.Contains(v.Id)"
+                                       @onchange="e => Toggle(v.Id, (bool)e.Value!)" />
+                            </td>
+                            <td>@v.ProductName</td>
+                            <td style="font-family:monospace;">@v.Sku</td>
+                            <td>Rs @v.Price.ToString("N2")</td>
+                        </tr>
+                    }
+                    @if (!FilteredVariants.Any())
+                    {
+                        <tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:20px;">No matches.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:#6b7785;">
+            Selected: <strong>@selectedIds.Count</strong>
+        </div>
+    }
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+    <h4 style="margin-top:0;">2. Layout &amp; copies</h4>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+        <label style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:12px;color:#6b7785;">Layout</span>
+            <select class="input" @bind="layout">
+                <option value="A4-3x8">A4 sheet · 3×8 = 24 labels (70×35 mm)</option>
+                <option value="A4-2x7">A4 sheet · 2×7 = 14 labels (99×38 mm)</option>
+                <option value="thermal-50x30">Thermal · 50×30 mm (single)</option>
+                <option value="thermal-100x50">Thermal · 100×50 mm (shipping)</option>
+            </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:12px;color:#6b7785;">Copies per variant</span>
+            <input class="input" type="number" min="1" max="100" style="width:120px;" @bind="copies" />
+        </label>
+    </div>
+</div>
+
+<div style="display:flex;gap:8px;">
+    <button class="btn btn-primary"
+            disabled="@(selectedIds.Count == 0)"
+            @onclick="OpenPrintAsync">
+        Open print preview ↗
+    </button>
+    <button class="btn" @onclick="() => selectedIds.Clear()">Clear selection</button>
+</div>
+
+@code {
+    List<VariantRow>? variants;
+    HashSet<Guid> selectedIds = new();
+    string searchTerm = string.Empty;
+    string layout = "A4-3x8";
+    int copies = 1;
+    string? _error;
+
+    IEnumerable<VariantRow> FilteredVariants
+        => string.IsNullOrWhiteSpace(searchTerm)
+           ? (variants ?? new())
+           : (variants ?? new()).Where(v =>
+               v.Sku.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || v.ProductName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadVariantsAsync();
+    }
+
+    async Task LoadVariantsAsync()
+    {
+        _error = null;
+        try
+        {
+            // Re-uses the existing inventory /all endpoint which already exposes Product+SKU+Price.
+            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            variants = ParseVariants(json);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load variants: {ex.Message}";
+            variants = new();
+        }
+        StateHasChanged();
+    }
+
+    void Toggle(Guid id, bool on)
+    {
+        if (on) selectedIds.Add(id);
+        else selectedIds.Remove(id);
+    }
+
+    async Task OpenPrintAsync()
+    {
+        if (selectedIds.Count == 0)
+        {
+            Toast.Show("Select at least one variant.");
+            return;
+        }
+
+        var ids   = string.Join(',', selectedIds);
+        var cps   = Math.Clamp(copies, 1, 100);
+        var url   = $"api/barcodes/print?variantIds={ids}&copies={cps}&layout={Uri.EscapeDataString(layout)}";
+
+        // Open in a new tab — the HTML page itself triggers window.print() after load.
+        await JS.InvokeVoidAsync("window.open", url, "_blank");
+    }
+
+    static List<VariantRow> ParseVariants(string json)
+    {
+        // /api/inventory/all returns { Total, Page, PageSize, Items: [{ Id, ProductName, SKU, ... }] }
+        var result = new List<VariantRow>();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var e in items.EnumerateArray())
+        {
+            result.Add(new VariantRow
+            {
+                Id          = e.TryGetProperty("id",          out var id) ? id.GetGuid()       : Guid.Empty,
+                ProductName = e.TryGetProperty("productName", out var pn) ? (pn.GetString() ?? "") : "",
+                Sku         = e.TryGetProperty("sku",         out var sk) ? (sk.GetString() ?? "") : "",
+                Price       = 0m  // inventory/all doesn't carry price — left at 0 for label rendering
+            });
+        }
+        return result;
+    }
+
+    class VariantRow
+    {
+        public Guid    Id { get; set; }
+        public string  ProductName { get; set; } = "";
+        public string  Sku { get; set; } = "";
+        public decimal Price { get; set; }
+    }
+}

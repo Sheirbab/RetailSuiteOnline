@@ -1,0 +1,157 @@
+@page "/receiving-orders"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@using System.Text.Json
+
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+    <h3 style="margin:0;">Receiving orders</h3>
+    <a class="btn btn-primary" href="/receiving-orders/new">+ New order</a>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:14px;">
+    <select class="input" style="width:200px;" @bind="statusFilter" @bind:after="LoadAsync">
+        <option value="">All statuses</option>
+        <option value="Draft">Draft</option>
+        <option value="Open">Open</option>
+        <option value="PartiallyReceived">Partially received</option>
+        <option value="Closed">Closed</option>
+        <option value="Cancelled">Cancelled</option>
+    </select>
+</div>
+
+@if (isLoading)
+{
+    <div class="spinner"></div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="color:#b91c1c;">⚠️ @_error</div>
+}
+else if (orders == null || orders.Count == 0)
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No receiving orders for this filter.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>PO #</th>
+                    <th>Status</th>
+                    <th>Items</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var o in orders)
+                {
+                    <tr>
+                        <td style="font-family:monospace;"><strong>@o.OrderNumber</strong></td>
+                        <td>@RenderStatus(o.Status)</td>
+                        <td>@o.ItemCount</td>
+                        <td>Rs @o.ExpectedTotal.ToString("N2")</td>
+                        <td>Rs @o.ReceivedTotal.ToString("N2")</td>
+                        <td>@o.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/receiving-orders/{o.Id}")">Open</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    List<OrderRow>? orders;
+    bool isLoading = true;
+    string? _error;
+    string statusFilter = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        isLoading = true;
+        _error = null;
+        try
+        {
+            var url = string.IsNullOrEmpty(statusFilter)
+                ? "api/receiving-orders"
+                : $"api/receiving-orders?status={statusFilter}";
+            var json = await Http.GetStringAsync(url);
+            orders = ParseList(json);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load orders: {ex.Message}";
+            orders = new();
+        }
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    static RenderFragment RenderStatus(string status) => builder =>
+    {
+        var (bg, fg) = status switch
+        {
+            "Draft"             => ("#e5e7eb", "#374151"),
+            "Open"              => ("#dbeafe", "#1d4ed8"),
+            "PartiallyReceived" => ("#fef3c7", "#a16207"),
+            "Closed"            => ("#dcfce7", "#15803d"),
+            "Cancelled"         => ("#fee2e2", "#b91c1c"),
+            _                   => ("#e5e7eb", "#374151")
+        };
+        builder.AddMarkupContent(0,
+            $"<span style=\"background:{bg};color:{fg};font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;\">{status}</span>");
+    };
+
+    static List<OrderRow> ParseList(string json)
+    {
+        var result = new List<OrderRow>();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var data = root.TryGetProperty("data", out var d) ? d : root;
+        if (data.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var e in data.EnumerateArray())
+        {
+            var itemCount = e.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array
+                ? items.GetArrayLength() : 0;
+
+            result.Add(new OrderRow
+            {
+                Id            = e.TryGetProperty("id",            out var id) ? id.GetGuid()        : Guid.Empty,
+                OrderNumber   = e.TryGetProperty("orderNumber",   out var on) ? (on.GetString() ?? "") : "",
+                Status        = e.TryGetProperty("status",        out var st) ? (st.GetString() ?? "") : "",
+                ExpectedTotal = e.TryGetProperty("expectedTotal", out var et) ? et.GetDecimal() : 0m,
+                ReceivedTotal = e.TryGetProperty("receivedTotal", out var rt) ? rt.GetDecimal() : 0m,
+                ItemCount     = itemCount,
+                CreatedAt     = e.TryGetProperty("createdAt",     out var ca) ? ca.GetDateTime() : DateTime.MinValue
+            });
+        }
+        return result;
+    }
+
+    class OrderRow
+    {
+        public Guid     Id { get; set; }
+        public string   OrderNumber { get; set; } = "";
+        public string   Status { get; set; } = "";
+        public decimal  ExpectedTotal { get; set; }
+        public decimal  ReceivedTotal { get; set; }
+        public int      ItemCount { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}

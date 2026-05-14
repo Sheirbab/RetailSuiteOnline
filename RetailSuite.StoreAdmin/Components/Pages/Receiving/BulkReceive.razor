@@ -1,0 +1,279 @@
+@page "/inventory/bulk-receive"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:8px;">Bulk receive stock</h3>
+<p style="color:#6b7785;margin-top:0;margin-bottom:16px;font-size:13px;">
+    Quick "truck-arrived" entry. Scan or type SKU → quantity → unit cost. No purchase order needed.<br/>
+    Each line is added to inventory in one transaction. To track variances against expected quantities, use
+    <a href="/receiving-orders">Receiving orders</a> instead.
+</p>
+
+<div class="card" style="margin-bottom:14px;">
+    <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Reference (supplier invoice #, etc.)</label>
+    <input class="input full" @bind="reference" placeholder="Optional — used as audit reference for all lines" />
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+    <h4 style="margin-top:0;">Add lines</h4>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:2;min-width:240px;">
+            <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">SKU / variant</label>
+            <input class="input full" @ref="skuInputRef"
+                   @bind="search" @bind:event="oninput"
+                   @onkeydown="OnSearchKey"
+                   placeholder="Scan barcode or type SKU…" />
+            @if (!string.IsNullOrWhiteSpace(search) && variants != null)
+            {
+                <div style="border:1px solid #e5e7eb;border-radius:6px;max-height:160px;overflow-y:auto;margin-top:4px;background:#fff;">
+                    @foreach (var v in FilteredVariants.Take(15))
+                    {
+                        <div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f3f4f6;"
+                             @onclick="() => PickVariant(v)">
+                            <strong>@v.Sku</strong> <span style="color:#6b7785;">@v.ProductName</span>
+                            @if (v.AverageCost > 0)
+                            {
+                                <span style="color:#9ca3af;font-size:12px;"> · last cost Rs @v.AverageCost.ToString("N2")</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            @if (currentPick != null)
+            {
+                <div style="margin-top:4px;font-size:12px;color:#15803d;">
+                    ✓ <strong>@currentPick.Sku</strong> — @currentPick.ProductName
+                </div>
+            }
+        </div>
+
+        <div>
+            <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Quantity</label>
+            <input class="input" type="number" min="1" style="width:120px;" @bind="pendingQty" />
+        </div>
+        <div>
+            <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Unit cost</label>
+            <input class="input" type="number" min="0" step="0.01" style="width:140px;" @bind="pendingCost" />
+        </div>
+        <button class="btn btn-primary" @onclick="AddToBatch">Add to batch</button>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+    <h4 style="margin-top:0;">Batch (<span>@batch.Count</span> line@(batch.Count == 1 ? "" : "s"))</h4>
+
+    @if (batch.Count == 0)
+    {
+        <p style="color:#9ca3af;">Nothing queued yet. Add at least one line above.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Unit cost</th>
+                    <th>Line total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ln in batch)
+                {
+                    <tr>
+                        <td style="font-family:monospace;">@ln.Sku</td>
+                        <td>@ln.ProductName</td>
+                        <td>@ln.Quantity</td>
+                        <td>Rs @ln.UnitCost.ToString("N2")</td>
+                        <td>Rs @((ln.Quantity * ln.UnitCost).ToString("N2"))</td>
+                        <td style="text-align:right;">
+                            <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="() => batch.Remove(ln)">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="4" style="text-align:right;">Batch total</th>
+                    <th colspan="2">Rs @batch.Sum(l => l.Quantity * l.UnitCost).ToString("N2")</th>
+                </tr>
+            </tfoot>
+        </table>
+    }
+</div>
+
+<div style="display:flex;gap:8px;">
+    <button class="btn btn-primary"
+            disabled="@(batch.Count == 0 || isSubmitting)"
+            @onclick="SubmitAsync">
+        @(isSubmitting ? "Submitting…" : "Receive all into stock")
+    </button>
+    <button class="btn" @onclick="() => batch.Clear()" disabled="@(batch.Count == 0)">Clear batch</button>
+</div>
+
+@code {
+    List<VariantRow>? variants;
+    string search = "";
+    int pendingQty = 1;
+    decimal pendingCost = 0;
+    string? reference;
+    VariantRow? currentPick;
+
+    List<BatchLine> batch = new();
+    bool isSubmitting = false;
+
+    ElementReference skuInputRef;
+
+    IEnumerable<VariantRow> FilteredVariants
+        => string.IsNullOrWhiteSpace(search)
+           ? Enumerable.Empty<VariantRow>()
+           : (variants ?? new()).Where(v =>
+                v.Sku.Contains(search, StringComparison.OrdinalIgnoreCase)
+             || v.ProductName.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadVariantsAsync();
+    }
+
+    async Task LoadVariantsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            variants = new List<VariantRow>();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("items", out var items)
+                && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in items.EnumerateArray())
+                {
+                    variants.Add(new VariantRow
+                    {
+                        Id          = e.TryGetProperty("id",          out var id) ? id.GetGuid()       : Guid.Empty,
+                        ProductName = e.TryGetProperty("productName", out var pn) ? (pn.GetString() ?? "") : "",
+                        Sku         = e.TryGetProperty("sku",         out var sk) ? (sk.GetString() ?? "") : "",
+                        AverageCost = e.TryGetProperty("averageCost", out var ac) ? ac.GetDecimal() : 0m
+                    });
+                }
+            }
+            StateHasChanged();
+        }
+        catch { variants = new(); }
+    }
+
+    void PickVariant(VariantRow v)
+    {
+        currentPick = v;
+        search      = "";
+        if (pendingCost <= 0 && v.AverageCost > 0) pendingCost = v.AverageCost;
+    }
+
+    void OnSearchKey(KeyboardEventArgs e)
+    {
+        // Pressing Enter on a single exact-SKU match auto-picks it — convenience for barcode scanners
+        // which usually emit the value followed by Enter.
+        if (e.Key != "Enter") return;
+        var exact = (variants ?? new()).FirstOrDefault(v =>
+            v.Sku.Equals(search.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (exact != null)
+        {
+            PickVariant(exact);
+        }
+    }
+
+    void AddToBatch()
+    {
+        if (currentPick == null)
+        {
+            Toast.Show("Pick a variant first.");
+            return;
+        }
+        if (pendingQty <= 0)
+        {
+            Toast.Show("Quantity must be > 0.");
+            return;
+        }
+
+        batch.Add(new BatchLine
+        {
+            ProductVariantId = currentPick.Id,
+            Sku              = currentPick.Sku,
+            ProductName      = currentPick.ProductName,
+            Quantity         = pendingQty,
+            UnitCost         = pendingCost
+        });
+
+        // Reset for next scan.
+        currentPick = null;
+        search      = "";
+        pendingQty  = 1;
+        pendingCost = 0;
+        skuInputRef.FocusAsync();
+    }
+
+    async Task SubmitAsync()
+    {
+        if (batch.Count == 0) return;
+
+        isSubmitting = true;
+        StateHasChanged();
+
+        var body = new
+        {
+            referenceId = reference,
+            items = batch.Select(b => new
+            {
+                productVariantId = b.ProductVariantId,
+                quantity         = b.Quantity,
+                unitCost         = b.UnitCost
+            }).ToList()
+        };
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/inventory/receive-bulk", body);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Received {batch.Count} line(s). Stock updated.");
+                batch.Clear();
+                reference = null;
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Toast.Show($"Receive failed: {msg}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    class VariantRow
+    {
+        public Guid    Id { get; set; }
+        public string  ProductName { get; set; } = "";
+        public string  Sku { get; set; } = "";
+        public decimal AverageCost { get; set; }
+    }
+
+    class BatchLine
+    {
+        public Guid    ProductVariantId { get; set; }
+        public string  Sku { get; set; } = "";
+        public string  ProductName { get; set; } = "";
+        public int     Quantity { get; set; }
+        public decimal UnitCost { get; set; }
+    }
+}

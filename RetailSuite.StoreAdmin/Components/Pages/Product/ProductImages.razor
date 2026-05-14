@@ -1,0 +1,213 @@
+@page "/products/{ProductId:guid}/images"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@using System.Net.Http.Headers
+@using System.Text.Json
+
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+    <h3 style="margin:0;">Product images</h3>
+    <a class="btn" href="/products">&larr; Back to products</a>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="color:#b91c1c;margin-bottom:16px;">⚠️ @_error</div>
+}
+
+<div class="card" style="margin-bottom:20px;">
+    <h4 style="margin-top:0;">Upload</h4>
+    <p style="color:#6b7785;font-size:13px;margin-bottom:10px;">
+        PNG, JPG, or WEBP. Max 5 MB. The first image you upload becomes the primary; you can change it later.
+    </p>
+    <InputFile OnChange="OnFileSelected" accept="image/png,image/jpeg,image/webp" />
+    @if (isUploading)
+    {
+        <div style="margin-top:10px;"><div class="spinner"></div></div>
+    }
+</div>
+
+<div class="card">
+    <h4 style="margin-top:0;">Gallery</h4>
+
+    @if (isLoading)
+    {
+        <div class="spinner"></div>
+    }
+    else if (images == null || images.Count == 0)
+    {
+        <p style="color:#9ca3af;">No images yet. Upload one above.</p>
+    }
+    else
+    {
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:14px;">
+            @foreach (var img in images.OrderBy(i => i.SortOrder))
+            {
+                <div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;">
+                    <div style="position:relative;width:100%;aspect-ratio:1/1;overflow:hidden;border-radius:6px;background:#f3f4f6;">
+                        <img src="@img.Url" alt="" style="width:100%;height:100%;object-fit:cover;" />
+                        @if (img.IsPrimary)
+                        {
+                            <span style="position:absolute;top:6px;left:6px;background:#0d3b66;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;">PRIMARY</span>
+                        }
+                    </div>
+                    <div style="font-size:11px;color:#9ca3af;margin-top:6px;">
+                        @((img.FileSizeBytes / 1024.0).ToString("N1")) KB · @img.MimeType
+                    </div>
+                    <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                        @if (!img.IsPrimary)
+                        {
+                            <button class="btn" style="padding:4px 8px;font-size:12px;"
+                                    @onclick="() => SetPrimary(img.Id)">Make primary</button>
+                        }
+                        <button class="btn btn-danger" style="padding:4px 8px;font-size:12px;"
+                                @onclick="() => DeleteImage(img.Id)">Delete</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ProductId { get; set; }
+
+    List<ImageRow>? images;
+    bool isLoading = true;
+    bool isUploading = false;
+    string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadImagesAsync();
+    }
+
+    async Task LoadImagesAsync()
+    {
+        isLoading = true;
+        _error = null;
+        try
+        {
+            var json = await Http.GetStringAsync($"api/products/{ProductId}/images");
+            images = ParseList(json);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load images: {ex.Message}";
+            images = new();
+        }
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            Toast.Show("File must be 5 MB or smaller.");
+            return;
+        }
+
+        isUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            // 5 MB limit on stream length
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(streamContent, "file", file.Name);
+
+            var resp = await Http.PostAsync($"api/products/{ProductId}/images", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.Show("Image uploaded.");
+                await LoadImagesAsync();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                Toast.Show($"Upload failed: {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Upload error: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    async Task SetPrimary(Guid imageId)
+    {
+        var resp = await Http.PatchAsync(
+            $"api/products/{ProductId}/images/{imageId}/primary",
+            content: null);
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Primary image updated.");
+            await LoadImagesAsync();
+        }
+        else
+        {
+            Toast.Show("Failed to set primary.");
+        }
+    }
+
+    async Task DeleteImage(Guid imageId)
+    {
+        var resp = await Http.DeleteAsync($"api/products/{ProductId}/images/{imageId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Image deleted.");
+            await LoadImagesAsync();
+        }
+        else
+        {
+            Toast.Show("Failed to delete.");
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // JSON parsing — uses ApiResponse<{ data: [...] }> envelope.
+    // -----------------------------------------------------------------
+    static List<ImageRow> ParseList(string json)
+    {
+        var result = new List<ImageRow>();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var data = root.TryGetProperty("data", out var d) ? d : root;
+        if (data.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var e in data.EnumerateArray())
+        {
+            result.Add(new ImageRow
+            {
+                Id            = e.TryGetProperty("id", out var id) ? id.GetGuid() : Guid.Empty,
+                Url           = e.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "",
+                MimeType      = e.TryGetProperty("mimeType", out var m) ? (m.GetString() ?? "") : "",
+                FileSizeBytes = e.TryGetProperty("fileSizeBytes", out var fs) ? fs.GetInt64() : 0,
+                SortOrder     = e.TryGetProperty("sortOrder", out var so) ? so.GetInt32() : 0,
+                IsPrimary     = e.TryGetProperty("isPrimary", out var ip) && ip.GetBoolean()
+            });
+        }
+        return result;
+    }
+
+    class ImageRow
+    {
+        public Guid    Id { get; set; }
+        public string  Url { get; set; } = "";
+        public string  MimeType { get; set; } = "";
+        public long    FileSizeBytes { get; set; }
+        public int     SortOrder { get; set; }
+        public bool    IsPrimary { get; set; }
+    }
+}
