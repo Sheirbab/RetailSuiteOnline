@@ -48,7 +48,17 @@ else if (order != null)
 
     <!-- Lines table -->
     <div class="card" style="margin-bottom:16px;">
-        <h4 style="margin-top:0;">Line items</h4>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h4 style="margin:0;">Line items</h4>
+            @if (CanReceive)
+            {
+                <button class="btn btn-primary"
+                        disabled="@(selectedLineIds.Count == 0)"
+                        @onclick="ReceiveSelectedAsync">
+                    Receive selected (@selectedLineIds.Count)
+                </button>
+            }
+        </div>
 
         @if (order.Items.Count == 0)
         {
@@ -59,10 +69,22 @@ else if (order != null)
             <table class="table">
                 <thead>
                     <tr>
+                        @if (CanReceive)
+                        {
+                            <th style="width:32px;">
+                                <input type="checkbox"
+                                       checked="@AllOutstandingSelected"
+                                       @onchange="e => ToggleAllOutstanding((bool)e.Value!)" />
+                            </th>
+                        }
                         <th>SKU</th>
                         <th>Expected</th>
                         <th>Received</th>
                         <th>Outstanding</th>
+                        @if (CanReceive)
+                        {
+                            <th>Receive qty</th>
+                        }
                         <th>Unit cost</th>
                         <th>Status</th>
                         <th></th>
@@ -72,10 +94,33 @@ else if (order != null)
                     @foreach (var ln in order.Items)
                     {
                         <tr>
+                            @if (CanReceive)
+                            {
+                                <td>
+                                    @if (ln.OutstandingQuantity > 0)
+                                    {
+                                        <input type="checkbox"
+                                               checked="@selectedLineIds.Contains(ln.Id)"
+                                               @onchange="e => ToggleLine(ln.Id, (bool)e.Value!)" />
+                                    }
+                                </td>
+                            }
                             <td style="font-family:monospace;">@ln.Sku</td>
                             <td>@ln.ExpectedQuantity</td>
                             <td><strong>@ln.ReceivedQuantity</strong></td>
                             <td>@ln.OutstandingQuantity</td>
+                            @if (CanReceive)
+                            {
+                                <td>
+                                    @if (ln.OutstandingQuantity > 0)
+                                    {
+                                        <input class="input" type="number"
+                                               min="1" max="@ln.OutstandingQuantity"
+                                               style="width:90px;"
+                                               @bind="lineQtyInputs[ln.Id]" />
+                                    }
+                                </td>
+                            }
                             <td>Rs @ln.UnitCost.ToString("N2")</td>
                             <td>@ln.Status</td>
                             <td style="text-align:right;">
@@ -84,17 +129,10 @@ else if (order != null)
                                     <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;"
                                             @onclick="() => RemoveLineAsync(ln.Id)">Remove</button>
                                 }
-                                else if ((order.Status == "Open" || order.Status == "PartiallyReceived")
-                                         && ln.OutstandingQuantity > 0)
+                                else if (CanReceive && ln.OutstandingQuantity > 0)
                                 {
-                                    <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
-                                        <input class="input" type="number"
-                                               min="1" max="@ln.OutstandingQuantity"
-                                               style="width:90px;"
-                                               @bind="lineQtyInputs[ln.Id]" />
-                                        <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;"
-                                                @onclick="() => ReceiveLineAsync(ln.Id)">Receive</button>
-                                    </div>
+                                    <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;"
+                                            @onclick="() => OpenReceiveModal(ln)">Receive…</button>
                                 }
                             </td>
                         </tr>
@@ -103,6 +141,61 @@ else if (order != null)
             </table>
         }
     </div>
+
+    <!-- ============================================================
+         Per-line receive modal — opens from the "Receive…" button
+         on a row. Shows Expected / Already received / Outstanding,
+         lets the user enter a partial qty, warns on short receipts,
+         and captures notes (line.SetNotes server-side).
+         ============================================================ -->
+    <Modal Visible="@receiveModalOpen" OnClose="CloseReceiveModal">
+        @if (modalLine != null)
+        {
+            <h3 style="margin-bottom:6px;">Receive line</h3>
+            <p style="color:#6b7785;font-size:13px;margin-top:0;">
+                <strong style="font-family:monospace;">@modalLine.Sku</strong>
+                · unit cost Rs @modalLine.UnitCost.ToString("N2")
+            </p>
+
+            <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;padding:10px;background:#f9fafb;border-radius:6px;">
+                <div><span style="color:#6b7785;font-size:12px;">Expected</span><br/><strong>@modalLine.ExpectedQuantity</strong></div>
+                <div><span style="color:#6b7785;font-size:12px;">Already received</span><br/><strong>@modalLine.ReceivedQuantity</strong></div>
+                <div><span style="color:#6b7785;font-size:12px;">Outstanding</span><br/><strong style="color:#a16207;">@modalLine.OutstandingQuantity</strong></div>
+            </div>
+
+            <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Receive quantity</label>
+            <input class="input full" type="number"
+                   min="1" max="@modalLine.OutstandingQuantity"
+                   @bind="modalQty" style="margin-bottom:8px;" />
+
+            @if (modalQty > 0 && modalQty < modalLine.OutstandingQuantity)
+            {
+                <div style="color:#a16207;font-size:12px;margin-bottom:10px;">
+                    ⚠️ This is a partial receipt. Remaining outstanding will be @(modalLine.OutstandingQuantity - modalQty).
+                </div>
+            }
+            else if (modalQty > modalLine.OutstandingQuantity)
+            {
+                <div style="color:#b91c1c;font-size:12px;margin-bottom:10px;">
+                    ⛔ Cannot receive more than the outstanding quantity (@modalLine.OutstandingQuantity).
+                </div>
+            }
+
+            <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Notes (optional)</label>
+            <textarea class="input full" rows="3"
+                      @bind="modalNotes"
+                      placeholder="Damaged packaging, short delivery, etc." style="margin-bottom:12px;"></textarea>
+
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-primary"
+                        disabled="@(modalQty <= 0 || modalQty > modalLine.OutstandingQuantity)"
+                        @onclick="ConfirmReceiveModalAsync">
+                    Record receipt
+                </button>
+                <button class="btn" @onclick="CloseReceiveModal">Cancel</button>
+            </div>
+        }
+    </Modal>
 
     @if (order.Status == "Draft")
     {
@@ -159,6 +252,119 @@ else if (order != null)
     string? _error;
 
     Dictionary<Guid, int> lineQtyInputs = new();
+
+    // Batch-receive state.
+    HashSet<Guid> selectedLineIds = new();
+
+    bool CanReceive => order?.Status == "Open" || order?.Status == "PartiallyReceived";
+
+    bool AllOutstandingSelected
+    {
+        get
+        {
+            if (order == null) return false;
+            var outstanding = order.Items.Where(i => i.OutstandingQuantity > 0).Select(i => i.Id).ToList();
+            return outstanding.Count > 0 && outstanding.All(id => selectedLineIds.Contains(id));
+        }
+    }
+
+    void ToggleLine(Guid lineId, bool on)
+    {
+        if (on) selectedLineIds.Add(lineId);
+        else selectedLineIds.Remove(lineId);
+    }
+
+    void ToggleAllOutstanding(bool on)
+    {
+        if (order == null) return;
+        var outstanding = order.Items.Where(i => i.OutstandingQuantity > 0).Select(i => i.Id);
+        if (on)
+            foreach (var id in outstanding) selectedLineIds.Add(id);
+        else
+            foreach (var id in outstanding) selectedLineIds.Remove(id);
+    }
+
+    // Per-line receive modal state.
+    bool receiveModalOpen = false;
+    LineDto? modalLine;
+    int modalQty;
+    string? modalNotes;
+
+    void OpenReceiveModal(LineDto line)
+    {
+        modalLine        = line;
+        modalQty         = line.OutstandingQuantity;
+        modalNotes       = null;
+        receiveModalOpen = true;
+    }
+
+    void CloseReceiveModal()
+    {
+        receiveModalOpen = false;
+        modalLine        = null;
+        modalQty         = 0;
+        modalNotes       = null;
+    }
+
+    async Task ConfirmReceiveModalAsync()
+    {
+        if (modalLine == null) return;
+        if (modalQty <= 0 || modalQty > modalLine.OutstandingQuantity) return;
+
+        var body = new { receivedQuantity = modalQty, notes = modalNotes };
+        var resp = await Http.PostAsJsonAsync(
+            $"api/receiving-orders/{Id}/lines/{modalLine.Id}/receive", body);
+
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Received {modalQty} units. Stock updated.");
+            CloseReceiveModal();
+            await LoadAsync();
+        }
+        else
+        {
+            var msg = await resp.Content.ReadAsStringAsync();
+            Toast.Show($"Receive failed: {msg}");
+        }
+    }
+
+    async Task ReceiveSelectedAsync()
+    {
+        if (selectedLineIds.Count == 0) return;
+
+        // Build the batch from selected lines using the qty inputs (clamped to outstanding).
+        var items = new List<object>();
+        foreach (var id in selectedLineIds)
+        {
+            var line = order?.Items.FirstOrDefault(i => i.Id == id);
+            if (line == null || line.OutstandingQuantity <= 0) continue;
+
+            var qty = lineQtyInputs.TryGetValue(id, out var q) ? q : line.OutstandingQuantity;
+            qty = Math.Clamp(qty, 1, line.OutstandingQuantity);
+            items.Add(new { lineId = id, quantity = qty });
+        }
+
+        if (items.Count == 0)
+        {
+            Toast.Show("No valid lines selected.");
+            return;
+        }
+
+        var resp = await Http.PostAsJsonAsync(
+            $"api/receiving-orders/{Id}/receive-batch", new { items });
+
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Received {items.Count} line(s). Stock updated.");
+            selectedLineIds.Clear();
+            await LoadAsync();
+        }
+        else
+        {
+            var msg = await resp.Content.ReadAsStringAsync();
+            Toast.Show($"Batch receive failed: {msg}");
+        }
+    }
 
     // Variant picker for adding lines.
     List<VariantRow>? variants;

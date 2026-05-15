@@ -40,16 +40,25 @@
     }
     else
     {
+        <p style="color:#6b7785;font-size:12px;margin-top:0;margin-bottom:10px;">
+            Drag any card to reorder. The first image is the primary unless you mark another one explicitly.
+        </p>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:14px;">
-            @foreach (var img in images.OrderBy(i => i.SortOrder))
+            @foreach (var img in OrderedImages)
             {
-                <div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;">
+                <div draggable="true"
+                     ondragover="event.preventDefault()"
+                     @ondragstart="() => OnDragStart(img.Id)"
+                     @ondrop="() => OnDropAsync(img.Id)"
+                     style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;cursor:grab;opacity:@(draggingId == img.Id ? "0.5" : "1");">
                     <div style="position:relative;width:100%;aspect-ratio:1/1;overflow:hidden;border-radius:6px;background:#f3f4f6;">
-                        <img src="@img.Url" alt="" style="width:100%;height:100%;object-fit:cover;" />
+                        <img src="@img.Url" alt="" style="width:100%;height:100%;object-fit:cover;pointer-events:none;" />
                         @if (img.IsPrimary)
                         {
                             <span style="position:absolute;top:6px;left:6px;background:#0d3b66;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;">PRIMARY</span>
                         }
+                        <span style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.55);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">#@(img.SortOrder + 1)</span>
                     </div>
                     <div style="font-size:11px;color:#9ca3af;margin-top:6px;">
                         @((img.FileSizeBytes / 1024.0).ToString("N1")) KB · @img.MimeType
@@ -76,6 +85,44 @@
     bool isLoading = true;
     bool isUploading = false;
     string? _error;
+
+    // Drag-to-reorder state. Native HTML5 DnD — no JS interop needed.
+    Guid? draggingId;
+
+    IEnumerable<ImageRow> OrderedImages => (images ?? new()).OrderBy(i => i.SortOrder);
+
+    void OnDragStart(Guid id) => draggingId = id;
+
+    async Task OnDropAsync(Guid targetId)
+    {
+        var src = draggingId;
+        draggingId = null;
+        if (src == null || src == targetId || images == null) return;
+
+        // Local reorder: remove the dragged item and re-insert it at the target index.
+        var ordered = images.OrderBy(i => i.SortOrder).ToList();
+        var srcItem = ordered.FirstOrDefault(i => i.Id == src);
+        if (srcItem == null) return;
+
+        ordered.Remove(srcItem);
+        var targetIdx = ordered.FindIndex(i => i.Id == targetId);
+        if (targetIdx < 0) targetIdx = ordered.Count;
+        ordered.Insert(targetIdx, srcItem);
+
+        // Re-stamp SortOrder so the UI updates immediately.
+        for (int idx = 0; idx < ordered.Count; idx++) ordered[idx].SortOrder = idx;
+        images = ordered;
+        StateHasChanged();
+
+        // Persist the new order on the server.
+        var body = new { imageIds = ordered.Select(i => i.Id).ToArray() };
+        var resp = await Http.PatchAsJsonAsync($"api/products/{ProductId}/images/reorder", body);
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Reorder failed — reloading.");
+            await LoadImagesAsync();
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

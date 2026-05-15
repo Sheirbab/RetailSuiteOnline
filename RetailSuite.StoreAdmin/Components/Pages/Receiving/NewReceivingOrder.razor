@@ -11,16 +11,49 @@
 
 <div class="card" style="max-width:680px;">
     <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Supplier</label>
-    <select class="input full" @bind="form.SupplierId" style="margin-bottom:12px;">
-        <option value="">— Select supplier (optional) —</option>
-        @if (suppliers != null)
-        {
-            @foreach (var s in suppliers.OrderBy(x => x.Name))
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <select class="input" style="flex:1;" @bind="form.SupplierId">
+            <option value="">— Select supplier (optional) —</option>
+            @if (suppliers != null)
             {
-                <option value="@s.Id">@s.Name</option>
+                @foreach (var s in suppliers.OrderBy(x => x.Name))
+                {
+                    <option value="@s.Id">@s.Name</option>
+                }
             }
-        }
-    </select>
+        </select>
+        <button class="btn" type="button"
+                @onclick="() => showQuickSupplier = !showQuickSupplier">
+            @(showQuickSupplier ? "Cancel new" : "+ New supplier")
+        </button>
+    </div>
+
+    @if (showQuickSupplier)
+    {
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-bottom:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <input class="input" @bind="quickSupplier.Name"          placeholder="Supplier name *" />
+                <input class="input" @bind="quickSupplier.ContactPerson" placeholder="Contact person" />
+                <input class="input" @bind="quickSupplier.Phone"         placeholder="Phone" />
+                <input class="input" @bind="quickSupplier.Email"         placeholder="Email" />
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+                <button class="btn btn-primary" type="button"
+                        disabled="@isCreatingSupplier"
+                        @onclick="CreateSupplierInlineAsync">
+                    @(isCreatingSupplier ? "Saving…" : "Save supplier & select")
+                </button>
+                <button class="btn" type="button"
+                        @onclick="() => { showQuickSupplier = false; quickSupplier = new QuickSupplier(); }">
+                    Cancel
+                </button>
+            </div>
+            <p style="margin:6px 0 0;font-size:11px;color:#6b7785;">
+                Only the name is required. You can add full details later from the Suppliers page.
+            </p>
+        </div>
+    }
+    <div style="margin-bottom:12px;"></div>
 
     <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Supplier reference (their PO #)</label>
     <input class="input full" @bind="form.SupplierReference"
@@ -46,6 +79,60 @@
 @code {
     List<SupplierRow>? suppliers;
     FormModel form = new();
+
+    // Inline supplier-create state.
+    bool showQuickSupplier = false;
+    bool isCreatingSupplier = false;
+    QuickSupplier quickSupplier = new();
+
+    async Task CreateSupplierInlineAsync()
+    {
+        if (string.IsNullOrWhiteSpace(quickSupplier.Name))
+        {
+            Toast.Show("Supplier name is required.");
+            return;
+        }
+
+        isCreatingSupplier = true;
+        StateHasChanged();
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/suppliers", quickSupplier);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Toast.Show($"Create failed: {msg}");
+                return;
+            }
+
+            // Read the new supplier's id from the response envelope, then refresh the dropdown
+            // and select the new entry so the user can continue creating the order.
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var newId = doc.RootElement.GetProperty("data").GetProperty("id").GetGuid();
+
+            await LoadSuppliersAsync();
+            form.SupplierId = newId.ToString();
+
+            showQuickSupplier = false;
+            quickSupplier     = new QuickSupplier();
+            Toast.Show("Supplier created and selected.");
+        }
+        finally
+        {
+            isCreatingSupplier = false;
+            StateHasChanged();
+        }
+    }
+
+    class QuickSupplier
+    {
+        public string? Name { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
