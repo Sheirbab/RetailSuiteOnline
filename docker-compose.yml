@@ -1,0 +1,47 @@
+# -----------------------------------------------------------------------------
+# Local-dev compose stack: SQL Server + the API.
+# Bring up:
+#   docker compose up --build
+# Tear down (keep volumes):
+#   docker compose down
+# Reset DB (drop volumes):
+#   docker compose down -v
+# -----------------------------------------------------------------------------
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      # CHANGE this before pushing anywhere shared.
+      SA_PASSWORD: "Y0urStr0ng!Pwd"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$$SA_PASSWORD" -Q "SELECT 1" -b -o /dev/null
+      interval: 10s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ConnectionStrings__Default: "Server=db,1433;Database=RetailSuiteDb;User Id=sa;Password=Y0urStr0ng!Pwd;TrustServerCertificate=True"
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist uploaded product images across container restarts.
+      - uploads:/app/wwwroot/uploads
+
+volumes:
+  mssql-data:
+  uploads:

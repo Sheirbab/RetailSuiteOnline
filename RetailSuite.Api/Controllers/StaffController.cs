@@ -5,6 +5,7 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Shared;
 
 namespace RetailSuite.Api.Controllers;
@@ -16,11 +17,16 @@ public class StaffController : ControllerBase
 {
     private readonly RetailDbContext _db;
     private readonly ICurrentUserContext _currentUser;
+    private readonly IEntitlementService _entitlements;
 
-    public StaffController(RetailDbContext db, ICurrentUserContext currentUser)
+    public StaffController(
+        RetailDbContext db,
+        ICurrentUserContext currentUser,
+        IEntitlementService entitlements)
     {
         _db = db;
         _currentUser = currentUser;
+        _entitlements = entitlements;
     }
 
     /// <summary>
@@ -37,6 +43,18 @@ public class StaffController : ControllerBase
         }
 
         var tenantId = _currentUser.TenantId;
+
+        // Plan-limit enforcement — fail fast before we hash a password we'll throw away.
+        var quota = await _entitlements.CanAddUserAsync(tenantId);
+        if (!quota.Allowed)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired,
+                new ApiResponse<object>(false, quota.Reason, new
+                {
+                    quota.CurrentCount,
+                    quota.Limit
+                }));
+        }
 
         // Check for duplicate email within tenant
         var exists = await _db.Users

@@ -23,6 +23,7 @@ namespace RetailSuite.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth-strict")]
 public class AuthController : ControllerBase
 {
     private readonly RetailDbContext _Db;

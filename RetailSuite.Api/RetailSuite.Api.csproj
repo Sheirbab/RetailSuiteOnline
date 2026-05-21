@@ -4,6 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Swagger reads these XML files for endpoint summaries / param docs. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Suppress 1591 ("missing XML on public member") so undocumented endpoints don't fail the build. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

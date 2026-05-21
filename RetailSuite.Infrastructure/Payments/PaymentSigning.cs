@@ -6,7 +6,7 @@ namespace RetailSuite.Infrastructure.Payments;
 /// <summary>
 /// Helpers for signing payment-gateway requests.
 /// Both Easypaisa and JazzCash require HMAC-SHA256 signatures over a
-/// canonicalised, sorted, &-delimited form of the request fields.
+/// canonicalised, sorted, ampersand-delimited form of the request fields.
 /// </summary>
 public static class PaymentSigning
 {

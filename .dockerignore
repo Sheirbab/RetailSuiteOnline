@@ -1,0 +1,17 @@
+# Build output + IDE artefacts
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+
+# Local dev artefacts
+**/*.user
+**/*.suo
+**/logs/
+**/wwwroot/uploads/
+
+# Git + CI
+.git/
+.github/
+*.md

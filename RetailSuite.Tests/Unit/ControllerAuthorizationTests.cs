@@ -6,6 +6,7 @@ using RetailSuite.Api.Controllers;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
@@ -36,6 +37,20 @@ public class ControllerAuthorizationTests
         return currentUser;
     }
 
+    /// <summary>
+    /// Permissive entitlement stub — always allows. These tests are about authorization
+    /// (cross-tenant access), not plan limits, so we don't want the entitlement check to interfere.
+    /// </summary>
+    private static IEntitlementService AlwaysAllowEntitlements()
+    {
+        var m = new Mock<IEntitlementService>();
+        m.Setup(x => x.CanAddUserAsync(It.IsAny<Guid>())).ReturnsAsync(EntitlementResult.Allow());
+        m.Setup(x => x.CanAddProductAsync(It.IsAny<Guid>())).ReturnsAsync(EntitlementResult.Allow());
+        m.Setup(x => x.CanCreateOrderAsync(It.IsAny<Guid>())).ReturnsAsync(EntitlementResult.Allow());
+        m.Setup(x => x.HasFeatureAsync(It.IsAny<Guid>(), It.IsAny<PlanFeature>())).ReturnsAsync(true);
+        return m.Object;
+    }
+
     [Fact]
     public async Task OrdersGet_ReturnsForbid_WhenCustomerTriesToAccessAnotherCustomersOrder()
     {
@@ -55,7 +70,7 @@ public class ControllerAuthorizationTests
 
         var currentUser = CreateCustomerContext(callerUserId, tenantId);
         var mockLogger = new Mock<ILogger<OrdersController>>();
-        var controller = new OrdersController(orderService: null!, db, currentUser.Object, mockLogger.Object);
+        var controller = new OrdersController(orderService: null!, db, currentUser.Object, AlwaysAllowEntitlements(), mockLogger.Object);
 
         var result = await controller.Get(order.Id);
 
@@ -81,7 +96,7 @@ public class ControllerAuthorizationTests
 
         var currentUser = CreateCustomerContext(callerUserId, tenantId);
         var mockLogger = new Mock<ILogger<OrdersController>>();
-        var controller = new OrdersController(orderService: null!, db, currentUser.Object, mockLogger.Object);
+        var controller = new OrdersController(orderService: null!, db, currentUser.Object, AlwaysAllowEntitlements(), mockLogger.Object);
 
         var result = await controller.Update(order.Id, new CreateOrderRequest());
 

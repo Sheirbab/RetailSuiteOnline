@@ -24,7 +24,9 @@ public class BarcodeServiceTests
         var svc = new BarcodeService();
         var a   = svc.GenerateCode128Png("SKU-A");
         var b   = svc.GenerateCode128Png("SKU-B");
-        Assert.NotEqual(a.Length == b.Length && a.Take(64).SequenceEqual(b.Take(64)), true);
+        // The two encoded PNGs must differ in either length or pixel data.
+        var identical = a.Length == b.Length && a.Take(64).SequenceEqual(b.Take(64));
+        Assert.False(identical, "Two different SKUs produced identical barcode PNGs.");
     }
 
     [Fact]

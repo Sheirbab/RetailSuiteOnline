@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Shared;
@@ -15,12 +16,18 @@ public class ProductsController : ControllerBase
     private readonly RetailDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly ICurrentUserContext _currentUser;
+    private readonly IEntitlementService _entitlements;
 
-    public ProductsController(RetailDbContext db, IWebHostEnvironment env, ICurrentUserContext currentUser)
+    public ProductsController(
+        RetailDbContext db,
+        IWebHostEnvironment env,
+        ICurrentUserContext currentUser,
+        IEntitlementService entitlements)
     {
         _db = db;
         _env = env;
         _currentUser = currentUser;
+        _entitlements = entitlements;
     }
 
     // GET /api/products?page=1&pageSize=20
@@ -122,6 +129,18 @@ public class ProductsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateProductRequest request)
     {
+        // Plan-limit enforcement — MaxProducts on the active plan.
+        var quota = await _entitlements.CanAddProductAsync(_currentUser.TenantId);
+        if (!quota.Allowed)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired,
+                new ApiResponse<object>(false, quota.Reason, new
+                {
+                    quota.CurrentCount,
+                    quota.Limit
+                }));
+        }
+
         var product = new Product(request.Name, request.Description);
         _db.Products.Add(product);
         await _db.SaveChangesAsync();

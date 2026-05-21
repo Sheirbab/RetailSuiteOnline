@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
 
@@ -19,17 +20,20 @@ namespace RetailSuite.Api.Controllers
         private readonly OrderService _orderService;
         private readonly RetailDbContext _db;
         private readonly ICurrentUserContext _currentUser;
+        private readonly IEntitlementService _entitlements;
         private readonly ILogger<OrdersController> _logger;
 
         public OrdersController(
             OrderService orderService,
             RetailDbContext db,
             ICurrentUserContext currentUser,
+            IEntitlementService entitlements,
             ILogger<OrdersController> logger)
         {
             _orderService = orderService;
             _db = db;
             _currentUser = currentUser;
+            _entitlements = entitlements;
             _logger = logger;
         }
         [HttpGet("{id}")]
@@ -203,6 +207,18 @@ namespace RetailSuite.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create(CreateOrderRequest request)
         {
+            // Plan-limit enforcement — MaxOrdersPerMonth on the active plan.
+            var quota = await _entitlements.CanCreateOrderAsync(_currentUser.TenantId);
+            if (!quota.Allowed)
+            {
+                return StatusCode(StatusCodes.Status402PaymentRequired,
+                    new ApiResponse<object>(false, quota.Reason, new
+                    {
+                        quota.CurrentCount,
+                        quota.Limit
+                    }));
+            }
+
             var orderId = await _orderService.CreateDraftAsync(request);
             return Ok(orderId);
         }

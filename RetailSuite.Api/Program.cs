@@ -1,15 +1,18 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Threading.RateLimiting;
 using RetailSuite.Api.Middleware;
 using RetailSuite.Api.Seeding;
 using RetailSuite.Api.MultiTenancy;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
+using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Barcodes.Services;
 using RetailSuite.Infrastructure.Modules.Identity.Services;
@@ -79,6 +82,8 @@ try
     builder.Services.AddScoped<PaymentService>();
     builder.Services.AddScoped<SaleService>();
     builder.Services.AddScoped<CustomerService>();
+    builder.Services.AddScoped<IStoreCreditService, StoreCreditService>();
+    builder.Services.AddScoped<ILoyaltyService, LoyaltyService>();
 
     builder.Services.Configure<ImageStorageOptions>(builder.Configuration.GetSection(ImageStorageOptions.Section));
     builder.Services.AddScoped<IImageValidationService, ImageValidationService>();
@@ -204,7 +209,22 @@ try
 
     builder.Services.AddSwaggerGen(c =>
     {
-        c.SwaggerDoc("v1", new OpenApiInfo { Title = "RetailSuite API", Version = "v1" });
+        c.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title       = "RetailSuite API",
+            Version     = "v1",
+            Description = "Multi-tenant retail platform — products, inventory, orders, " +
+                          "subscriptions, receiving workflow, and webhook integrations.",
+            Contact     = new OpenApiContact { Name = "RetailSuite Support" }
+        });
+
+        // Pull XML comments from the API project + any referenced library that has them.
+        // Files are emitted next to the assembly when <GenerateDocumentationFile>true</GenerateDocumentationFile>.
+        var binDir = AppContext.BaseDirectory;
+        foreach (var xmlFile in Directory.GetFiles(binDir, "RetailSuite.*.xml"))
+        {
+            c.IncludeXmlComments(xmlFile, includeControllerXmlComments: true);
+        }
 
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
@@ -228,7 +248,89 @@ try
         });
     });
 
+    // ---------------------------------------------------------------
+    // CORS — explicit allow-list, no wildcards in production.
+    // ---------------------------------------------------------------
+    var allowedOrigins = builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>()
+        ?? new[] { "https://app.retailsuite.local" };
+
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AppOrigins", policy =>
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
+    });
+
+    // ---------------------------------------------------------------
+    // Rate limiting — auth + webhook endpoints especially.
+    // 10 req/min per IP for /api/auth/* and /api/webhooks/* keeps brute-force
+    // and webhook-spam noise down; the rest of the API is uncapped to avoid
+    // disrupting legitimate POS / catalog usage.
+    // ---------------------------------------------------------------
+    builder.Services.AddRateLimiter(opts =>
+    {
+        opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        opts.AddPolicy("auth-strict", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit          = 10,
+                    Window               = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit           = 0,
+                    AutoReplenishment    = true
+                }));
+
+        opts.AddPolicy("webhook-strict", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit          = 60,
+                    Window               = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit           = 0,
+                    AutoReplenishment    = true
+                }));
+    });
+
     var app = builder.Build();
+
+    // ---------------------------------------------------------------
+    // Production secrets validation — fail fast on placeholder values.
+    // Prevents accidentally deploying with dev keys or empty secrets.
+    // ---------------------------------------------------------------
+    if (app.Environment.IsProduction())
+    {
+        var problems = new List<string>();
+
+        var jwtKey = builder.Configuration["Jwt:Key"] ?? "";
+        if (jwtKey.Length < 32)
+            problems.Add("Jwt:Key is shorter than 32 chars — set a strong production key via user-secrets or env.");
+        if (jwtKey.Contains("DEV", StringComparison.OrdinalIgnoreCase)
+            || jwtKey.Contains("THIS_IS_A_SUPER_LONG_DEV", StringComparison.OrdinalIgnoreCase))
+            problems.Add("Jwt:Key still contains the development placeholder. Replace before deploying.");
+
+        var superPwd = builder.Configuration["SuperAdmin:Password"] ?? "";
+        if (superPwd.Equals("Admin@12345", StringComparison.Ordinal))
+            problems.Add("SuperAdmin:Password is the default dev password. Replace before deploying.");
+
+        if (problems.Count > 0)
+        {
+            Log.Fatal("Refusing to start in Production with insecure configuration:\n  - {Problems}",
+                string.Join("\n  - ", problems));
+            throw new InvalidOperationException(
+                "Production secrets validation failed. See log for details.");
+        }
+    }
 
     // ---------------------------------------------------------------
     // Seed super-admin (idempotent — no-op if already exists)
@@ -269,6 +371,9 @@ try
     app.UseMiddleware<ExceptionMiddleware>();
 
     app.UseSerilogRequestLogging();
+
+    app.UseCors("AppOrigins");
+    app.UseRateLimiter();
 
     app.UseAuthentication();
     app.UseAuthorization();

@@ -5,6 +5,7 @@ using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
+using RetailSuite.Infrastructure.Payments;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
@@ -18,13 +19,20 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         private readonly AccountingService _accountingService;
         private readonly ICurrentUserContext _currentUser;
         private readonly INotificationService _notifications;
+        private readonly IPaymentGatewayFactory _gatewayFactory;
         private readonly ILogger<OrderService> _logger;
+
+        /// <summary>Methods that don't go through a gateway — refunds are handled out of band.</summary>
+        private static readonly HashSet<string> ManualRefundMethods =
+            new(StringComparer.OrdinalIgnoreCase) { "Cash", "BankTransfer", "Manual" };
+
         public OrderService(
         RetailDbContext db,
         InventoryService inventoryService,
         AccountingService accountingService,
         ICurrentUserContext currentUser,
         INotificationService notifications,
+        IPaymentGatewayFactory gatewayFactory,
         ILogger<OrderService> logger)
         {
             _db = db;
@@ -32,6 +40,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             _accountingService = accountingService;
             _currentUser = currentUser;
             _notifications = notifications;
+            _gatewayFactory = gatewayFactory;
             _logger = logger;
         }
 
@@ -280,6 +289,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             var order = await _db.Orders
                 .Include(o => o.Items)
+                .Include(o => o.Payments)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null)
@@ -351,10 +361,93 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            // ---------------------------------------
+            // Gateway refunds — best-effort, post-commit
+            // ---------------------------------------
+            // The ledger has already booked the refund; calling the gateway is what actually
+            // moves money back to the customer. Run after the DB transaction so a gateway
+            // hiccup doesn't roll back the inventory + accounting work we just did.
+            await IssueGatewayRefundsAsync(order, totalReturnValue);
+
             // Best-effort notification — never throws.
             await _notifications.SendReturnProcessedAsync(order.Id, totalReturnValue);
 
             return totalReturnValue;
+        }
+
+        /// <summary>
+        /// Distributes the refund amount across the order's successful payments,
+        /// most recent first. Cash / bank-transfer / manual payments are skipped —
+        /// those refunds are settled out of band by finance.
+        /// </summary>
+        private async Task IssueGatewayRefundsAsync(Order order, decimal totalRefund)
+        {
+            if (totalRefund <= 0) return;
+
+            // Most-recent-first ordering — refund the latest payment first to mirror typical
+            // gateway behaviour (Stripe / JC / EP all refund the original charge id).
+            var candidates = order.Payments
+                .Where(p => !string.IsNullOrWhiteSpace(p.TransactionReference))
+                .Where(p => !ManualRefundMethods.Contains(p.PaymentMethod))
+                .OrderByDescending(p => p.PaidAt)
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                _logger.LogInformation(
+                    "Order {OrderNumber}: refund of {Amount} not routed to a gateway — no gateway-tracked payment found. " +
+                    "Manual reconciliation required.",
+                    order.OrderNumber, totalRefund);
+                return;
+            }
+
+            var remaining = totalRefund;
+
+            foreach (var payment in candidates)
+            {
+                if (remaining <= 0) break;
+
+                var slice = Math.Min(payment.Amount, remaining);
+
+                try
+                {
+                    var gateway = _gatewayFactory.GetByName(payment.PaymentMethod);
+                    var result  = await gateway.RefundAsync(payment.TransactionReference!, slice);
+
+                    if (result.Success)
+                    {
+                        _logger.LogInformation(
+                            "Refund issued: Order={OrderNumber}, Method={Method}, OriginalTxn={Txn}, RefundTxn={RefundTxn}, Amount={Amount}",
+                            order.OrderNumber, payment.PaymentMethod,
+                            payment.TransactionReference, result.TransactionId, slice);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Gateway refund failed (will require manual follow-up): Order={OrderNumber}, Method={Method}, OriginalTxn={Txn}, Reason={Reason}",
+                            order.OrderNumber, payment.PaymentMethod,
+                            payment.TransactionReference, result.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Never re-throw — the customer-facing ledger refund is already committed.
+                    _logger.LogError(ex,
+                        "Gateway refund threw for Order {OrderNumber} (method={Method}, txn={Txn}). " +
+                        "Inventory + ledger already reflect the return; refund must be settled manually.",
+                        order.OrderNumber, payment.PaymentMethod, payment.TransactionReference);
+                }
+
+                remaining -= slice;
+            }
+
+            if (remaining > 0)
+            {
+                _logger.LogWarning(
+                    "Order {OrderNumber}: refund residual of {Amount} could not be routed to a gateway " +
+                    "(no further gateway-tracked payments). Manual reconciliation required for the residual.",
+                    order.OrderNumber, remaining);
+            }
         }
     }
 }

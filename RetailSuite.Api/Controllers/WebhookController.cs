@@ -16,6 +16,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/webhooks")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("webhook-strict")]
 public class WebhookController : ControllerBase
 {
     private readonly IStripeWebhookHandler _webhookHandler;
@@ -145,6 +146,120 @@ public class WebhookController : ControllerBase
         var body = await ReadBodyAsync();
         var result = _jcHandler.Verify(body);
         return await IngestAsync("JazzCash", body, result);
+    }
+
+    // ============================================================
+    //  SuperAdmin ops endpoints — list + replay failed webhooks
+    // ============================================================
+
+    /// <summary>
+    /// List recent WebhookEvent records. Filter by <c>processed=true|false</c> and / or
+    /// <c>provider=Stripe|EasyPaisa|JazzCash</c>. Newest first, capped at 200.
+    /// </summary>
+    [HttpGet("events")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> ListEvents(
+        [FromQuery] bool? processed,
+        [FromQuery] string? provider)
+    {
+        var q = _db.WebhookEvents.AsQueryable();
+        if (processed.HasValue) q = q.Where(w => w.Processed == processed.Value);
+        if (!string.IsNullOrWhiteSpace(provider)) q = q.Where(w => w.Provider == provider);
+
+        var rows = await q
+            .OrderByDescending(w => w.CreatedAt)
+            .Take(200)
+            .Select(w => new
+            {
+                w.Id,
+                w.Provider,
+                w.ExternalEventId,
+                w.EventType,
+                w.Processed,
+                w.ProcessedAt,
+                w.ProcessingError,
+                w.MatchedSubscriptionPaymentId,
+                w.MatchedOrderPaymentId,
+                w.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { count = rows.Count, events = rows });
+    }
+
+    /// <summary>
+    /// Re-run reconciliation for a previously-stored WebhookEvent. Useful when a delivery
+    /// arrived during a deploy window and silently failed, or when a code fix means an
+    /// event that previously errored can now be processed.
+    /// </summary>
+    /// <remarks>
+    /// Parses the raw payload again through the matching provider's handler so the signature
+    /// check still runs. If the event is already marked Processed (i.e. it succeeded), this
+    /// is a no-op that returns 200 — the reconciler itself is idempotent so even a forced
+    /// replay is safe.
+    /// </remarks>
+    [HttpPost("events/{id:guid}/replay")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> Replay(Guid id)
+    {
+        var record = await _db.WebhookEvents.FirstOrDefaultAsync(w => w.Id == id);
+        if (record == null)
+            return NotFound(new { error = "Event not found." });
+
+        // Re-verify the signature so a replay can't bypass auth (raw payload is preserved).
+        WebhookHandleResult parsed = record.Provider switch
+        {
+            "EasyPaisa" => _epHandler.Verify(record.RawPayload),
+            "JazzCash"  => _jcHandler.Verify(record.RawPayload),
+            _           => new WebhookHandleResult(
+                                Accepted:        false,
+                                ExternalEventId: null,
+                                EventType:       null,
+                                ProviderTxnRef:  null,
+                                Succeeded:       false,
+                                Amount:          0m,
+                                FailureReason:   null,
+                                RejectReason:    $"Provider '{record.Provider}' does not support replay.")
+        };
+
+        if (!parsed.Accepted)
+        {
+            record.MarkFailed($"Replay rejected: {parsed.RejectReason}");
+            await _db.SaveChangesAsync();
+            return BadRequest(new { error = parsed.RejectReason });
+        }
+
+        try
+        {
+            var reco = await _reconciler.ReconcileAsync(
+                providerTxnRef: parsed.ProviderTxnRef ?? string.Empty,
+                succeeded:      parsed.Succeeded,
+                amount:         parsed.Amount,
+                failureReason:  parsed.FailureReason);
+
+            record.MarkProcessed(subscriptionPaymentId: reco.SubscriptionPaymentId);
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "WebhookEvent {Id} replayed by SuperAdmin: reconciled={Reconciled}",
+                id, reco.Reconciled);
+
+            return Ok(new
+            {
+                replayed   = true,
+                reconciled = reco.Reconciled,
+                paymentId  = reco.SubscriptionPaymentId,
+                invoiceId  = reco.InvoiceId,
+                note       = reco.Reason
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Replay failed for WebhookEvent {Id}", id);
+            record.MarkFailed(ex.Message);
+            await _db.SaveChangesAsync();
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 
     // -------------------------------------------------------------
