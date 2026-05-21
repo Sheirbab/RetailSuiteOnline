@@ -27,6 +27,7 @@ else
                     <th>Email</th>
                     <th>Phone</th>
                     <th>Joined</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -37,6 +38,10 @@ else
                         <td>@c.Email</td>
                         <td>@(c.Phone ?? "—")</td>
                         <td>@c.CreatedAt.ToString("dd MMM yyyy")</td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/customers/{c.Id}")">Open</a>
+                        </td>
                     </tr>
                 }
             </tbody>

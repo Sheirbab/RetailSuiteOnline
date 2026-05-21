@@ -17,6 +17,21 @@ public class Order : TenantEntity
     /// <summary>Total tax charged across all items. Populated when the order is confirmed/completed.</summary>
     public decimal TaxAmount { get; private set; }
 
+    /// <summary>Order-level discount (in rupees) applied at the till — separate from per-line discounts.</summary>
+    public decimal OrderDiscountAmount { get; private set; }
+
+    /// <summary>Store-credit amount redeemed against this sale (denormalised — actual ledger is in StoreCreditTransactions).</summary>
+    public decimal StoreCreditRedeemed { get; private set; }
+
+    /// <summary>Loyalty rupees credited against this sale (1 point → PointValueRupees).</summary>
+    public decimal LoyaltyRedeemedRupees { get; private set; }
+
+    /// <summary>Loyalty points redeemed (not rupees) — kept for audit.</summary>
+    public int LoyaltyPointsRedeemed { get; private set; }
+
+    /// <summary>User who rang up this sale (POS cashier). Null for online / system sales.</summary>
+    public Guid? CashierUserId { get; private set; }
+
     public decimal PaidAmount { get; private set; }
     public decimal OutstandingAmount => TotalAmount - PaidAmount;
     public bool IsFullyPaid => OutstandingAmount <= 0;
@@ -81,6 +96,56 @@ public class Order : TenantEntity
         PaidAmount += amount;
     }
     public void Complete() => Status = OrderStatus.Completed;
+
+    // ---- POS extensions (cash counter) ---------------------------------
+
+    /// <summary>Stamp the cashier who's ringing up this sale.</summary>
+    public void SetCashier(Guid userId) => CashierUserId = userId;
+
+    /// <summary>
+    /// Apply an order-level discount (in rupees). Reduces the running TotalAmount.
+    /// Caller is responsible for validating the discount doesn't exceed the cart subtotal.
+    /// </summary>
+    public void ApplyOrderDiscount(decimal amount)
+    {
+        if (amount < 0) throw new BusinessRuleException("Discount cannot be negative.");
+        if (Status != OrderStatus.Draft)
+            throw new BusinessRuleException("Discount can only be applied while the order is in Draft.");
+        if (amount > TotalAmount)
+            throw new BusinessRuleException("Order discount cannot exceed the cart total.");
+
+        OrderDiscountAmount = amount;
+        TotalAmount -= amount;
+    }
+
+    /// <summary>
+    /// Record that the customer redeemed store credit against this sale. Reduces the amount
+    /// the cashier needs to collect in cash; the actual ledger entry is separate.
+    /// </summary>
+    public void ApplyStoreCreditRedemption(decimal amount)
+    {
+        if (amount < 0) throw new BusinessRuleException("Redemption cannot be negative.");
+        if (amount > TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees)
+            throw new BusinessRuleException("Redemption would exceed amount due.");
+        StoreCreditRedeemed += amount;
+    }
+
+    /// <summary>
+    /// Record loyalty redemption (points + their rupee equivalent). The cashier collects
+    /// less cash by exactly the rupee value.
+    /// </summary>
+    public void ApplyLoyaltyRedemption(int points, decimal rupees)
+    {
+        if (points < 0 || rupees < 0) throw new BusinessRuleException("Loyalty redemption cannot be negative.");
+        if (rupees > TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees)
+            throw new BusinessRuleException("Loyalty redemption would exceed amount due.");
+        LoyaltyPointsRedeemed += points;
+        LoyaltyRedeemedRupees += rupees;
+    }
+
+    /// <summary>How much cash / card the customer still needs to pay after all redemptions.</summary>
+    public decimal AmountDueAfterRedemptions =>
+        Math.Max(0, TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees);
 
     /// <summary>Records a partial/full return, reducing the paid amount accordingly.</summary>
     public void ApplyReturn(decimal returnAmount)

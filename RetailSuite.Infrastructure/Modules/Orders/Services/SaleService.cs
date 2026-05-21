@@ -1,124 +1,238 @@
 using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure.Exceptions;
+using RetailSuite.Infrastructure.Modules.Customer.Entities;
+using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Email;
+using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
+using RetailSuite.Shared;
 
 namespace RetailSuite.Infrastructure.Modules.Orders.Services
 {
+    /// <summary>
+    /// Cash-counter POS service. End-to-end:
+    ///   1. Decrement inventory + capture cost.
+    ///   2. Build the Order (with line + order discounts).
+    ///   3. Apply store-credit and loyalty redemptions (validate against ledger balances).
+    ///   4. Confirm + complete + register cash payment.
+    ///   5. Earn loyalty on the gross sale.
+    ///   6. Post the GL journal entry (cash + revenue + COGS + tax).
+    ///   7. Tidy up: delete the held-sale row if this was a resume.
+    /// All steps share one DB transaction so partial sales are impossible.
+    /// </summary>
     public class SaleService
     {
         private readonly RetailDbContext _db;
         private readonly AccountingService _accountingService;
         private readonly IEmailService _emailService;
+        private readonly IStoreCreditService _storeCredit;
+        private readonly ILoyaltyService _loyalty;
+        private readonly ICurrentUserContext _currentUser;
 
         public SaleService(
             RetailDbContext db,
             AccountingService accountingService,
-            IEmailService emailService)
+            IEmailService emailService,
+            IStoreCreditService storeCredit,
+            ILoyaltyService loyalty,
+            ICurrentUserContext currentUser)
         {
-            _db = db;
+            _db                = db;
             _accountingService = accountingService;
-            _emailService = emailService;
+            _emailService      = emailService;
+            _storeCredit       = storeCredit;
+            _loyalty           = loyalty;
+            _currentUser       = currentUser;
         }
 
         public async Task<Guid> ProcessPosSaleAsync(CreatePosSaleRequest request)
         {
+            if (request.Items == null || request.Items.Count == 0)
+                throw new BusinessRuleException("Cart is empty.");
+
+            var tenantId   = _currentUser.TenantId;
+            var cashierId  = _currentUser.UserId;
+            var customerId = request.CustomerId ?? Guid.Empty;
+
             using var transaction = await _db.Database.BeginTransactionAsync();
 
+            // 1. Order header
             var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
-            var customerId = request.CustomerId ?? Guid.Empty;
-            string? receiptEmail = null;
-
             var order = new Order(orderNumber, customerId);
+            order.SetCashier(cashierId);
 
             decimal totalCogs = 0;
 
-            foreach (var itemReq in request.Items)
+            // 2. Cart lines — decrement stock, write inventory ledger, add to order
+            foreach (var lineReq in request.Items)
             {
                 var variant = await _db.ProductVariants
-                    .FirstAsync(v => v.Id == itemReq.ProductVariantId);
+                    .FirstAsync(v => v.Id == lineReq.ProductVariantId);
 
                 var inventoryItem = await _db.InventoryItems
                     .FirstAsync(i => i.ProductVariantId == variant.Id);
 
-                var costAmount = inventoryItem.IssueStock(itemReq.Quantity);
+                if (inventoryItem.CurrentStock < lineReq.Quantity)
+                    throw new BusinessRuleException(
+                        $"Insufficient stock for {variant.SKU} — have {inventoryItem.CurrentStock}, need {lineReq.Quantity}.");
+
+                var costAmount = inventoryItem.IssueStock(lineReq.Quantity);
                 variant.StockQuantity = inventoryItem.CurrentStock;
-                variant.AverageCost = inventoryItem.AverageCost;
+                variant.AverageCost   = inventoryItem.AverageCost;
                 totalCogs += costAmount;
 
                 var orderItem = new OrderItem(
-                    order.Id,
-                    variant.Id,
-                    variant.SKU,
-                    variant.Price,
-                    itemReq.Quantity,
-                    variant.TaxRate);
+                    orderId:            order.Id,
+                    productVariantId:   variant.Id,
+                    sku:                variant.SKU,
+                    unitPrice:          variant.Price,
+                    quantity:           lineReq.Quantity,
+                    taxRate:            variant.TaxRate,
+                    lineDiscountAmount: Math.Max(0, lineReq.LineDiscountAmount));
 
                 order.AddItem(orderItem);
 
-                _db.InventoryTransactions.Add(
-                    new InventoryTransaction(
-                        inventoryItem.Id,
-                        variant.Id,
-                        -itemReq.Quantity,
-                        InventoryTransactionType.Sale,
-                        order.Id.ToString(),
-                        "POS sale"));
+                _db.InventoryTransactions.Add(new InventoryTransaction(
+                    inventoryItem.Id,
+                    variant.Id,
+                    -lineReq.Quantity,
+                    InventoryTransactionType.Sale,
+                    order.Id.ToString(),
+                    "POS sale"));
             }
 
+            // 3. Order-level discount (after lines accumulated)
+            if (request.OrderDiscountAmount > 0)
+                order.ApplyOrderDiscount(request.OrderDiscountAmount);
+
+            // 4. Redemptions — validate ledger balances first
+            if (request.StoreCreditRedeem > 0)
+            {
+                if (customerId == Guid.Empty)
+                    throw new BusinessRuleException("Cannot redeem store credit on a walk-in sale.");
+
+                // Records a NEGATIVE ledger entry; throws if insufficient.
+                await _storeCredit.RedeemAsync(
+                    tenantId, customerId, request.StoreCreditRedeem,
+                    order.Id, cashierId, $"POS sale {orderNumber}");
+
+                order.ApplyStoreCreditRedemption(request.StoreCreditRedeem);
+            }
+
+            if (request.LoyaltyPointsRedeem > 0)
+            {
+                if (customerId == Guid.Empty)
+                    throw new BusinessRuleException("Cannot redeem points on a walk-in sale.");
+
+                var redemption = await _loyalty.RedeemAsync(
+                    tenantId, customerId, request.LoyaltyPointsRedeem,
+                    order.Id, order.TotalAmount);
+
+                order.ApplyLoyaltyRedemption(redemption.PointsRedeemed, redemption.RupeesValue);
+            }
+
+            // 5. Validate cash collected covers the remaining amount due
+            var amountDue = order.AmountDueAfterRedemptions;
+            if (request.PaidAmount < amountDue)
+                throw new BusinessRuleException(
+                    $"Insufficient cash: due {amountDue:N2}, received {request.PaidAmount:N2}.");
+
+            // 6. Finalise — confirm + complete + register payment + earn loyalty
             order.Confirm();
             order.Complete();
 
+            if (amountDue > 0)
+                order.RegisterPayment(amountDue);
+
             _db.Orders.Add(order);
 
-            // Load accounts
-            var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-            var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
-            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-            var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
-
-            var journalLines = new List<(Guid, decimal, decimal)>
+            // The Payment row records what the cashier collected (= amountDue, the cash portion).
+            // Fully qualified to disambiguate from the RetailSuite.Infrastructure.Modules.Payment namespace.
+            if (amountDue > 0)
             {
-                (cashAccount.Id,      order.TotalAmount, 0),
-                (revenueAccount.Id,   0, order.TotalAmount - order.TaxAmount),
-                (cogsAccount.Id,      totalCogs, 0),
-                (inventoryAccount.Id, 0, totalCogs)
-            };
-
-            // Add tax payable lines if there is tax
-            if (order.TaxAmount > 0)
-            {
-                var taxAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2000");
-                if (taxAccount != null)
-                {
-                    // Revenue is already reduced above; credit Tax Payable
-                    journalLines.Add((taxAccount.Id, 0, order.TaxAmount));
-                }
+                _db.Payments.Add(new RetailSuite.Modules.Accounting.Entities.Payment(order.Id, amountDue, "Cash"));
             }
 
-            await _accountingService.CreateJournalEntryAsync(
-                order.Id.ToString(),
-                $"POS Sale {order.OrderNumber}",
-                journalLines);
+            // 7. Loyalty earn on the gross sale value (excluding redemptions — earn on cash they spent)
+            if (customerId != Guid.Empty)
+            {
+                await _loyalty.EarnOnOrderAsync(tenantId, customerId, order.Id, order.TotalAmount);
+            }
 
+            // 8. Accounting: book what cash actually moved.
+            //    Revenue = amountDue (= cash collected). The redemption portion is tracked
+            //    in StoreCreditTransactions + LoyaltyTransactions ledgers but is treated as
+            //    a discount for GL purposes to keep the journal balanced without introducing
+            //    a Customer Credit Liability account.
+            if (amountDue > 0)
+            {
+                var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+                var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+                var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
+                var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
+
+                // Recompute proportional tax on the cash portion only.
+                var taxRatio = order.TotalAmount > 0
+                    ? Math.Min(1m, amountDue / order.TotalAmount)
+                    : 0m;
+                var cashTax = order.TaxAmount * taxRatio;
+                var cashRevenue = amountDue - cashTax;
+
+                var journalLines = new List<(Guid, decimal, decimal)>
+                {
+                    (cashAccount.Id,      amountDue, 0),
+                    (revenueAccount.Id,   0, cashRevenue),
+                    (cogsAccount.Id,      totalCogs, 0),
+                    (inventoryAccount.Id, 0, totalCogs)
+                };
+
+                if (cashTax > 0)
+                {
+                    var taxAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2000");
+                    if (taxAccount != null)
+                        journalLines.Add((taxAccount.Id, 0, cashTax));
+                }
+
+                await _accountingService.CreateJournalEntryAsync(
+                    order.Id.ToString(),
+                    $"POS Sale {order.OrderNumber}",
+                    journalLines);
+            }
+
+            // 9. Clean up resumed held sale, if any
+            if (request.ResumedFromHeldSaleId.HasValue)
+            {
+                var held = await _db.HeldSales
+                    .FirstOrDefaultAsync(h => h.Id == request.ResumedFromHeldSaleId.Value);
+                if (held != null) _db.HeldSales.Remove(held);
+            }
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // 10. Email receipt if customer email known (best-effort, outside the txn)
+            string? receiptEmail = null;
             if (customerId != Guid.Empty)
             {
                 var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
                 receiptEmail = customer?.Email;
             }
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
-
             if (!string.IsNullOrWhiteSpace(receiptEmail))
             {
                 var body = $@"
 <h2>Receipt — {order.OrderNumber}</h2>
 <p>Thank you for your purchase!</p>
-<p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>
+<p><strong>Items total:</strong> Rs {(order.TotalAmount + order.OrderDiscountAmount):N2}</p>
+@if(order.OrderDiscountAmount > 0)<p><strong>Discount:</strong> &minus; Rs {order.OrderDiscountAmount:N2}</p>
 <p><strong>Tax:</strong> Rs {order.TaxAmount:N2}</p>
+<p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>
+<p><strong>Paid in cash:</strong> Rs {amountDue:N2}</p>
+@if(order.StoreCreditRedeemed > 0)<p><strong>Store credit used:</strong> Rs {order.StoreCreditRedeemed:N2}</p>
+@if(order.LoyaltyRedeemedRupees > 0)<p><strong>Loyalty redeemed:</strong> Rs {order.LoyaltyRedeemedRupees:N2} ({order.LoyaltyPointsRedeemed} pts)</p>
 <p><strong>Date:</strong> {DateTime.UtcNow:dd MMM yyyy HH:mm} UTC</p>";
                 await _emailService.SendAsync(receiptEmail, $"Receipt: {order.OrderNumber}", body);
             }

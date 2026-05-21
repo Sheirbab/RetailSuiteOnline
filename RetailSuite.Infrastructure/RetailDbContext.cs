@@ -52,6 +52,7 @@ public class RetailDbContext : DbContext
     // -----------------------------
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<HeldSale> HeldSales => Set<HeldSale>();
     public DbSet<Customer> Customers => Set<Customer>();
     // -----------------------------
     // Accounting
@@ -83,6 +84,14 @@ public class RetailDbContext : DbContext
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<ReceivingOrder> ReceivingOrders => Set<ReceivingOrder>();
     public DbSet<ReceivingOrderItem> ReceivingOrderItems => Set<ReceivingOrderItem>();
+
+    // -----------------------------
+    // Customer extensions: addresses, store credit, loyalty
+    // -----------------------------
+    public DbSet<CustomerAddress> CustomerAddresses => Set<CustomerAddress>();
+    public DbSet<StoreCreditTransaction> StoreCreditTransactions => Set<StoreCreditTransaction>();
+    public DbSet<LoyaltyTransaction> LoyaltyTransactions => Set<LoyaltyTransaction>();
+    public DbSet<LoyaltySettings> LoyaltySettings => Set<LoyaltySettings>();
 
     // -----------------------------
     // Notifications
@@ -325,21 +334,94 @@ public class RetailDbContext : DbContext
             b.ToTable("Customers");
             b.HasKey(c => c.Id);
 
-            b.Property(c => c.FirstName)
-                .IsRequired()
-                .HasMaxLength(150);
+            b.Property(c => c.FirstName).IsRequired().HasMaxLength(150);
+            b.Property(c => c.LastName).IsRequired().HasMaxLength(150);
+            b.Property(c => c.Email).HasMaxLength(200);
+            b.Property(c => c.Phone).HasMaxLength(50);
+            b.Property(c => c.UserId).IsRequired();
 
-            b.Property(c => c.LastName)
-                .IsRequired()
-                .HasMaxLength(150);
-
-            b.Property(c => c.Email)
-                .HasMaxLength(200);
-
-            b.Property(c => c.UserId)
-              .IsRequired();
+            // Customer extensions.
+            b.Property(c => c.Cnic).HasMaxLength(20);
+            b.Property(c => c.Group).HasConversion<int>();
+            b.Property(c => c.Notes).HasMaxLength(1000);
 
             b.HasIndex(c => new { c.TenantId, c.UserId }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.Phone });
+            b.HasIndex(c => new { c.TenantId, c.Cnic });
+            b.HasIndex(c => new { c.TenantId, c.Group });
+        });
+
+        modelBuilder.Entity<CustomerAddress>(b =>
+        {
+            b.ToTable("CustomerAddresses");
+            b.HasKey(a => a.Id);
+
+            b.Property(a => a.Label).IsRequired().HasMaxLength(50);
+            b.Property(a => a.RecipientName).IsRequired().HasMaxLength(200);
+            b.Property(a => a.Line1).IsRequired().HasMaxLength(250);
+            b.Property(a => a.Line2).HasMaxLength(250);
+            b.Property(a => a.City).IsRequired().HasMaxLength(100);
+            b.Property(a => a.Province).HasMaxLength(100);
+            b.Property(a => a.PostalCode).HasMaxLength(20);
+            b.Property(a => a.Country).IsRequired().HasMaxLength(2);
+            b.Property(a => a.Phone).HasMaxLength(50);
+            b.Property(a => a.DeliveryInstructions).HasMaxLength(500);
+
+            b.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(a => a.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(a => new { a.TenantId, a.CustomerId });
+        });
+
+        modelBuilder.Entity<StoreCreditTransaction>(b =>
+        {
+            b.ToTable("StoreCreditTransactions");
+            b.HasKey(t => t.Id);
+
+            b.Property(t => t.Amount).HasColumnType("decimal(18,2)");
+            b.Property(t => t.Currency).IsRequired().HasMaxLength(3);
+            b.Property(t => t.Reason).HasConversion<int>();
+            b.Property(t => t.Note).HasMaxLength(500);
+
+            b.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(t => t.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(t => new { t.TenantId, t.CustomerId, t.CreatedAt });
+        });
+
+        modelBuilder.Entity<LoyaltySettings>(b =>
+        {
+            b.ToTable("LoyaltySettings");
+            b.HasKey(s => s.Id);
+
+            b.Property(s => s.RupeesPerPoint).HasColumnType("decimal(18,2)");
+            b.Property(s => s.PointValueRupees).HasColumnType("decimal(18,2)");
+            b.Property(s => s.MaxRedemptionPercentOfOrder).HasColumnType("decimal(5,2)");
+
+            // One settings row per tenant.
+            b.HasIndex(s => s.TenantId).IsUnique();
+        });
+
+        modelBuilder.Entity<LoyaltyTransaction>(b =>
+        {
+            b.ToTable("LoyaltyTransactions");
+            b.HasKey(t => t.Id);
+
+            b.Property(t => t.Reason).HasConversion<int>();
+            b.Property(t => t.RupeesValue).HasColumnType("decimal(18,2)");
+            b.Property(t => t.Note).HasMaxLength(500);
+
+            b.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(t => t.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(t => new { t.TenantId, t.CustomerId, t.CreatedAt });
+            b.HasIndex(t => t.OrderId);
         });
 
         modelBuilder.Entity<Order>(b =>
@@ -360,6 +442,14 @@ public class RetailDbContext : DbContext
             b.Property(o => o.TaxAmount)
                 .HasColumnType("decimal(18,2)")
                 .HasDefaultValue(0m);
+
+            // POS extensions (Sprint B).
+            b.Property(o => o.OrderDiscountAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            b.Property(o => o.StoreCreditRedeemed).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            b.Property(o => o.LoyaltyRedeemedRupees).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            b.Property(o => o.LoyaltyPointsRedeemed).HasDefaultValue(0);
+            b.Property(o => o.CashierUserId);
+            b.HasIndex(o => new { o.TenantId, o.CashierUserId, o.CreatedAt });
 
             b.HasOne(o => o.Customer)
                     .WithMany()
@@ -392,6 +482,21 @@ public class RetailDbContext : DbContext
             b.Property(i => i.TaxRate)
                 .HasColumnType("decimal(5,4)")
                 .HasDefaultValue(0m);
+
+            // Per-line discount (Sprint B).
+            b.Property(i => i.LineDiscountAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+        });
+
+        modelBuilder.Entity<HeldSale>(b =>
+        {
+            b.ToTable("HeldSales");
+            b.HasKey(h => h.Id);
+            b.Property(h => h.Label).IsRequired().HasMaxLength(150);
+            b.Property(h => h.CustomerPhone).HasMaxLength(50);
+            b.Property(h => h.CartJson).IsRequired();
+            b.Property(h => h.OrderDiscountAmount).HasColumnType("decimal(18,2)");
+            b.Property(h => h.Notes).HasMaxLength(500);
+            b.HasIndex(h => new { h.TenantId, h.CashierUserId, h.CreatedAt });
         });
 
         // =====================================================

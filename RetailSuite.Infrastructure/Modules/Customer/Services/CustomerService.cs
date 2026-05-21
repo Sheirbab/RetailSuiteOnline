@@ -60,4 +60,7 @@ public class CustomerService
         return await _db.Customers
             .FirstOrDefaultAsync(c => c.Id == id);
     }
+
+    /// <summary>Persist tracked changes. Used by endpoints that mutate the entity in place.</summary>
+    public Task SaveAsync() => _db.SaveChangesAsync();
 }

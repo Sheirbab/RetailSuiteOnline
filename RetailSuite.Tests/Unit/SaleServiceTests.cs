@@ -1,16 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
+using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Catalog.Entities;
-using RetailSuite.Modules.Orders.Dtos;
 using RetailSuite.Shared;
-using Moq;
 
 namespace RetailSuite.Tests.Unit;
 
@@ -27,6 +28,29 @@ public class SaleServiceTests
             .Options;
 
         return new RetailDbContext(options, tenantContext.Object);
+    }
+
+    /// <summary>
+    /// Builds a SaleService with real RetailDbContext + real StoreCredit/Loyalty services,
+    /// since they all share the same in-memory db. Email is a no-op. Current user context
+    /// is a stub returning the supplied tenant + a fixed cashier id.
+    /// </summary>
+    private static SaleService NewSaleService(RetailDbContext db, Guid tenantId)
+    {
+        var currentUser = new Mock<ICurrentUserContext>();
+        currentUser.Setup(x => x.TenantId).Returns(tenantId);
+        currentUser.Setup(x => x.UserId).Returns(Guid.NewGuid());
+
+        var storeCredit = new StoreCreditService(db, NullLogger<StoreCreditService>.Instance);
+        var loyalty     = new LoyaltyService(db, NullLogger<LoyaltyService>.Instance);
+
+        return new SaleService(
+            db,
+            new AccountingService(db),
+            new NoopEmailService(),
+            storeCredit,
+            loyalty,
+            currentUser.Object);
     }
 
     [Fact]
@@ -53,26 +77,23 @@ public class SaleServiceTests
             new Account("5000", "Cost of Goods Sold", AccountType.Expense));
         await db.SaveChangesAsync();
 
-        var service = new SaleService(
-            db,
-            new AccountingService(db),
-            new NoopEmailService());
+        var service = NewSaleService(db, tenantId);
 
         await service.ProcessPosSaleAsync(new CreatePosSaleRequest
         {
             PaidAmount = 200m,
             Items =
             {
-                new CreateOrderItemRequest
+                new CreatePosSaleLine
                 {
                     ProductVariantId = variant.Id,
-                    Quantity = 2
+                    Quantity         = 2
                 }
             }
         });
 
         var updatedInventory = await db.InventoryItems.SingleAsync(i => i.ProductVariantId == variant.Id);
-        var updatedVariant = await db.ProductVariants.SingleAsync(v => v.Id == variant.Id);
+        var updatedVariant   = await db.ProductVariants.SingleAsync(v => v.Id == variant.Id);
 
         Assert.Equal(3, updatedInventory.CurrentStock);
         Assert.Equal(3, updatedVariant.StockQuantity);

@@ -1,0 +1,478 @@
+@page "/customers/{Id:guid}"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@using System.Text.Json
+
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+    <h3 style="margin:0;">@(customer?.FullName ?? "Customer")</h3>
+    <a class="btn" href="/customers">&larr; Back to customers</a>
+</div>
+
+@if (isLoading)
+{
+    <div class="spinner"></div>
+}
+else if (customer == null)
+{
+    <div class="card" style="color:#b91c1c;">Customer not found.</div>
+}
+else
+{
+    <!-- Profile card -->
+    <div class="card" style="margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;">
+            <div><span style="color:#6b7785;font-size:12px;">Email</span><br/>@(customer.Email ?? "—")</div>
+            <div><span style="color:#6b7785;font-size:12px;">Phone</span><br/>@(customer.Phone ?? "—")</div>
+            <div><span style="color:#6b7785;font-size:12px;">CNIC</span><br/>@(customer.Cnic ?? "—")</div>
+            <div><span style="color:#6b7785;font-size:12px;">Group</span><br/>@customer.Group</div>
+            <div><span style="color:#6b7785;font-size:12px;">Marketing consent</span><br/>@(customer.MarketingConsent ? "Yes" : "No")</div>
+            <div><span style="color:#6b7785;font-size:12px;">Member since</span><br/>@customer.CreatedAt.ToString("yyyy-MM-dd")</div>
+        </div>
+    </div>
+
+    <!-- Top stats row -->
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;margin-bottom:16px;">
+        <div class="card">
+            <div style="color:#6b7785;font-size:12px;">Store credit</div>
+            <div style="font-size:24px;font-weight:700;color:#0d3b66;">Rs @creditBalance.ToString("N2")</div>
+            <button class="btn" style="margin-top:8px;padding:4px 10px;font-size:12px;"
+                    @onclick="() => showIssueCredit = true">+ Issue credit</button>
+        </div>
+        <div class="card">
+            <div style="color:#6b7785;font-size:12px;">Loyalty points</div>
+            <div style="font-size:24px;font-weight:700;color:#0d3b66;">@loyaltyBalance pts</div>
+            <div style="margin-top:4px;color:#9ca3af;font-size:12px;">
+                ≈ Rs @((loyaltyBalance * (decimal)loyaltyPointValue).ToString("N2"))
+            </div>
+        </div>
+        <div class="card">
+            <div style="color:#6b7785;font-size:12px;">Orders placed</div>
+            <div style="font-size:24px;font-weight:700;color:#0d3b66;">@orders.Count</div>
+            <div style="margin-top:4px;color:#9ca3af;font-size:12px;">
+                Lifetime spend: Rs @orders.Sum(o => o.TotalAmount).ToString("N2")
+            </div>
+        </div>
+    </div>
+
+    <!-- Addresses -->
+    <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h4 style="margin:0;">Addresses</h4>
+            <button class="btn btn-primary" style="padding:4px 10px;font-size:12px;"
+                    @onclick="OpenNewAddress">+ Add address</button>
+        </div>
+
+        @if (addresses.Count == 0)
+        {
+            <p style="color:#9ca3af;">No addresses yet.</p>
+        }
+        else
+        {
+            <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;">
+                @foreach (var a in addresses)
+                {
+                    <div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px;background:#fafafa;">
+                        <div style="display:flex;justify-content:space-between;">
+                            <strong>@a.Label</strong>
+                            <div>
+                                @if (a.IsDefaultShipping)
+                                {
+                                    <span style="background:#dbeafe;color:#1d4ed8;font-size:10px;padding:1px 6px;border-radius:3px;">DEFAULT SHIP</span>
+                                }
+                                @if (a.IsDefaultBilling)
+                                {
+                                    <span style="background:#fef3c7;color:#a16207;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:4px;">DEFAULT BILL</span>
+                                }
+                            </div>
+                        </div>
+                        <div style="margin-top:6px;font-size:13px;">
+                            @a.RecipientName<br/>
+                            @a.Line1@(string.IsNullOrEmpty(a.Line2) ? "" : ", " + a.Line2)<br/>
+                            @a.City@(string.IsNullOrEmpty(a.Province) ? "" : ", " + a.Province)
+                            @(string.IsNullOrEmpty(a.PostalCode) ? "" : " " + a.PostalCode)<br/>
+                            @if (!string.IsNullOrEmpty(a.Phone)) { <span style="color:#6b7785;">📞 @a.Phone</span> }
+                        </div>
+                        <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+                            @if (!a.IsDefaultShipping)
+                            {
+                                <button class="btn" style="padding:2px 8px;font-size:11px;"
+                                        @onclick="() => MakeDefaultShipping(a.Id)">Set as ship</button>
+                            }
+                            @if (!a.IsDefaultBilling)
+                            {
+                                <button class="btn" style="padding:2px 8px;font-size:11px;"
+                                        @onclick="() => MakeDefaultBilling(a.Id)">Set as bill</button>
+                            }
+                            <button class="btn btn-danger" style="padding:2px 8px;font-size:11px;"
+                                    @onclick="() => DeleteAddress(a.Id)">Delete</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- Purchase history -->
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin-top:0;">Recent orders</h4>
+        @if (orders.Count == 0)
+        {
+            <p style="color:#9ca3af;">No orders yet.</p>
+        }
+        else
+        {
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr><th>Order #</th><th>Status</th><th>Total</th><th>Paid</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in orders.Take(15))
+                    {
+                        <tr>
+                            <td style="font-family:monospace;">@o.OrderNumber</td>
+                            <td>@o.Status</td>
+                            <td>Rs @o.TotalAmount.ToString("N2")</td>
+                            <td>Rs @o.PaidAmount.ToString("N2")</td>
+                            <td>@o.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <!-- Issue credit modal -->
+    <Modal Visible="@showIssueCredit" OnClose="() => showIssueCredit = false">
+        <h3 style="margin-bottom:12px;">Issue store credit</h3>
+        <p style="color:#6b7785;font-size:13px;margin-top:0;">
+            Adds rupees to <strong>@customer.FullName</strong>'s store credit balance.
+            Usable on next purchase via POS or online checkout.
+        </p>
+
+        <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Amount (Rs)</label>
+        <input class="input full" type="number" min="0" step="1" @bind="issueAmount" style="margin-bottom:8px;" />
+
+        <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Reason</label>
+        <select class="input full" @bind="issueReason" style="margin-bottom:8px;">
+            <option value="Goodwill">Goodwill</option>
+            <option value="RefundAsCredit">Refund as credit</option>
+            <option value="Adjustment">Adjustment</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#6b7785;margin-bottom:4px;">Note</label>
+        <textarea class="input full" rows="2" @bind="issueNote"
+                  placeholder="Optional — explain why this credit is being issued" style="margin-bottom:14px;"></textarea>
+
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" @onclick="DoIssueCredit"
+                    disabled="@(issueAmount <= 0)">Issue Rs @issueAmount</button>
+            <button class="btn" @onclick="() => showIssueCredit = false">Cancel</button>
+        </div>
+    </Modal>
+
+    <!-- Add/edit address modal -->
+    <Modal Visible="@showAddressModal" OnClose="() => showAddressModal = false">
+        <h3 style="margin-bottom:12px;">@(addressForm.Id == null ? "Add address" : "Edit address")</h3>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <input class="input" @bind="addressForm.Label"          placeholder="Label (Home, Office...)" />
+            <input class="input" @bind="addressForm.RecipientName"  placeholder="Recipient name *" />
+            <input class="input" @bind="addressForm.Line1"          placeholder="Address line 1 *" style="grid-column:span 2;" />
+            <input class="input" @bind="addressForm.Line2"          placeholder="Address line 2"   style="grid-column:span 2;" />
+            <input class="input" @bind="addressForm.City"           placeholder="City *" />
+            <input class="input" @bind="addressForm.Province"       placeholder="Province" />
+            <input class="input" @bind="addressForm.PostalCode"     placeholder="Postal code" />
+            <input class="input" @bind="addressForm.Phone"          placeholder="Phone" />
+            <textarea class="input" @bind="addressForm.DeliveryInstructions"
+                      placeholder="Delivery instructions" style="grid-column:span 2;height:60px;"></textarea>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn btn-primary" @onclick="SaveAddress">Save</button>
+            <button class="btn" @onclick="() => showAddressModal = false">Cancel</button>
+        </div>
+    </Modal>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    CustomerDto? customer;
+    List<AddressDto> addresses = new();
+    decimal creditBalance;
+    int loyaltyBalance;
+    decimal loyaltyPointValue = 1m;
+    List<OrderDto> orders = new();
+    bool isLoading = true;
+
+    // Issue-credit modal state
+    bool showIssueCredit = false;
+    decimal issueAmount;
+    string issueReason = "Goodwill";
+    string? issueNote;
+
+    // Address modal state
+    bool showAddressModal = false;
+    AddressForm addressForm = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAllAsync();
+    }
+
+    async Task LoadAllAsync()
+    {
+        isLoading = true;
+        try
+        {
+            customer = await LoadCustomerAsync();
+            if (customer != null)
+            {
+                addresses = await LoadAddressesAsync();
+                (creditBalance, _) = await LoadStoreCreditAsync();
+                (loyaltyBalance, loyaltyPointValue) = await LoadLoyaltyAsync();
+                orders = await LoadOrdersAsync();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    async Task<CustomerDto?> LoadCustomerAsync()
+    {
+        var json = await Http.GetStringAsync($"api/customers/{Id}");
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("data", out var d) || d.ValueKind != JsonValueKind.Object)
+            return null;
+        return new CustomerDto
+        {
+            Id        = d.GetProperty("id").GetGuid(),
+            FirstName = d.TryGetProperty("firstName", out var fn) ? fn.GetString() ?? "" : "",
+            LastName  = d.TryGetProperty("lastName",  out var ln) ? ln.GetString() ?? "" : "",
+            FullName  = d.TryGetProperty("fullName",  out var fl) ? fl.GetString() ?? "" : "",
+            Email     = d.TryGetProperty("email",     out var em) ? em.GetString() : null,
+            Phone     = d.TryGetProperty("phone",     out var ph) ? ph.GetString() : null,
+            Cnic      = d.TryGetProperty("cnic",      out var ci) ? ci.GetString() : null,
+            Group     = d.TryGetProperty("group",     out var gr) ? gr.GetString() ?? "Regular" : "Regular",
+            MarketingConsent = d.TryGetProperty("marketingConsent", out var mc) && mc.GetBoolean(),
+            CreatedAt = d.TryGetProperty("createdAt", out var ca) ? ca.GetDateTime() : DateTime.UtcNow
+        };
+    }
+
+    async Task<List<AddressDto>> LoadAddressesAsync()
+    {
+        var rows = new List<AddressDto>();
+        try
+        {
+            var json = await Http.GetStringAsync($"api/customers/{Id}/addresses");
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    rows.Add(new AddressDto
+                    {
+                        Id            = e.GetProperty("id").GetGuid(),
+                        Label         = e.GetProperty("label").GetString() ?? "",
+                        RecipientName = e.GetProperty("recipientName").GetString() ?? "",
+                        Line1         = e.GetProperty("line1").GetString() ?? "",
+                        Line2         = e.TryGetProperty("line2",      out var l2) ? l2.GetString() : null,
+                        City          = e.GetProperty("city").GetString() ?? "",
+                        Province      = e.TryGetProperty("province",   out var pv) ? pv.GetString() : null,
+                        PostalCode    = e.TryGetProperty("postalCode", out var pc) ? pc.GetString() : null,
+                        Phone         = e.TryGetProperty("phone",      out var ph) ? ph.GetString() : null,
+                        IsDefaultShipping = e.TryGetProperty("isDefaultShipping", out var ds) && ds.GetBoolean(),
+                        IsDefaultBilling  = e.TryGetProperty("isDefaultBilling",  out var db) && db.GetBoolean()
+                    });
+                }
+            }
+        }
+        catch { /* not fatal */ }
+        return rows;
+    }
+
+    async Task<(decimal balance, List<object> history)> LoadStoreCreditAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/customers/{Id}/store-credit");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            var bal = d.GetProperty("balance").GetDecimal();
+            return (bal, new List<object>());
+        }
+        catch { return (0m, new()); }
+    }
+
+    async Task<(int balance, decimal pointValue)> LoadLoyaltyAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/customers/{Id}/loyalty");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            var bal = d.GetProperty("balance").GetInt32();
+            var pv  = d.GetProperty("settings").GetProperty("pointValueRupees").GetDecimal();
+            return (bal, pv);
+        }
+        catch { return (0, 1m); }
+    }
+
+    async Task<List<OrderDto>> LoadOrdersAsync()
+    {
+        var rows = new List<OrderDto>();
+        try
+        {
+            var json = await Http.GetStringAsync($"api/customers/{Id}/orders");
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    rows.Add(new OrderDto
+                    {
+                        Id          = e.GetProperty("id").GetGuid(),
+                        OrderNumber = e.GetProperty("orderNumber").GetString() ?? "",
+                        Status      = e.GetProperty("status").GetString() ?? "",
+                        TotalAmount = e.GetProperty("totalAmount").GetDecimal(),
+                        PaidAmount  = e.GetProperty("paidAmount").GetDecimal(),
+                        CreatedAt   = e.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch { /* not fatal */ }
+        return rows;
+    }
+
+    async Task DoIssueCredit()
+    {
+        if (issueAmount <= 0) return;
+        var body = new { amount = issueAmount, reason = issueReason, note = issueNote };
+        var resp = await Http.PostAsJsonAsync($"api/customers/{Id}/store-credit/issue", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Issued Rs {issueAmount:N2} credit.");
+            issueAmount = 0; issueNote = null; issueReason = "Goodwill";
+            showIssueCredit = false;
+            (creditBalance, _) = await LoadStoreCreditAsync();
+        }
+        else
+        {
+            Toast.Show("Issue failed.");
+        }
+    }
+
+    // -------- Address management --------------------------------------
+
+    void OpenNewAddress()
+    {
+        addressForm = new AddressForm { Label = "Home", RecipientName = customer?.FullName ?? "" };
+        showAddressModal = true;
+    }
+
+    async Task SaveAddress()
+    {
+        var body = new
+        {
+            label = addressForm.Label, recipientName = addressForm.RecipientName,
+            line1 = addressForm.Line1, line2 = addressForm.Line2,
+            city  = addressForm.City,  province = addressForm.Province,
+            postalCode = addressForm.PostalCode, country = "PK",
+            phone = addressForm.Phone, deliveryInstructions = addressForm.DeliveryInstructions
+        };
+
+        HttpResponseMessage resp = addressForm.Id == null
+            ? await Http.PostAsJsonAsync($"api/customers/{Id}/addresses", body)
+            : await Http.PatchAsJsonAsync($"api/customers/{Id}/addresses/{addressForm.Id}", body);
+
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Address saved.");
+            showAddressModal = false;
+            addresses = await LoadAddressesAsync();
+        }
+        else Toast.Show("Save failed.");
+    }
+
+    async Task DeleteAddress(Guid addressId)
+    {
+        var resp = await Http.DeleteAsync($"api/customers/{Id}/addresses/{addressId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.Show("Address removed.");
+            addresses = await LoadAddressesAsync();
+        }
+    }
+
+    async Task MakeDefaultShipping(Guid addressId)
+    {
+        var resp = await Http.PatchAsync($"api/customers/{Id}/addresses/{addressId}/default-shipping", null);
+        if (resp.IsSuccessStatusCode) addresses = await LoadAddressesAsync();
+    }
+
+    async Task MakeDefaultBilling(Guid addressId)
+    {
+        var resp = await Http.PatchAsync($"api/customers/{Id}/addresses/{addressId}/default-billing", null);
+        if (resp.IsSuccessStatusCode) addresses = await LoadAddressesAsync();
+    }
+
+    // ---- DTOs --------------------------------------------------------
+
+    class CustomerDto
+    {
+        public Guid    Id { get; set; }
+        public string  FirstName { get; set; } = "";
+        public string  LastName { get; set; } = "";
+        public string  FullName { get; set; } = "";
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+        public string? Cnic { get; set; }
+        public string  Group { get; set; } = "Regular";
+        public bool    MarketingConsent { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    class AddressDto
+    {
+        public Guid     Id { get; set; }
+        public string   Label { get; set; } = "";
+        public string   RecipientName { get; set; } = "";
+        public string   Line1 { get; set; } = "";
+        public string?  Line2 { get; set; }
+        public string   City { get; set; } = "";
+        public string?  Province { get; set; }
+        public string?  PostalCode { get; set; }
+        public string?  Phone { get; set; }
+        public bool     IsDefaultShipping { get; set; }
+        public bool     IsDefaultBilling { get; set; }
+    }
+
+    class AddressForm
+    {
+        public Guid?   Id { get; set; }
+        public string? Label { get; set; }
+        public string? RecipientName { get; set; }
+        public string? Line1 { get; set; }
+        public string? Line2 { get; set; }
+        public string? City { get; set; }
+        public string? Province { get; set; }
+        public string? PostalCode { get; set; }
+        public string? Phone { get; set; }
+        public string? DeliveryInstructions { get; set; }
+    }
+
+    class OrderDto
+    {
+        public Guid     Id { get; set; }
+        public string   OrderNumber { get; set; } = "";
+        public string   Status { get; set; } = "";
+        public decimal  TotalAmount { get; set; }
+        public decimal  PaidAmount { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}
