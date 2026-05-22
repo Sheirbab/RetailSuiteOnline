@@ -4,6 +4,7 @@ using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Receiving.Entities;
+using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
@@ -53,6 +54,11 @@ public class RetailDbContext : DbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<HeldSale> HeldSales => Set<HeldSale>();
+
+    // -----------------------------
+    // Shipping methods (storefront)
+    // -----------------------------
+    public DbSet<ShippingMethod> ShippingMethods => Set<ShippingMethod>();
     public DbSet<Customer> Customers => Set<Customer>();
     // -----------------------------
     // Accounting
@@ -451,6 +457,20 @@ public class RetailDbContext : DbContext
             b.Property(o => o.CashierUserId);
             b.HasIndex(o => new { o.TenantId, o.CashierUserId, o.CreatedAt });
 
+            // Online-store extensions (Sprint C).
+            b.Property(o => o.Channel).IsRequired().HasMaxLength(20).HasDefaultValue("POS");
+            b.Property(o => o.ShippingMethodCode).HasMaxLength(50);
+            b.Property(o => o.ShippingAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            b.Property(o => o.ShippingAddressJson);
+            b.Property(o => o.GuestName).HasMaxLength(200);
+            b.Property(o => o.GuestPhone).HasMaxLength(50);
+            b.Property(o => o.GuestEmail).HasMaxLength(250);
+            b.Property(o => o.PaymentMethodCode).HasMaxLength(50);
+            b.Property(o => o.FulfillmentStatus).IsRequired().HasMaxLength(30).HasDefaultValue("Pending");
+
+            b.HasIndex(o => new { o.TenantId, o.GuestPhone });
+            b.HasIndex(o => new { o.TenantId, o.Channel, o.FulfillmentStatus });
+
             b.HasOne(o => o.Customer)
                     .WithMany()
                     .HasForeignKey(o => o.CustomerId)
@@ -497,6 +517,22 @@ public class RetailDbContext : DbContext
             b.Property(h => h.OrderDiscountAmount).HasColumnType("decimal(18,2)");
             b.Property(h => h.Notes).HasMaxLength(500);
             b.HasIndex(h => new { h.TenantId, h.CashierUserId, h.CreatedAt });
+        });
+
+        modelBuilder.Entity<ShippingMethod>(b =>
+        {
+            b.ToTable("ShippingMethods");
+            b.HasKey(s => s.Id);
+
+            b.Property(s => s.Code).IsRequired().HasMaxLength(50);
+            b.Property(s => s.Name).IsRequired().HasMaxLength(150);
+            b.Property(s => s.Description).HasMaxLength(500);
+            b.Property(s => s.BaseFee).HasColumnType("decimal(18,2)");
+            b.Property(s => s.FreeOverAmount).HasColumnType("decimal(18,2)");
+            b.Property(s => s.Eta).HasMaxLength(50);
+
+            b.HasIndex(s => new { s.TenantId, s.Code }).IsUnique();
+            b.HasIndex(s => new { s.TenantId, s.IsActive, s.SortOrder });
         });
 
         // =====================================================

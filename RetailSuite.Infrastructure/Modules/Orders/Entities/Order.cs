@@ -32,6 +32,35 @@ public class Order : TenantEntity
     /// <summary>User who rang up this sale (POS cashier). Null for online / system sales.</summary>
     public Guid? CashierUserId { get; private set; }
 
+    // ---- Online-store extensions (Sprint C) ----------------------------
+
+    /// <summary>"POS", "Online" — origin of the sale. Defaults to POS for back-compat.</summary>
+    public string Channel { get; private set; } = "POS";
+
+    /// <summary>Selected shipping method code at checkout (e.g. "FLAT", "PICKUP").</summary>
+    public string? ShippingMethodCode { get; private set; }
+
+    /// <summary>Shipping fee added to TotalAmount.</summary>
+    public decimal ShippingAmount { get; private set; }
+
+    /// <summary>JSON snapshot of the shipping address captured at checkout (guest or registered).</summary>
+    public string? ShippingAddressJson { get; private set; }
+
+    /// <summary>Guest order: customer name typed at checkout. Null when CustomerId is a real customer.</summary>
+    public string? GuestName { get; private set; }
+
+    /// <summary>Guest order: phone number — also the order-tracking key for guests.</summary>
+    public string? GuestPhone { get; private set; }
+
+    /// <summary>Guest order: email — receipt + tracking link sent here.</summary>
+    public string? GuestEmail { get; private set; }
+
+    /// <summary>"Cash", "COD", "Stripe", "EasyPaisa", "JazzCash", "BankTransfer".</summary>
+    public string? PaymentMethodCode { get; private set; }
+
+    /// <summary>Fulfillment lifecycle: Pending / Shipped / Delivered / Cancelled. Distinct from Status (Order lifecycle).</summary>
+    public string FulfillmentStatus { get; private set; } = "Pending";
+
     public decimal PaidAmount { get; private set; }
     public decimal OutstandingAmount => TotalAmount - PaidAmount;
     public bool IsFullyPaid => OutstandingAmount <= 0;
@@ -146,6 +175,37 @@ public class Order : TenantEntity
     /// <summary>How much cash / card the customer still needs to pay after all redemptions.</summary>
     public decimal AmountDueAfterRedemptions =>
         Math.Max(0, TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees);
+
+    // ---- Online-store mutators -----------------------------------------
+
+    public void SetChannel(string channel) =>
+        Channel = string.IsNullOrWhiteSpace(channel) ? "POS" : channel.Trim();
+
+    public void SetGuestContact(string name, string phone, string? email)
+    {
+        GuestName  = name;
+        GuestPhone = phone;
+        GuestEmail = email;
+    }
+
+    public void SetShipping(string methodCode, decimal amount, string addressJson)
+    {
+        if (Status != OrderStatus.Draft)
+            throw new BusinessRuleException("Shipping can only be set while order is Draft.");
+
+        ShippingMethodCode  = methodCode;
+        ShippingAmount      = Math.Max(0, amount);
+        ShippingAddressJson = addressJson;
+
+        // Shipping is part of the total the customer pays.
+        TotalAmount += ShippingAmount;
+    }
+
+    public void SetPaymentMethod(string code) => PaymentMethodCode = code;
+
+    public void MarkShipped()    => FulfillmentStatus = "Shipped";
+    public void MarkDelivered()  => FulfillmentStatus = "Delivered";
+    public void MarkUnfulfilled() => FulfillmentStatus = "Pending";
 
     /// <summary>Records a partial/full return, reducing the paid amount accordingly.</summary>
     public void ApplyReturn(decimal returnAmount)

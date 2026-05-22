@@ -6,169 +6,202 @@
 @inject ToastService Toast
 @using System.Text.Json
 
-<h2 style="margin-bottom:16px;">Products</h2>
+<div style="display:flex;gap:20px;align-items:flex-start;">
 
-<div style="margin-bottom:20px;">
-    <input class="input" style="width:300px;" placeholder="Search products..."
-           value="@_search"
-           @oninput="e => { _search = e.Value?.ToString() ?? string.Empty; }" />
-</div>
+    <!-- Categories sidebar -->
+    <div class="card" style="width:220px;flex-shrink:0;">
+        <h4 style="margin-bottom:10px;">Categories</h4>
 
-@if (_loading)
-{
-    <div class="spinner"></div>
-}
-else if (!_filtered.Any())
-{
-    <p style="color:#9ca3af;">No products found.</p>
-}
-else
-{
-    <div class="product-grid">
-        @foreach (var p in _filtered)
+        <div style="padding:6px 8px;border-radius:4px;cursor:pointer;background:@(_selectedCategoryId == null ? "#e0e7ff" : "transparent");"
+             @onclick="() => SelectCategory(null)">
+            <strong>All products</strong>
+        </div>
+
+        @if (_categories != null)
         {
-            <div class="product-card" @onclick="() => GoToProduct(p.Id)">
-                @if (!string.IsNullOrEmpty(p.ImageUrl))
+            @foreach (var c in _categories)
+            {
+                <div style="padding:6px 8px;border-radius:4px;cursor:pointer;background:@(_selectedCategoryId == c.Id ? "#e0e7ff" : "transparent");margin-top:2px;display:flex;justify-content:space-between;"
+                     @onclick="() => SelectCategory(c.Id)">
+                    <span>@c.Name</span>
+                    <span style="color:#9ca3af;font-size:12px;">(@c.ProductCount)</span>
+                </div>
+            }
+        }
+        <div style="margin-top:14px;">
+            <a class="btn full" href="/shop/track" style="font-size:13px;text-align:center;">Track an order ↗</a>
+        </div>
+    </div>
+
+    <!-- Product grid -->
+    <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+            <h2 style="margin:0;flex:1;">@(_selectedCategoryName ?? "All products")</h2>
+            <input class="input" style="width:280px;" placeholder="Search..."
+                   value="@_search"
+                   @oninput="OnSearchChanged" />
+        </div>
+
+        @if (_loading)
+        {
+            <div class="spinner"></div>
+        }
+        else if (!_products.Any())
+        {
+            <p style="color:#9ca3af;">No products found.</p>
+        }
+        else
+        {
+            <div class="product-grid">
+                @foreach (var p in _products)
                 {
-                    <img src="@p.ImageUrl" alt="@p.Name" class="product-img" />
-                }
-                else
-                {
-                    <div class="product-img-placeholder">📦</div>
-                }
-                <div class="product-info">
-                    <div class="product-name">@p.Name</div>
-                    <div class="product-price">
-                        @if (p.MinPrice > 0)
+                    <div class="product-card" @onclick="() => GoToProduct(p.Id)">
+                        @if (!string.IsNullOrEmpty(p.ImageUrl))
                         {
-                            <span>Rs @p.MinPrice.ToString("N2")</span>
+                            <img src="@p.ImageUrl" alt="@p.Name" class="product-img" />
                         }
                         else
                         {
-                            <span style="color:#9ca3af;">Price varies</span>
+                            <div class="product-img-placeholder">📦</div>
                         }
+                        <div class="product-info">
+                            <div class="product-name">@p.Name</div>
+                            <div class="product-price">
+                                @if (p.MinPrice > 0)
+                                {
+                                    <span>Rs @p.MinPrice.ToString("N2")</span>
+                                }
+                                else
+                                {
+                                    <span style="color:#9ca3af;">Price varies</span>
+                                }
+                            </div>
+                            <button class="btn btn-primary" style="margin-top:8px;width:100%;"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => GoToProduct(p.Id)">
+                                View
+                            </button>
+                        </div>
                     </div>
-                    <button class="btn btn-primary" style="margin-top:8px;width:100%;"
-                            @onclick:stopPropagation="true"
-                            @onclick="() => QuickAdd(p)">
-                        + Add to Cart
-                    </button>
-                </div>
+                }
             </div>
         }
     </div>
-}
+</div>
 
 @code {
     bool _loading = true;
     string _search = string.Empty;
+    Guid? _selectedCategoryId;
+    string? _selectedCategoryName;
+    List<CategoryRow>? _categories;
     List<ProductRow> _products = new();
 
-    IEnumerable<ProductRow> _filtered =>
-        string.IsNullOrWhiteSpace(_search)
-            ? _products
-            : _products.Where(p => p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+    // Debounce timer for search-as-you-type.
+    System.Timers.Timer? _searchTimer;
 
-    // Use OnAfterRenderAsync so CustomerLayout.Auth.InitializeAsync() has already
-    // run and the HttpClient has a Bearer token before we hit the API.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        await LoadCategories();
         await LoadProducts();
+    }
+
+    async Task LoadCategories()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/shop/categories");
+            using var doc = JsonDocument.Parse(json);
+            _categories = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _categories.Add(new CategoryRow
+                    {
+                        Id           = e.GetProperty("id").GetGuid(),
+                        Name         = e.GetProperty("name").GetString() ?? "",
+                        ProductCount = e.TryGetProperty("productCount", out var pc) ? pc.GetInt32() : 0
+                    });
+                }
+            }
+            StateHasChanged();
+        }
+        catch { /* non-fatal */ }
     }
 
     async Task LoadProducts()
     {
         _loading = true;
+        StateHasChanged();
         try
         {
-            // API returns ApiResponse<{ Total, Page, PageSize, Items: [...] }>
-            // JSON shape: { "success": true, "data": { "total": N, "items": [...] } }
-            var json = await Http.GetStringAsync("api/products?page=1&pageSize=200");
+            var url = "api/shop/products?page=1&pageSize=60";
+            if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
+            if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+
+            var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            // Unwrap ApiResponse envelope → data object → items array
-            var dataEl  = root.TryGetProperty("data",  out var d)   ? d   : root;
-            var itemsEl = dataEl.TryGetProperty("items", out var arr) ? arr
-                        : dataEl.ValueKind == JsonValueKind.Array    ? dataEl
-                        : default;
-
             _products.Clear();
-
-            if (itemsEl.ValueKind == JsonValueKind.Array)
+            if (doc.RootElement.TryGetProperty("data", out var d)
+                && d.TryGetProperty("items", out var items)
+                && items.ValueKind == JsonValueKind.Array)
             {
-                foreach (var p in itemsEl.EnumerateArray())
+                foreach (var p in items.EnumerateArray())
                 {
-                    decimal minPrice = 0;
-                    if (p.TryGetProperty("variants", out var variants) && variants.ValueKind == JsonValueKind.Array)
-                    {
-                        var prices = variants.EnumerateArray()
-                            .Select(v => v.TryGetProperty("price", out var pr) ? pr.GetDecimal() : 0)
-                            .Where(x => x > 0)
-                            .ToList();
-                        if (prices.Any()) minPrice = prices.Min();
-                    }
-
                     _products.Add(new ProductRow
                     {
-                        Id       = p.TryGetProperty("id",       out var id)  ? id.GetGuid()    : Guid.Empty,
-                        Name     = p.TryGetProperty("name",     out var nm)  ? nm.GetString()! : "—",
+                        Id       = p.GetProperty("id").GetGuid(),
+                        Name     = p.GetProperty("name").GetString() ?? "",
                         ImageUrl = p.TryGetProperty("imageUrl", out var img) ? img.GetString() : null,
-                        MinPrice = minPrice,
-                        Variants = p.TryGetProperty("variants", out var vrs) && vrs.ValueKind == JsonValueKind.Array
-                            ? vrs.EnumerateArray().Select(v => new VariantRow
-                            {
-                                Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
-                                SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
-                                Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
-                            }).ToList()
-                            : new()
+                        MinPrice = p.TryGetProperty("minPrice", out var mp) ? mp.GetDecimal() : 0m
                     });
                 }
             }
         }
-        catch (Exception ex)
-        {
-            Toast.Show($"Error loading products: {ex.Message}");
-        }
+        catch (Exception ex) { Toast.Show($"Failed to load: {ex.Message}"); }
+
         _loading = false;
         StateHasChanged();
     }
 
+    async Task SelectCategory(Guid? id)
+    {
+        _selectedCategoryId   = id;
+        _selectedCategoryName = id == null ? null : _categories?.FirstOrDefault(c => c.Id == id)?.Name;
+        await LoadProducts();
+    }
+
+    void OnSearchChanged(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        _searchTimer?.Dispose();
+        _searchTimer = new System.Timers.Timer(300);
+        _searchTimer.Elapsed += async (_, _) =>
+        {
+            _searchTimer?.Dispose();
+            _searchTimer = null;
+            await InvokeAsync(LoadProducts);
+        };
+        _searchTimer.AutoReset = false;
+        _searchTimer.Start();
+    }
+
     void GoToProduct(Guid id) => Nav.NavigateTo($"/shop/product/{id}");
 
-    void QuickAdd(ProductRow p)
+    class CategoryRow
     {
-        var firstVariant = p.Variants.FirstOrDefault();
-        if (firstVariant == null) { Nav.NavigateTo($"/shop/product/{p.Id}"); return; }
-
-        Cart.AddItem(new CartItem
-        {
-            VariantId   = firstVariant.Id,
-            ProductId   = p.Id,
-            ProductName = p.Name,
-            SKU         = firstVariant.SKU,
-            ImageUrl    = p.ImageUrl,
-            UnitPrice   = firstVariant.Price,
-            Quantity    = 1
-        });
-        Toast.Show($"{p.Name} added to cart.");
+        public Guid    Id { get; set; }
+        public string  Name { get; set; } = "";
+        public int     ProductCount { get; set; }
     }
 
     class ProductRow
     {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
+        public Guid    Id { get; set; }
+        public string  Name { get; set; } = "";
         public string? ImageUrl { get; set; }
         public decimal MinPrice { get; set; }
-        public List<VariantRow> Variants { get; set; } = new();
-    }
-
-    class VariantRow
-    {
-        public Guid Id { get; set; }
-        public string SKU { get; set; } = string.Empty;
-        public decimal Price { get; set; }
     }
 }

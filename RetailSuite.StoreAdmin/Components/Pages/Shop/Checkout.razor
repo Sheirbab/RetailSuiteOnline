@@ -8,19 +8,36 @@
 
 @if (_confirmed)
 {
-    <div class="card" style="text-align:center;padding:40px;">
+    <div class="card" style="text-align:center;padding:40px;max-width:500px;margin:0 auto;">
         <div style="font-size:48px;margin-bottom:16px;">✅</div>
-        <h2>Order Confirmed!</h2>
-        <p style="color:#6b7280;margin-bottom:8px;">Order Number: <strong>@_orderNumber</strong></p>
-        <p style="color:#6b7280;">A receipt has been sent to @_email</p>
-        <button class="btn btn-primary" style="margin-top:24px;" @onclick="GoShop">
-            Continue Shopping
-        </button>
+        <h2>Order placed!</h2>
+        <p style="color:#6b7280;margin-bottom:4px;">Order number:</p>
+        <p style="font-size:22px;font-family:monospace;font-weight:700;margin:0 0 16px;">@_orderNumber</p>
+        <p style="color:#6b7280;font-size:13px;margin-bottom:4px;">
+            @if (_isPickup)
+            {
+                <span>Visit the store to collect your order.</span>
+            }
+            else
+            {
+                <span>Estimated delivery: @(_eta ?? "as per our standard schedule")</span>
+            }
+        </p>
+        <p style="color:#6b7280;font-size:13px;margin-bottom:24px;">
+            @if (!string.IsNullOrEmpty(_email))
+            {
+                <span>Confirmation sent to <strong>@_email</strong>.</span>
+            }
+        </p>
+        <div style="display:flex;gap:8px;justify-content:center;">
+            <a class="btn" href="/shop/track">Track this order</a>
+            <button class="btn btn-primary" @onclick="GoShop">Continue shopping</button>
+        </div>
     </div>
 }
 else
 {
-    <div style="max-width:480px;">
+    <div style="max-width:560px;margin:0 auto;">
         <h2 style="margin-bottom:20px;">Checkout</h2>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -30,136 +47,306 @@ else
             </div>
         }
 
+        <!-- Cart summary -->
         <div class="card" style="margin-bottom:16px;">
-            <h4 style="margin-bottom:12px;">Your Details</h4>
-            <input class="input full" placeholder="First Name *" @bind="_firstName" style="margin-bottom:8px;" />
-            <input class="input full" placeholder="Last Name *"  @bind="_lastName"  style="margin-bottom:8px;" />
-            <input class="input full" placeholder="Email *"      @bind="_email"      type="email" style="margin-bottom:8px;" />
-            <input class="input full" placeholder="Password (min 8 chars) *" @bind="_password" type="password" style="margin-bottom:8px;" />
-            <input class="input full" placeholder="Phone (optional)"         @bind="_phone" />
-        </div>
-
-        <div class="card" style="margin-bottom:16px;">
-            <h4 style="margin-bottom:12px;">Order Summary</h4>
-            @foreach (var item in Cart.Items)
+            <h4 style="margin-bottom:8px;">Your cart</h4>
+            @if (!Cart.Items.Any())
             {
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                    <span>@item.ProductName × @item.Quantity</span>
-                    <span>Rs @item.LineTotal.ToString("N2")</span>
+                <p style="color:#9ca3af;">Cart is empty. <a href="/shop">Continue shopping</a>.</p>
+            }
+            else
+            {
+                @foreach (var item in Cart.Items)
+                {
+                    <div style="display:flex;justify-content:space-between;font-size:14px;padding:4px 0;">
+                        <span>@item.ProductName × @item.Quantity</span>
+                        <span>Rs @((item.UnitPrice * item.Quantity).ToString("N2"))</span>
+                    </div>
+                }
+                <hr style="margin:8px 0;" />
+                <div style="display:flex;justify-content:space-between;font-weight:600;">
+                    <span>Subtotal</span>
+                    <span>Rs @Cart.TotalAmount.ToString("N2")</span>
                 </div>
             }
-            <hr style="margin:8px 0;" />
-            <div style="display:flex;justify-content:space-between;font-weight:700;">
-                <span>Total</span>
-                <span>Rs @Cart.TotalAmount.ToString("N2")</span>
-            </div>
         </div>
 
-        <button class="btn btn-primary" style="width:100%;" @onclick="PlaceOrder" disabled="@_placing">
-            @(_placing ? "Placing Order..." : "Place Order")
-        </button>
+        @if (Cart.Items.Any())
+        {
+            <!-- Contact -->
+            <div class="card" style="margin-bottom:16px;">
+                <h4 style="margin-bottom:8px;">1. Your details</h4>
+                <input class="input full" placeholder="Full name *" @bind="_name"  style="margin-bottom:8px;" />
+                <input class="input full" placeholder="Phone *"     @bind="_phone" style="margin-bottom:8px;" />
+                <input class="input full" placeholder="Email (optional, for confirmation)" @bind="_email" type="email" />
+            </div>
+
+            <!-- Shipping method -->
+            <div class="card" style="margin-bottom:16px;">
+                <h4 style="margin-bottom:8px;">2. Delivery</h4>
+                @if (_shippingMethods == null)
+                {
+                    <div class="spinner"></div>
+                }
+                else if (_shippingMethods.Count == 0)
+                {
+                    <p style="color:#9ca3af;">No delivery options configured. Please contact the store.</p>
+                }
+                else
+                {
+                    @foreach (var m in _shippingMethods)
+                    {
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid @(_selectedShippingCode == m.Code ? "#0d3b66" : "#e5e7eb");border-radius:6px;margin-bottom:6px;cursor:pointer;">
+                            <input type="radio" name="ship" value="@m.Code"
+                                   checked="@(_selectedShippingCode == m.Code)"
+                                   @onchange="() => OnSelectShipping(m)" />
+                            <div style="flex:1;">
+                                <strong>@m.Name</strong>
+                                @if (!string.IsNullOrEmpty(m.Eta))
+                                {
+                                    <span style="color:#6b7785;font-size:12px;"> · @m.Eta</span>
+                                }
+                                @if (!string.IsNullOrEmpty(m.Description))
+                                {
+                                    <div style="font-size:12px;color:#9ca3af;">@m.Description</div>
+                                }
+                            </div>
+                            <div style="font-weight:600;">
+                                @(m.Fee == 0 ? "Free" : $"Rs {m.Fee:N2}")
+                            </div>
+                        </label>
+                    }
+                }
+            </div>
+
+            <!-- Shipping address (hidden if pickup chosen) -->
+            @if (_requireAddress)
+            {
+                <div class="card" style="margin-bottom:16px;">
+                    <h4 style="margin-bottom:8px;">3. Shipping address</h4>
+                    <input class="input full" placeholder="Recipient name *"   @bind="_address.RecipientName" style="margin-bottom:8px;" />
+                    <input class="input full" placeholder="Address line 1 *"    @bind="_address.Line1"         style="margin-bottom:8px;" />
+                    <input class="input full" placeholder="Address line 2"      @bind="_address.Line2"         style="margin-bottom:8px;" />
+                    <input class="input full" placeholder="City *"              @bind="_address.City"          style="margin-bottom:8px;" />
+                    <input class="input full" placeholder="Province"            @bind="_address.Province"      style="margin-bottom:8px;" />
+                    <input class="input full" placeholder="Postal code"         @bind="_address.PostalCode"    style="margin-bottom:8px;" />
+                    <textarea class="input full" placeholder="Delivery instructions (gate code, landmarks...)"
+                              rows="2" @bind="_address.DeliveryInstructions"></textarea>
+                </div>
+            }
+
+            <!-- Payment -->
+            <div class="card" style="margin-bottom:16px;">
+                <h4 style="margin-bottom:8px;">@(_requireAddress ? "4." : "3.") Payment</h4>
+                <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid @(_paymentMethod == "COD" ? "#0d3b66" : "#e5e7eb");border-radius:6px;margin-bottom:6px;cursor:pointer;">
+                    <input type="radio" name="pay" value="COD"
+                           checked="@(_paymentMethod == "COD")"
+                           @onchange="@(() => SelectPayment("COD"))" />
+                    <div style="flex:1;">
+                        <strong>Cash on Delivery</strong>
+                        <div style="font-size:12px;color:#9ca3af;">Pay in cash when your order arrives.</div>
+                    </div>
+                </label>
+                <!-- More payment methods can be added later when EP/JC are live -->
+            </div>
+
+            <!-- Totals + place -->
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;">
+                    <span>Subtotal</span><span>Rs @Cart.TotalAmount.ToString("N2")</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;">
+                    <span>Shipping</span>
+                    <span>@(_shippingFee == 0 ? "Free" : $"Rs {_shippingFee:N2}")</span>
+                </div>
+                <hr style="margin:6px 0;" />
+                <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;">
+                    <span>Total</span>
+                    <span>Rs @((Cart.TotalAmount + _shippingFee).ToString("N2"))</span>
+                </div>
+                <button class="btn btn-primary full" style="margin-top:14px;"
+                        disabled="@_placing"
+                        @onclick="PlaceOrder">
+                    @(_placing ? "Placing order..." : "Place order")
+                </button>
+                <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:8px;">
+                    By placing this order you agree to our terms.
+                </p>
+            </div>
+        }
     </div>
 }
 
 @code {
-    bool    _placing;
-    bool    _confirmed;
-    string? _error;
+    // Confirmation state
+    bool   _confirmed;
     string? _orderNumber;
-
-    string? _firstName;
-    string? _lastName;
     string? _email;
-    string? _password;
-    string? _phone;
+    string? _eta;
+    bool   _isPickup;
 
-    void GoShop() => Nav.NavigateTo("/shop");
+    // Form state
+    string _name = string.Empty;
+    string _phone = string.Empty;
+    bool _placing;
+    string? _error;
+
+    // Shipping
+    List<ShippingDto>? _shippingMethods;
+    string? _selectedShippingCode;
+    decimal _shippingFee;
+    bool _requireAddress = true;
+    AddressForm _address = new();
+
+    // Payment
+    string _paymentMethod = "COD";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadShippingMethods();
+    }
+
+    async Task LoadShippingMethods()
+    {
+        try
+        {
+            var subtotal = Cart.TotalAmount;
+            var json = await Http.GetStringAsync($"api/shop/shipping-methods?subtotal={subtotal}");
+            using var doc = JsonDocument.Parse(json);
+            _shippingMethods = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _shippingMethods.Add(new ShippingDto
+                    {
+                        Code        = e.GetProperty("code").GetString() ?? "",
+                        Name        = e.GetProperty("name").GetString() ?? "",
+                        Description = e.TryGetProperty("description", out var ds) ? ds.GetString() : null,
+                        Eta         = e.TryGetProperty("eta",          out var et) ? et.GetString() : null,
+                        IsPickup    = e.TryGetProperty("isPickup",     out var ip) && ip.GetBoolean(),
+                        Fee         = e.TryGetProperty("fee",          out var fe) ? fe.GetDecimal() : 0m
+                    });
+                }
+            }
+
+            if (_shippingMethods.Count > 0)
+            {
+                var first = _shippingMethods.First();
+                OnSelectShipping(first);
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load shipping options: {ex.Message}";
+        }
+    }
+
+    void OnSelectShipping(ShippingDto m)
+    {
+        _selectedShippingCode = m.Code;
+        _shippingFee          = m.Fee;
+        _requireAddress       = !m.IsPickup;
+    }
 
     async Task PlaceOrder()
     {
         _error = null;
 
-        if (string.IsNullOrWhiteSpace(_firstName) || string.IsNullOrWhiteSpace(_lastName) ||
-            string.IsNullOrWhiteSpace(_email)     || string.IsNullOrWhiteSpace(_password))
+        if (string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_phone))
         {
-            _error = "First name, last name, email and password are required.";
+            _error = "Name and phone are required.";
             return;
         }
-
-        if (_password.Length < 8)
+        if (string.IsNullOrWhiteSpace(_selectedShippingCode))
         {
-            _error = "Password must be at least 8 characters.";
+            _error = "Pick a delivery option.";
             return;
         }
-
-        if (!Cart.Items.Any())
+        if (_requireAddress &&
+            (string.IsNullOrWhiteSpace(_address.RecipientName) ||
+             string.IsNullOrWhiteSpace(_address.Line1) ||
+             string.IsNullOrWhiteSpace(_address.City)))
         {
-            _error = "Your cart is empty.";
+            _error = "Recipient name, line 1 and city are required for delivery.";
             return;
         }
 
         _placing = true;
+        StateHasChanged();
+
+        var body = new
+        {
+            guestName  = _name,
+            guestPhone = _phone,
+            guestEmail = _email,
+            items = Cart.Items.Select(i => new
+            {
+                productVariantId = i.VariantId,
+                quantity         = i.Quantity
+            }).ToList(),
+            shippingMethodCode = _selectedShippingCode,
+            shippingAddress    = _requireAddress ? _address : null,
+            paymentMethod      = _paymentMethod
+        };
+
         try
         {
-            // 1. Register customer (or reuse existing — API deduplication handles this)
-            var regPayload = new
+            var resp = await Http.PostAsJsonAsync("api/shop/checkout", body);
+            if (!resp.IsSuccessStatusCode)
             {
-                firstName = _firstName,
-                lastName  = _lastName,
-                email     = _email,
-                password  = _password,
-                phone     = _phone
-            };
-
-            var regRes = await Http.PostAsJsonAsync("api/customers/register", regPayload);
-            Guid customerId = Guid.Empty;
-
-            if (regRes.IsSuccessStatusCode)
-            {
-                var regContent = await regRes.Content.ReadAsStringAsync();
-                using var regDoc = JsonDocument.Parse(regContent);
-                if (regDoc.RootElement.TryGetProperty("data", out var dataEl))
-                    customerId = dataEl.GetGuid();
+                var msg = await resp.Content.ReadAsStringAsync();
+                _error = $"Checkout failed: {msg}";
+                return;
             }
-            // If registration fails (e.g. duplicate) we still attempt checkout with Guid.Empty
 
-            // 2. Checkout
-            var checkoutPayload = new
-            {
-                customerId   = customerId == Guid.Empty ? (Guid?)null : customerId,
-                paidAmount   = Cart.TotalAmount,
-                items        = Cart.Items.Select(i => new
-                {
-                    productVariantId = i.VariantId,
-                    quantity         = i.Quantity
-                }).ToList()
-            };
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
 
-            var checkoutRes = await Http.PostAsJsonAsync("api/sales/checkout", checkoutPayload);
-            var checkoutContent = await checkoutRes.Content.ReadAsStringAsync();
+            _orderNumber = d.GetProperty("orderNumber").GetString();
+            _isPickup    = d.TryGetProperty("isPickup", out var ip) && ip.GetBoolean();
+            _eta         = d.TryGetProperty("expectedDelivery", out var et) ? et.GetString() : null;
+            _confirmed   = true;
 
-            if (checkoutRes.IsSuccessStatusCode)
-            {
-                using var checkDoc = JsonDocument.Parse(checkoutContent);
-                var orderId = checkDoc.RootElement.TryGetProperty("data", out var od)
-                    ? od.GetGuid() : Guid.Empty;
-
-                _orderNumber = $"POS-{orderId.ToString()[..8].ToUpper()}";
-                Cart.Clear();
-                _confirmed = true;
-            }
-            else
-            {
-                using var errDoc = JsonDocument.Parse(checkoutContent);
-                _error = errDoc.RootElement.TryGetProperty("message", out var msg)
-                    ? msg.GetString()
-                    : "Checkout failed. Please try again.";
-            }
+            Cart.Clear();
         }
         catch (Exception ex)
         {
             _error = $"Error: {ex.Message}";
         }
-        _placing = false;
+        finally
+        {
+            _placing = false;
+            StateHasChanged();
+        }
+    }
+
+    void SelectPayment(string code) => _paymentMethod = code;
+
+    void GoShop() => Nav.NavigateTo("/shop");
+
+    class ShippingDto
+    {
+        public string  Code { get; set; } = "";
+        public string  Name { get; set; } = "";
+        public string? Description { get; set; }
+        public string? Eta { get; set; }
+        public bool    IsPickup { get; set; }
+        public decimal Fee { get; set; }
+    }
+
+    class AddressForm
+    {
+        public string  RecipientName { get; set; } = "";
+        public string  Line1 { get; set; } = "";
+        public string? Line2 { get; set; }
+        public string  City { get; set; } = "";
+        public string? Province { get; set; }
+        public string? PostalCode { get; set; }
+        public string  Country { get; set; } = "PK";
+        public string? Phone { get; set; }
+        public string? DeliveryInstructions { get; set; }
     }
 }

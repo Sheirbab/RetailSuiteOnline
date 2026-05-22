@@ -1,0 +1,366 @@
+@page "/settings/shipping-methods"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:8px;">Shipping methods</h3>
+<p style="color:#6b7280;margin-bottom:20px;font-size:14px;">
+    Configure the delivery options customers see at storefront checkout. Methods marked inactive are hidden from the shop but stay on historical orders.
+</p>
+
+<button class="btn btn-primary" @onclick="OpenCreate">+ Add shipping method</button>
+
+@if (_loading)
+{
+    <div style="margin-top:20px;"><div class="spinner"></div></div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="margin-top:20px;color:#b91c1c;">⚠️ @_error</div>
+}
+else if (_methods != null && _methods.Any())
+{
+    <div class="card" style="margin-top:20px;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:40px;">#</th>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Base fee</th>
+                    <th>Free over</th>
+                    <th>ETA</th>
+                    <th>Pickup</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _methods.OrderBy(x => x.SortOrder).ThenBy(x => x.Name))
+                {
+                    <tr>
+                        <td>@m.SortOrder</td>
+                        <td><code>@m.Code</code></td>
+                        <td>
+                            <strong>@m.Name</strong>
+                            @if (!string.IsNullOrEmpty(m.Description))
+                            {
+                                <div style="color:#6b7280;font-size:12px;">@m.Description</div>
+                            }
+                        </td>
+                        <td>@(m.IsPickup ? "—" : $"Rs {m.BaseFee:N2}")</td>
+                        <td>@(m.FreeOverAmount.HasValue ? $"Rs {m.FreeOverAmount:N2}" : "—")</td>
+                        <td>@(m.Eta ?? "—")</td>
+                        <td>@(m.IsPickup ? "Yes" : "—")</td>
+                        <td>
+                            @if (m.IsActive)
+                            {
+                                <span style="background:#dcfce7;color:#15803d;font-size:11px;padding:2px 8px;border-radius:4px;">Active</span>
+                            }
+                            else
+                            {
+                                <span style="background:#fee2e2;color:#b91c1c;font-size:11px;padding:2px 8px;border-radius:4px;">Inactive</span>
+                            }
+                        </td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button class="btn" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="() => OpenEdit(m)">Edit</button>
+                            @if (m.IsActive)
+                            {
+                                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;margin-left:4px;"
+                                        @onclick="() => Deactivate(m.Id)">Disable</button>
+                            }
+                            else
+                            {
+                                <button class="btn" style="padding:4px 10px;font-size:12px;margin-left:4px;"
+                                        @onclick="() => Reactivate(m)">Enable</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="card" style="margin-top:20px;">
+        <p style="color:#9ca3af;">No shipping methods configured yet. Add at least one before customers can check out.</p>
+    </div>
+}
+
+<Modal Visible="@_showModal" OnClose="CloseModal">
+    <h3 style="margin-bottom:15px;">@(_editing == null ? "Add shipping method" : "Edit shipping method")</h3>
+
+    @if (_editing == null)
+    {
+        <label style="font-size:12px;color:#6b7280;">Code (stable identifier, uppercase)</label>
+        <input class="input full" @bind="_form.Code" placeholder="FLAT, PICKUP, COURIER_RAWALPINDI" style="margin-bottom:8px;text-transform:uppercase;" />
+    }
+    else
+    {
+        <label style="font-size:12px;color:#6b7280;">Code</label>
+        <input class="input full" value="@_editing.Code" disabled style="margin-bottom:8px;background:#f3f4f6;" />
+    }
+
+    <label style="font-size:12px;color:#6b7280;">Display name</label>
+    <input class="input full" @bind="_form.Name" placeholder="Standard delivery" style="margin-bottom:8px;" />
+
+    <label style="font-size:12px;color:#6b7280;">Description (optional)</label>
+    <input class="input full" @bind="_form.Description" placeholder="Delivered to your doorstep" style="margin-bottom:8px;" />
+
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <input type="checkbox" @bind="_form.IsPickup" disabled="@(_editing != null)" />
+        <span>In-store pickup (zero fee, no address required)</span>
+    </label>
+
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">Base fee (Rs)</label>
+            <input class="input full" type="number" step="0.01" min="0"
+                   @bind="_form.BaseFee" disabled="@_form.IsPickup" />
+        </div>
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">Free over (Rs, optional)</label>
+            <input class="input full" type="number" step="0.01" min="0"
+                   @bind="_form.FreeOverAmount" disabled="@_form.IsPickup"
+                   placeholder="Leave blank for none" />
+        </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">ETA shown to customer</label>
+            <input class="input full" @bind="_form.Eta" placeholder="2–4 working days" />
+        </div>
+        <div style="width:120px;">
+            <label style="font-size:12px;color:#6b7280;">Sort order</label>
+            <input class="input full" type="number" min="0" @bind="_form.SortOrder" />
+        </div>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <input type="checkbox" @bind="_form.IsActive" />
+        <span>Active — show to customers at checkout</span>
+    </label>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" @onclick="CloseModal">Cancel</button>
+        <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
+            @(_saving ? "Saving..." : (_editing == null ? "Add" : "Save changes"))
+        </button>
+    </div>
+</Modal>
+
+@code {
+    bool   _loading = true;
+    string? _error;
+    bool   _showModal;
+    bool   _saving;
+    List<ShippingMethodRow>? _methods;
+    ShippingMethodRow? _editing;
+    Form _form = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/shipping-methods");
+            using var doc = JsonDocument.Parse(json);
+            _methods = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _methods.Add(new ShippingMethodRow
+                    {
+                        Id             = e.GetProperty("id").GetGuid(),
+                        Code           = e.GetProperty("code").GetString() ?? "",
+                        Name           = e.GetProperty("name").GetString() ?? "",
+                        Description    = e.TryGetProperty("description",    out var ds)  ? ds.GetString() : null,
+                        BaseFee        = e.TryGetProperty("baseFee",        out var bf)  ? bf.GetDecimal() : 0m,
+                        FreeOverAmount = e.TryGetProperty("freeOverAmount", out var fo) && fo.ValueKind == JsonValueKind.Number
+                                            ? fo.GetDecimal() : (decimal?)null,
+                        IsPickup       = e.TryGetProperty("isPickup",       out var ip) && ip.GetBoolean(),
+                        IsActive       = e.TryGetProperty("isActive",       out var ia) && ia.GetBoolean(),
+                        SortOrder      = e.TryGetProperty("sortOrder",      out var so)  ? so.GetInt32() : 0,
+                        Eta            = e.TryGetProperty("eta",            out var et)  ? et.GetString() : null
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    void OpenCreate()
+    {
+        _editing  = null;
+        _form     = new Form { IsActive = true, SortOrder = (_methods?.Count ?? 0) + 1 };
+        _showModal = true;
+    }
+
+    void OpenEdit(ShippingMethodRow m)
+    {
+        _editing = m;
+        _form = new Form
+        {
+            Code           = m.Code,
+            Name           = m.Name,
+            Description    = m.Description,
+            BaseFee        = m.BaseFee,
+            FreeOverAmount = m.FreeOverAmount,
+            IsPickup       = m.IsPickup,
+            IsActive       = m.IsActive,
+            SortOrder      = m.SortOrder,
+            Eta            = m.Eta
+        };
+        _showModal = true;
+    }
+
+    void CloseModal()
+    {
+        _showModal = false;
+        _editing   = null;
+    }
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+        if (_editing == null && string.IsNullOrWhiteSpace(_form.Code))
+        {
+            Toast.Show("Code is required.");
+            return;
+        }
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            HttpResponseMessage resp;
+            if (_editing == null)
+            {
+                var body = new
+                {
+                    code           = _form.Code?.Trim().ToUpperInvariant(),
+                    name           = _form.Name.Trim(),
+                    description    = string.IsNullOrWhiteSpace(_form.Description) ? null : _form.Description,
+                    baseFee        = _form.IsPickup ? 0m : _form.BaseFee,
+                    freeOverAmount = _form.IsPickup ? (decimal?)null : _form.FreeOverAmount,
+                    isPickup       = _form.IsPickup,
+                    isActive       = _form.IsActive,
+                    sortOrder      = _form.SortOrder,
+                    eta            = string.IsNullOrWhiteSpace(_form.Eta) ? null : _form.Eta
+                };
+                resp = await Http.PostAsJsonAsync("api/shipping-methods", body);
+            }
+            else
+            {
+                var body = new
+                {
+                    name           = _form.Name.Trim(),
+                    description    = _form.Description,
+                    baseFee        = _editing.IsPickup ? 0m : _form.BaseFee,
+                    freeOverAmount = _editing.IsPickup ? (decimal?)null : _form.FreeOverAmount,
+                    isActive       = _form.IsActive,
+                    sortOrder      = _form.SortOrder,
+                    eta            = _form.Eta
+                };
+                resp = await Http.PatchAsJsonAsync($"api/shipping-methods/{_editing.Id}", body);
+            }
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Toast.Show($"Save failed: {msg}");
+                return;
+            }
+
+            Toast.Show(_editing == null ? "Shipping method added." : "Shipping method updated.");
+            CloseModal();
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    async Task Deactivate(Guid id)
+    {
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/shipping-methods/{id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.Show("Disabled.");
+                await Load();
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Error: {ex.Message}"); }
+    }
+
+    async Task Reactivate(ShippingMethodRow m)
+    {
+        try
+        {
+            var resp = await Http.PatchAsJsonAsync($"api/shipping-methods/{m.Id}", new { isActive = true });
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.Show("Enabled.");
+                await Load();
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Error: {ex.Message}"); }
+    }
+
+    class Form
+    {
+        public string?  Code           { get; set; }
+        public string   Name           { get; set; } = "";
+        public string?  Description    { get; set; }
+        public decimal  BaseFee        { get; set; }
+        public decimal? FreeOverAmount { get; set; }
+        public bool     IsPickup       { get; set; }
+        public bool     IsActive       { get; set; } = true;
+        public int      SortOrder      { get; set; }
+        public string?  Eta            { get; set; }
+    }
+
+    class ShippingMethodRow
+    {
+        public Guid     Id { get; set; }
+        public string   Code { get; set; } = "";
+        public string   Name { get; set; } = "";
+        public string?  Description { get; set; }
+        public decimal  BaseFee { get; set; }
+        public decimal? FreeOverAmount { get; set; }
+        public bool     IsPickup { get; set; }
+        public bool     IsActive { get; set; }
+        public int      SortOrder { get; set; }
+        public string?  Eta { get; set; }
+    }
+}

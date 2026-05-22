@@ -1,0 +1,172 @@
+@page "/shop/track"
+@layout CustomerLayout
+@inject HttpClient Http
+@using System.Text.Json
+
+<div style="max-width:560px;margin:0 auto;">
+    <h2 style="margin-bottom:20px;">Track your order</h2>
+
+    <div class="card" style="margin-bottom:16px;">
+        <p style="color:#6b7785;font-size:13px;margin-top:0;">
+            Enter your order number and the phone number you used at checkout.
+        </p>
+        <input class="input full" placeholder="Order number (e.g. WEB-...)" @bind="_orderNumber"
+               style="margin-bottom:8px;" />
+        <input class="input full" placeholder="Phone number"                 @bind="_phone"
+               style="margin-bottom:12px;" />
+        <button class="btn btn-primary" @onclick="DoTrack" disabled="@_loading">
+            @(_loading ? "Looking up..." : "Track order")
+        </button>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="margin-top:10px;color:#b91c1c;font-size:13px;">@_error</div>
+        }
+    </div>
+
+    @if (_result != null)
+    {
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div>
+                    <strong style="font-family:monospace;">@_result.OrderNumber</strong>
+                    <div style="font-size:12px;color:#6b7785;">Placed @_result.CreatedAt.ToString("dd MMM yyyy HH:mm")</div>
+                </div>
+                @RenderFulfillmentBadge(_result.FulfillmentStatus)
+            </div>
+
+            <hr style="margin:6px 0 12px;" />
+
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:13px;margin-bottom:12px;">
+                <div><span style="color:#6b7785;">Recipient</span><br/><strong>@_result.GuestName</strong></div>
+                <div><span style="color:#6b7785;">Payment</span><br/><strong>@_result.PaymentMethodCode</strong></div>
+                <div><span style="color:#6b7785;">Shipping</span><br/><strong>@_result.ShippingMethodCode</strong></div>
+                <div><span style="color:#6b7785;">Status</span><br/><strong>@_result.Status</strong></div>
+            </div>
+
+            <h4 style="margin:12px 0 6px;font-size:14px;">Items</h4>
+            @foreach (var item in _result.Items)
+            {
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;">
+                    <span>@item.SKU × @item.Quantity</span>
+                    <span>Rs @item.LineTotal.ToString("N2")</span>
+                </div>
+            }
+
+            <hr style="margin:8px 0;" />
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+                <span>Shipping</span>
+                <span>@(_result.ShippingAmount == 0 ? "Free" : $"Rs {_result.ShippingAmount:N2}")</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-weight:700;font-size:16px;">
+                <span>Total</span>
+                <span>Rs @_result.TotalAmount.ToString("N2")</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    string _orderNumber = string.Empty;
+    string _phone = string.Empty;
+    bool _loading;
+    string? _error;
+    TrackResult? _result;
+
+    async Task DoTrack()
+    {
+        _error  = null;
+        _result = null;
+        if (string.IsNullOrWhiteSpace(_orderNumber) || string.IsNullOrWhiteSpace(_phone))
+        {
+            _error = "Order number and phone are required.";
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var url = $"api/shop/orders/{Uri.EscapeDataString(_orderNumber.Trim())}?phone={Uri.EscapeDataString(_phone.Trim())}";
+            var resp = await Http.GetAsync(url);
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "We couldn't find an order matching that combination.";
+                return;
+            }
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Lookup failed. Please try again.";
+                return;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _result = new TrackResult
+            {
+                OrderNumber       = d.GetProperty("orderNumber").GetString() ?? "",
+                Status            = d.GetProperty("status").GetString() ?? "",
+                FulfillmentStatus = d.GetProperty("fulfillmentStatus").GetString() ?? "",
+                TotalAmount       = d.GetProperty("totalAmount").GetDecimal(),
+                ShippingAmount    = d.GetProperty("shippingAmount").GetDecimal(),
+                ShippingMethodCode = d.TryGetProperty("shippingMethodCode", out var sm) ? sm.GetString() : null,
+                PaymentMethodCode  = d.TryGetProperty("paymentMethodCode",  out var pm) ? pm.GetString() : null,
+                GuestName          = d.TryGetProperty("guestName", out var gn) ? gn.GetString() : null,
+                CreatedAt          = d.GetProperty("createdAt").GetDateTime(),
+                Items = d.GetProperty("items").EnumerateArray().Select(it => new TrackItem
+                {
+                    SKU       = it.GetProperty("sKU").GetString() ?? "",
+                    Quantity  = it.GetProperty("quantity").GetInt32(),
+                    UnitPrice = it.GetProperty("unitPrice").GetDecimal(),
+                    LineTotal = it.GetProperty("lineTotal").GetDecimal()
+                }).ToList()
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    static RenderFragment RenderFulfillmentBadge(string status) => builder =>
+    {
+        var (bg, fg) = status switch
+        {
+            "Shipped"   => ("#dbeafe", "#1d4ed8"),
+            "Delivered" => ("#dcfce7", "#15803d"),
+            "Cancelled" => ("#fee2e2", "#b91c1c"),
+            _           => ("#fef3c7", "#a16207")  // Pending
+        };
+        builder.AddMarkupContent(0,
+            $"<span style=\"background:{bg};color:{fg};font-size:12px;padding:4px 10px;border-radius:6px;font-weight:600;\">{status}</span>");
+    };
+
+    class TrackResult
+    {
+        public string   OrderNumber { get; set; } = "";
+        public string   Status { get; set; } = "";
+        public string   FulfillmentStatus { get; set; } = "";
+        public decimal  TotalAmount { get; set; }
+        public decimal  ShippingAmount { get; set; }
+        public string?  ShippingMethodCode { get; set; }
+        public string?  PaymentMethodCode { get; set; }
+        public string?  GuestName { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public List<TrackItem> Items { get; set; } = new();
+    }
+
+    class TrackItem
+    {
+        public string  SKU { get; set; } = "";
+        public int     Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+}

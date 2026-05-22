@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Identity.Dtos;
@@ -101,6 +102,9 @@ public class AuthController : ControllerBase
             };
             _Db.Accounts.AddRange(accounts);
             await _Db.SaveChangesAsync();
+
+            // 3b. Seed per-tenant defaults (shipping methods so the storefront works out of the box).
+            await TenantDefaultsSeeder.SeedAsync(_Db, tenant.Id);
 
             // 4. Issue verification token (must be done inside the txn so we can roll back on failure).
             var plaintextToken = await _tokenService.IssueAsync(tenant.Id, user.Id, TokenPurpose.VerifyEmail);

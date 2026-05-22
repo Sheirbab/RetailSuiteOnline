@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Customer.Model;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Modules.Accounting.Entities;
@@ -124,6 +125,9 @@ public class TenantsController : ControllerBase
             };
             _db.Accounts.AddRange(accounts);
             await _db.SaveChangesAsync();
+
+            // 4. Seed per-tenant defaults (shipping methods so storefront works out of the box).
+            await TenantDefaultsSeeder.SeedAsync(_db, tenant.Id);
 
             await tx.CommitAsync();
 
