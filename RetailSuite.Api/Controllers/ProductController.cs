@@ -66,6 +66,8 @@ public class ProductsController : ControllerBase
     }
 
     // GET /api/products/variants  — flat list for POS
+    // Includes tax rate, product image, and primary category so the POS tile grid
+    // can render visually and apply the category filter without extra round-trips.
     [HttpGet("variants")]
     public async Task<IActionResult> GetVariants()
     {
@@ -80,8 +82,18 @@ public class ProductsController : ControllerBase
                 v.Price,
                 v.CostPrice,
                 v.StockQuantity,
-                ProductId   = v.ProductId,
-                ProductName = v.Product.Name
+                v.TaxRate,
+                ProductId    = v.ProductId,
+                ProductName  = v.Product.Name,
+                ImageUrl     = v.Product.ImageUrl,
+                CategoryId   = _db.ProductCategories
+                                  .Where(pc => pc.ProductId == v.ProductId)
+                                  .Select(pc => (Guid?)pc.CategoryId)
+                                  .FirstOrDefault(),
+                CategoryName = _db.ProductCategories
+                                  .Where(pc => pc.ProductId == v.ProductId)
+                                  .Select(pc => pc.Category.Name)
+                                  .FirstOrDefault()
             })
             .ToListAsync();
 

@@ -5,6 +5,212 @@
 @using System.Text.Json
 @implements IDisposable
 
+<style>
+    /* ============================== POS Layout ============================== */
+    .pos-shell { display:flex; flex-direction:column; gap:14px; min-height:calc(100vh - 120px); }
+
+    .pos-topbar {
+        display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+        background:linear-gradient(135deg, #0d3b66 0%, #1d4ed8 100%);
+        color:#fff; padding:14px 18px; border-radius:12px;
+        box-shadow:0 4px 12px rgba(13,59,102,.18);
+    }
+    .pos-topbar h3 { margin:0; flex:1; font-weight:700; letter-spacing:.3px; }
+    .pos-topbar .icon-btn {
+        background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+        padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500;
+        display:inline-flex; align-items:center; gap:6px; cursor:pointer; transition:.15s;
+    }
+    .pos-topbar .icon-btn:hover:not(:disabled) { background:rgba(255,255,255,.22); }
+    .pos-topbar .icon-btn:disabled { opacity:.45; cursor:not-allowed; }
+    .pos-topbar .icon-btn .badge {
+        background:#f59e0b; color:#fff; border-radius:10px; padding:0 7px;
+        font-size:11px; font-weight:700; margin-left:4px;
+    }
+    .pos-customer-pill {
+        background:#ecfdf5; color:#065f46; padding:7px 14px; border-radius:20px;
+        font-size:13px; display:inline-flex; align-items:center; gap:8px;
+        border:1px solid #6ee7b7;
+    }
+    .pos-customer-pill .perks { color:#0d3b66; font-size:11px; }
+    .pos-customer-pill .x-btn {
+        background:transparent; border:none; color:#065f46;
+        cursor:pointer; padding:0 4px; font-size:14px;
+    }
+
+    .pos-main { display:flex; gap:16px; align-items:flex-start; flex:1; }
+    .pos-left  { flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
+    .pos-right { width:440px; flex-shrink:0; }
+
+    /* ============================== Search + filters ============================== */
+    .pos-search-row {
+        background:#fff; padding:12px; border-radius:10px;
+        box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; gap:10px; align-items:center;
+    }
+    .pos-search-row .search-icon { color:#9ca3af; font-size:18px; padding:0 6px; }
+    .pos-search-row input {
+        flex:1; border:none; outline:none; font-size:15px; padding:6px 4px;
+        background:transparent;
+    }
+    .pos-search-row .scan-hint {
+        color:#6b7280; font-size:11px; padding:4px 10px; background:#f3f4f6;
+        border-radius:6px; white-space:nowrap;
+    }
+
+    .pos-cat-chips {
+        display:flex; gap:8px; overflow-x:auto; padding:4px 2px 8px;
+        scrollbar-width:thin;
+    }
+    .pos-cat-chips::-webkit-scrollbar { height:6px; }
+    .pos-cat-chips::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:3px; }
+    .pos-chip {
+        background:#fff; border:1px solid #e5e7eb; color:#374151;
+        padding:7px 14px; border-radius:20px; font-size:13px; font-weight:500;
+        cursor:pointer; white-space:nowrap; transition:.15s;
+        display:inline-flex; align-items:center; gap:6px;
+    }
+    .pos-chip:hover { border-color:#1d4ed8; color:#1d4ed8; }
+    .pos-chip.active { background:#1d4ed8; border-color:#1d4ed8; color:#fff; }
+    .pos-chip .count {
+        background:rgba(0,0,0,.08); padding:0 6px; border-radius:8px; font-size:11px;
+    }
+    .pos-chip.active .count { background:rgba(255,255,255,.25); }
+
+    /* ============================== Product tiles ============================== */
+    .pos-tile-grid {
+        display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+        gap:12px; max-height:calc(100vh - 280px); overflow-y:auto; padding:4px;
+    }
+    .pos-tile {
+        background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+        padding:10px; cursor:pointer; transition:.15s; position:relative;
+        display:flex; flex-direction:column; text-align:left;
+        box-shadow:0 1px 2px rgba(0,0,0,.04);
+    }
+    .pos-tile:hover {
+        transform:translateY(-2px);
+        box-shadow:0 6px 16px rgba(29,78,216,.15);
+        border-color:#1d4ed8;
+    }
+    .pos-tile:active { transform:translateY(0); }
+    .pos-tile.out-of-stock { opacity:.55; cursor:not-allowed; }
+    .pos-tile.out-of-stock:hover { transform:none; box-shadow:0 1px 2px rgba(0,0,0,.04); border-color:#e5e7eb; }
+
+    .pos-tile-img {
+        width:100%; aspect-ratio:1/1; background:#f9fafb; border-radius:8px;
+        display:flex; align-items:center; justify-content:center; overflow:hidden;
+        margin-bottom:8px;
+    }
+    .pos-tile-img img { width:100%; height:100%; object-fit:cover; }
+    .pos-tile-img .placeholder { font-size:36px; color:#d1d5db; }
+    .pos-tile-name { font-weight:600; font-size:13px; color:#111827; line-height:1.3; margin-bottom:2px;
+                     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                     overflow:hidden; min-height:34px; }
+    .pos-tile-sku { font-family:monospace; font-size:10px; color:#9ca3af; margin-bottom:6px; }
+    .pos-tile-bottom { display:flex; justify-content:space-between; align-items:flex-end; margin-top:auto; }
+    .pos-tile-price { font-weight:700; font-size:15px; color:#0d3b66; }
+    .pos-stock-badge {
+        font-size:10px; padding:2px 6px; border-radius:8px; font-weight:600;
+    }
+    .stock-ok    { background:#dcfce7; color:#15803d; }
+    .stock-low   { background:#fef3c7; color:#a16207; }
+    .stock-out   { background:#fee2e2; color:#b91c1c; }
+
+    .pos-empty {
+        background:#fff; border-radius:10px; padding:40px;
+        text-align:center; color:#9ca3af;
+    }
+
+    /* ============================== Cart panel ============================== */
+    .pos-cart {
+        background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.06);
+        display:flex; flex-direction:column; max-height:calc(100vh - 130px);
+    }
+    .pos-cart-header {
+        padding:14px 16px; border-bottom:1px solid #f3f4f6;
+        display:flex; justify-content:space-between; align-items:center;
+    }
+    .pos-cart-header h4 { margin:0; font-weight:700; }
+    .pos-cart-count {
+        background:#eff6ff; color:#1d4ed8; padding:2px 10px;
+        border-radius:12px; font-size:12px; font-weight:600;
+    }
+
+    .pos-cart-items { padding:8px 16px; flex:1; overflow-y:auto; min-height:120px; }
+    .pos-cart-item {
+        padding:10px 0; border-bottom:1px dashed #f3f4f6;
+    }
+    .pos-cart-item:last-child { border-bottom:none; }
+    .pos-cart-item .top-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .pos-cart-item .name { flex:1; font-size:13px; }
+    .pos-cart-item .sku { font-family:monospace; font-size:11px; color:#9ca3af; }
+    .pos-cart-item .price { font-size:11px; color:#6b7280; }
+    .qty-stepper {
+        display:flex; align-items:center; gap:4px;
+        background:#f3f4f6; border-radius:6px; padding:2px;
+    }
+    .qty-stepper button {
+        background:#fff; border:1px solid #e5e7eb; border-radius:4px;
+        width:24px; height:24px; cursor:pointer; font-size:14px; font-weight:600;
+        color:#374151;
+    }
+    .qty-stepper button:hover { background:#eff6ff; border-color:#1d4ed8; color:#1d4ed8; }
+    .qty-stepper .qty { min-width:24px; text-align:center; font-weight:700; font-size:13px; }
+    .pos-cart-item .remove-btn {
+        background:transparent; border:none; color:#dc2626;
+        cursor:pointer; padding:0 4px; font-size:14px;
+    }
+    .pos-cart-item .line-discount {
+        display:flex; align-items:center; gap:6px; margin-top:4px; font-size:11px;
+    }
+    .pos-cart-item .line-discount input {
+        width:70px; padding:2px 6px; font-size:11px; border:1px solid #e5e7eb;
+        border-radius:4px;
+    }
+    .pos-cart-item .line-total { margin-left:auto; font-weight:700; font-size:13px; color:#0d3b66; }
+
+    .pos-cart-totals { padding:12px 16px; background:#f9fafb; border-top:1px solid #f3f4f6; font-size:13px; }
+    .pos-cart-totals .row { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+    .pos-cart-totals .row.discount-row { color:#a16207; }
+    .pos-cart-totals .row.credit-row   { color:#15803d; }
+    .pos-cart-totals .row.loyalty-row  { color:#a16207; }
+    .pos-cart-totals input[type=number] {
+        width:100px; padding:3px 8px; font-size:12px;
+        border:1px solid #e5e7eb; border-radius:4px; text-align:right;
+    }
+    .pos-due {
+        font-size:22px; font-weight:800; color:#0d3b66; padding:12px 16px;
+        background:#eff6ff; display:flex; justify-content:space-between; align-items:baseline;
+    }
+    .pos-payment { padding:14px 16px; }
+    .pos-payment label { display:block; font-size:12px; color:#374151; margin-bottom:4px; font-weight:500; }
+    .pos-change { margin-top:6px; padding:6px 10px; background:#dcfce7; color:#15803d;
+                  border-radius:6px; font-size:13px; font-weight:600;
+                  display:flex; justify-content:space-between; }
+    .pos-short  { margin-top:6px; padding:6px 10px; background:#fee2e2; color:#b91c1c;
+                  border-radius:6px; font-size:12px; }
+    .btn-checkout {
+        background:linear-gradient(135deg,#16a34a 0%, #15803d 100%);
+        color:#fff; border:none; padding:14px; border-radius:8px; width:100%;
+        font-size:15px; font-weight:700; cursor:pointer; margin-top:12px;
+        transition:.15s; letter-spacing:.5px;
+        box-shadow:0 2px 6px rgba(21,128,61,.25);
+    }
+    .btn-checkout:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 6px 14px rgba(21,128,61,.32); }
+    .btn-checkout:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-clear {
+        background:#fff; color:#dc2626; border:1px solid #fecaca; padding:8px;
+        border-radius:6px; width:100%; font-size:13px; cursor:pointer; margin-top:6px;
+    }
+    .btn-clear:hover { background:#fef2f2; }
+
+    .pos-receipt-box {
+        margin:14px 16px; padding:14px;
+        background:#f0fdf4; border:1px solid #86efac; border-radius:10px;
+    }
+    .pos-receipt-box .ok-label { font-weight:700; color:#15803d; font-size:14px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+</style>
+
 <!-- Hidden barcode-scanner input -->
 <input id="barcodeInput"
        style="position:absolute;left:-9999px;top:-9999px;opacity:0;width:1px;"
@@ -13,245 +219,284 @@
        @bind:event="oninput"
        autocomplete="off" />
 
-<!-- =========== TOP BAR =========== -->
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    <h3 style="margin:0;flex:1;">Point of Sale</h3>
+<div class="pos-shell">
 
-    @if (_customer != null)
-    {
-        <span style="background:#dbeafe;color:#1d4ed8;padding:4px 12px;border-radius:16px;font-size:13px;">
-            @_customer.FullName
-            @if (_customer.StoreCredit > 0 || _customer.LoyaltyPoints > 0)
-            {
-                <span style="margin-left:6px;color:#0d3b66;font-size:11px;">
-                    💳 Rs @_customer.StoreCredit.ToString("N0") · ⭐ @_customer.LoyaltyPoints pts
-                </span>
-            }
-            <button class="btn" style="padding:0px 6px;margin-left:6px;font-size:12px;"
-                    @onclick="DetachCustomer">✕</button>
-        </span>
-    }
-    else
-    {
-        <button class="btn" @onclick="() => _showCustomerLookup = true">+ Attach customer</button>
-    }
+    <!-- ============================== TOP BAR ============================== -->
+    <div class="pos-topbar">
+        <h3>🛒 Point of Sale</h3>
 
-    <button class="btn" @onclick="HoldSale" disabled="@(!_cart.Any() || _checking)">⏸ Hold sale</button>
-    <button class="btn" @onclick="ShowHeldDrawerAsync">📋 Held (@_heldCount)</button>
-    <button class="btn" @onclick="() => _showReturnLookup = true">↩ Return</button>
-    <button class="btn" @onclick="() => _showCashCountModal = true">📊 EOD close</button>
-</div>
-
-<div style="display:flex;gap:20px;align-items:flex-start;">
-
-    <!-- =========== LEFT: Products =========== -->
-    <div style="flex:1;" class="card">
-        <h4 style="margin-bottom:12px;">Products</h4>
-        <input class="input full"
-               placeholder="Search SKU or product name... (or scan barcode)"
-               value="@_search"
-               @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
-
-        <div style="margin-top:10px;max-height:480px;overflow-y:auto;">
-            @foreach (var v in FilteredVariants.Take(50))
-            {
-                <div style="padding:10px 12px;border-bottom:1px solid #e5e7eb;cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
-                     @onclick="() => AddToCart(v)">
-                    <div>
-                        <strong>@v.SKU</strong>
-                        @if (!string.IsNullOrEmpty(v.Barcode))
-                        {
-                            <span style="font-size:11px;color:#9ca3af;margin-left:6px;">[@v.Barcode]</span>
-                        }
-                        <div style="font-size:12px;color:#6b7280;">@v.ProductName</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-weight:600;">Rs @v.Price.ToString("N2")</div>
-                        <div style="font-size:12px;color:@(v.StockQuantity > 0 ? "#16a34a" : "#dc2626");">
-                            Stock: @v.StockQuantity
-                        </div>
-                    </div>
-                </div>
-            }
-            @if (!_variants.Any())
-            {
-                <p style="color:#9ca3af;padding:12px;">No products loaded.</p>
-            }
-        </div>
-    </div>
-
-    <!-- =========== RIGHT: Cart =========== -->
-    <div style="width:460px;" class="card">
-        <h4 style="margin-bottom:12px;">Cart</h4>
-
-        @if (!_cart.Any())
+        @if (_customer != null)
         {
-            <p style="color:#9ca3af;">Cart is empty — click a product to add it.</p>
+            <span class="pos-customer-pill">
+                <span>👤 @_customer.FullName</span>
+                @if (_customer.StoreCredit > 0 || _customer.LoyaltyPoints > 0)
+                {
+                    <span class="perks">
+                        💳 Rs @_customer.StoreCredit.ToString("N0") · ⭐ @_customer.LoyaltyPoints pts
+                    </span>
+                }
+                <button class="x-btn" @onclick="DetachCustomer" title="Detach">✕</button>
+            </span>
         }
         else
         {
-            @foreach (var item in _cart)
-            {
-                <div style="padding:8px 0;border-bottom:1px solid #f3f4f6;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div style="flex:1;">
-                            <div style="font-weight:500;">@item.SKU</div>
-                            <div style="font-size:12px;color:#6b7280;">Rs @item.UnitPrice.ToString("N2")</div>
-                        </div>
-
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            <button class="btn" style="padding:2px 8px;" @onclick="() => ChangeQty(item, -1)">−</button>
-                            <span style="min-width:24px;text-align:center;font-weight:600;">@item.Quantity</span>
-                            <button class="btn" style="padding:2px 8px;" @onclick="() => ChangeQty(item, 1)">+</button>
-                        </div>
-
-                        <button class="btn btn-danger" style="margin-left:8px;padding:2px 8px;"
-                                @onclick="() => RemoveItem(item)">✕</button>
-                    </div>
-
-                    <!-- Per-line discount -->
-                    <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;">
-                        <span style="color:#6b7785;">− Rs</span>
-                        <input class="input" type="number" min="0" step="1" style="width:80px;padding:2px 6px;"
-                               @bind="item.LineDiscountAmount" />
-                        <span style="margin-left:auto;font-weight:600;">
-                            Rs @item.LineNet.ToString("N2")
-                        </span>
-                    </div>
-                </div>
-            }
-
-            <hr style="margin:12px 0;" />
-
-            <!-- Subtotal + order discount + redemptions -->
-            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
-                <span>Items subtotal</span>
-                <span>Rs @ItemsSubtotal.ToString("N2")</span>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px;">
-                <span>Order discount −</span>
-                <input class="input" type="number" min="0" step="1" style="width:100px;padding:2px 6px;"
-                       @bind="_orderDiscount" />
-            </div>
-
-            @if (_customer != null && _customer.StoreCredit > 0)
-            {
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px;color:#15803d;">
-                    <span>Use store credit (max @_customer.StoreCredit.ToString("N0"))</span>
-                    <input class="input" type="number" min="0" max="@_customer.StoreCredit" step="1"
-                           style="width:100px;padding:2px 6px;" @bind="_storeCreditRedeem" />
-                </div>
-            }
-            @if (_customer != null && _customer.LoyaltyPoints > 0)
-            {
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px;color:#a16207;">
-                    <span>Redeem points (have @_customer.LoyaltyPoints)</span>
-                    <input class="input" type="number" min="0" max="@_customer.LoyaltyPoints" step="1"
-                           style="width:100px;padding:2px 6px;" @bind="_loyaltyRedeem" />
-                </div>
-            }
-
-            <hr style="margin:8px 0;" />
-
-            <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-bottom:8px;">
-                <span>Due</span>
-                <span>Rs @AmountDue.ToString("N2")</span>
-            </div>
-
-            <label style="display:block;font-size:13px;color:#374151;margin-bottom:4px;font-weight:500;">
-                Cash received
-            </label>
-            <input class="input full" type="number" min="0" step="1"
-                   placeholder="Enter cash..." @bind="_paidAmount" />
-
-            @if (_paidAmount > 0 && _paidAmount >= AmountDue)
-            {
-                <div style="margin-top:8px;color:#16a34a;font-weight:600;">
-                    Change: Rs @((_paidAmount - AmountDue).ToString("N2"))
-                </div>
-            }
-            else if (_paidAmount > 0)
-            {
-                <div style="margin-top:8px;color:#dc2626;font-size:13px;">
-                    Short by Rs @((AmountDue - _paidAmount).ToString("N2"))
-                </div>
-            }
-
-            <button class="btn btn-primary full" style="margin-top:14px;"
-                    @onclick="Checkout"
-                    disabled="@(_checking || _paidAmount < AmountDue)">
-                @(_checking ? "Processing..." : "Complete Sale")
-            </button>
-
-            <button class="btn full" style="margin-top:8px;" @onclick="ClearCart">Clear cart</button>
+            <button class="icon-btn" @onclick="() => _showCustomerLookup = true">+ Attach customer</button>
         }
 
-        <!-- Receipt -->
-        @if (_lastReceipt != null)
-        {
-            <div style="margin-top:20px;padding:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
-                <div style="font-weight:700;color:#15803d;font-size:16px;margin-bottom:10px;">
-                    ✅ Sale Complete
-                </div>
-                <div id="receipt-printable">
-                    <h3 style="text-align:center;margin:0 0 8px;">RetailSuite</h3>
-                    <p style="text-align:center;margin:0 0 4px;font-size:12px;">@DateTime.Now.ToString("dd MMM yyyy HH:mm")</p>
-                    <hr />
-                    @foreach (var item in _lastReceipt.Items)
-                    {
-                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
-                            <span>@item.SKU × @item.Qty</span>
-                            <span>Rs @item.LineTotal.ToString("N2")</span>
-                        </div>
-                    }
-                    <hr />
-                    <div style="display:flex;justify-content:space-between;font-size:12px;">
-                        <span>Subtotal</span><span>Rs @_lastReceipt.ItemsSubtotal.ToString("N2")</span>
-                    </div>
-                    @if (_lastReceipt.OrderDiscount > 0)
-                    {
-                        <div style="display:flex;justify-content:space-between;font-size:12px;color:#a16207;">
-                            <span>Discount</span><span>− Rs @_lastReceipt.OrderDiscount.ToString("N2")</span>
-                        </div>
-                    }
-                    @if (_lastReceipt.StoreCreditUsed > 0)
-                    {
-                        <div style="display:flex;justify-content:space-between;font-size:12px;color:#15803d;">
-                            <span>Store credit</span><span>− Rs @_lastReceipt.StoreCreditUsed.ToString("N2")</span>
-                        </div>
-                    }
-                    @if (_lastReceipt.LoyaltyUsed > 0)
-                    {
-                        <div style="display:flex;justify-content:space-between;font-size:12px;color:#15803d;">
-                            <span>Loyalty redeemed</span><span>− Rs @_lastReceipt.LoyaltyUsed.ToString("N2")</span>
-                        </div>
-                    }
-                    @if (_lastReceipt.Tax > 0)
-                    {
-                        <div style="display:flex;justify-content:space-between;font-size:12px;">
-                            <span>Tax</span><span>Rs @_lastReceipt.Tax.ToString("N2")</span>
-                        </div>
-                    }
-                    <hr />
-                    <div style="display:flex;justify-content:space-between;font-weight:700;">
-                        <span>Total</span><span>Rs @_lastReceipt.Total.ToString("N2")</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;font-size:13px;">
-                        <span>Paid</span><span>Rs @_lastReceipt.Paid.ToString("N2")</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;color:#15803d;font-weight:700;">
-                        <span>Change</span><span>Rs @_lastReceipt.Change.ToString("N2")</span>
-                    </div>
-                    <hr />
-                    <p style="text-align:center;font-size:11px;color:#6b7280;">Thank you for shopping!</p>
-                </div>
-                <div style="display:flex;gap:8px;margin-top:12px;">
-                    <button class="btn btn-primary" style="flex:1;" @onclick="PrintReceipt">🖨 Print</button>
-                    <button class="btn" style="flex:1;" @onclick="StartNewSale">New sale</button>
-                </div>
+        <button class="icon-btn" @onclick="HoldSale" disabled="@(!_cart.Any() || _checking)">⏸ Hold</button>
+        <button class="icon-btn" @onclick="ShowHeldDrawerAsync">
+            📋 Held
+            @if (_heldCount > 0) { <span class="badge">@_heldCount</span> }
+        </button>
+        <button class="icon-btn" @onclick="() => _showReturnLookup = true">↩ Return</button>
+        <button class="icon-btn" @onclick="() => _showCashCountModal = true">📊 EOD</button>
+    </div>
+
+    <!-- ============================== MAIN AREA ============================== -->
+    <div class="pos-main">
+
+        <!-- ============================== LEFT: PRODUCT PICKER ============================== -->
+        <div class="pos-left">
+
+            <!-- Search bar -->
+            <div class="pos-search-row">
+                <span class="search-icon">🔍</span>
+                <input placeholder="Search SKU, barcode or product name..."
+                       value="@_search"
+                       @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
+                <span class="scan-hint">📷 Scanner active</span>
             </div>
-        }
+
+            <!-- Category chips -->
+            <div class="pos-cat-chips">
+                <div class="pos-chip @(_selectedCategoryId == null ? "active" : "")"
+                     @onclick="() => SelectCategory(null)">
+                    All <span class="count">@_variants.Count</span>
+                </div>
+                @foreach (var cat in CategoryChips)
+                {
+                    <div class="pos-chip @(_selectedCategoryId == cat.Id ? "active" : "")"
+                         @onclick="() => SelectCategory(cat.Id)">
+                        @cat.Name <span class="count">@cat.Count</span>
+                    </div>
+                }
+            </div>
+
+            <!-- Product tile grid -->
+            @if (!_variants.Any())
+            {
+                <div class="pos-empty">
+                    <div style="font-size:32px;margin-bottom:8px;">📦</div>
+                    <p>No products loaded.</p>
+                </div>
+            }
+            else if (!FilteredVariants.Any())
+            {
+                <div class="pos-empty">
+                    <div style="font-size:32px;margin-bottom:8px;">🔍</div>
+                    <p>No products match your filter.</p>
+                </div>
+            }
+            else
+            {
+                <div class="pos-tile-grid">
+                    @foreach (var v in FilteredVariants.Take(120))
+                    {
+                        var oos = v.StockQuantity <= 0;
+                        var stockClass = v.StockQuantity <= 0 ? "stock-out"
+                                       : v.StockQuantity <= 5 ? "stock-low" : "stock-ok";
+                        <div class="pos-tile @(oos ? "out-of-stock" : "")"
+                             @onclick="@(oos ? () => Toast.Show("Out of stock") : (Action)(() => AddToCart(v)))">
+                            <div class="pos-tile-img">
+                                @if (!string.IsNullOrEmpty(v.ImageUrl))
+                                {
+                                    <img src="@v.ImageUrl" alt="@v.ProductName" />
+                                }
+                                else
+                                {
+                                    <span class="placeholder">📦</span>
+                                }
+                            </div>
+                            <div class="pos-tile-name">@v.ProductName</div>
+                            <div class="pos-tile-sku">@v.SKU</div>
+                            <div class="pos-tile-bottom">
+                                <span class="pos-tile-price">Rs @v.Price.ToString("N0")</span>
+                                <span class="pos-stock-badge @stockClass">
+                                    @(v.StockQuantity <= 0 ? "Out" : $"× {v.StockQuantity}")
+                                </span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- ============================== RIGHT: CART ============================== -->
+        <div class="pos-right">
+            <div class="pos-cart">
+                <div class="pos-cart-header">
+                    <h4>🧾 Current Sale</h4>
+                    <span class="pos-cart-count">@_cart.Sum(c => c.Quantity) items</span>
+                </div>
+
+                <div class="pos-cart-items">
+                    @if (!_cart.Any())
+                    {
+                        <div style="padding:30px 10px;text-align:center;color:#9ca3af;">
+                            <div style="font-size:32px;margin-bottom:8px;">🛒</div>
+                            <p style="margin:0;font-size:13px;">Tap a product tile to add it.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var item in _cart)
+                        {
+                            <div class="pos-cart-item">
+                                <div class="top-row">
+                                    <div class="name">
+                                        <div style="font-weight:600;">@item.SKU</div>
+                                        <div class="price">Rs @item.UnitPrice.ToString("N2") each</div>
+                                    </div>
+                                    <div class="qty-stepper">
+                                        <button @onclick="() => ChangeQty(item, -1)">−</button>
+                                        <span class="qty">@item.Quantity</span>
+                                        <button @onclick="() => ChangeQty(item, 1)">+</button>
+                                    </div>
+                                    <button class="remove-btn" @onclick="() => RemoveItem(item)" title="Remove">✕</button>
+                                </div>
+                                <div class="line-discount">
+                                    <span style="color:#6b7785;">Disc Rs</span>
+                                    <input type="number" min="0" step="1" @bind="item.LineDiscountAmount" />
+                                    <span class="line-total">Rs @item.LineNet.ToString("N2")</span>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                @if (_cart.Any())
+                {
+                    <div class="pos-cart-totals">
+                        <div class="row">
+                            <span>Subtotal</span>
+                            <strong>Rs @ItemsSubtotal.ToString("N2")</strong>
+                        </div>
+                        <div class="row discount-row">
+                            <span>Order discount −</span>
+                            <input type="number" min="0" step="1" @bind="_orderDiscount" />
+                        </div>
+                        @if (_customer != null && _customer.StoreCredit > 0)
+                        {
+                            <div class="row credit-row">
+                                <span>Use store credit (max Rs @_customer.StoreCredit.ToString("N0"))</span>
+                                <input type="number" min="0" max="@_customer.StoreCredit" step="1" @bind="_storeCreditRedeem" />
+                            </div>
+                        }
+                        @if (_customer != null && _customer.LoyaltyPoints > 0)
+                        {
+                            <div class="row loyalty-row">
+                                <span>Redeem ⭐ points (max @_customer.LoyaltyPoints)</span>
+                                <input type="number" min="0" max="@_customer.LoyaltyPoints" step="1" @bind="_loyaltyRedeem" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="pos-due">
+                        <span>AMOUNT DUE</span>
+                        <span>Rs @AmountDue.ToString("N2")</span>
+                    </div>
+
+                    <div class="pos-payment">
+                        <label>💵 Cash received</label>
+                        <input class="input full" type="number" min="0" step="1"
+                               placeholder="Enter cash..." @bind="_paidAmount" />
+
+                        @if (_paidAmount > 0 && _paidAmount >= AmountDue)
+                        {
+                            <div class="pos-change">
+                                <span>Change</span>
+                                <strong>Rs @((_paidAmount - AmountDue).ToString("N2"))</strong>
+                            </div>
+                        }
+                        else if (_paidAmount > 0)
+                        {
+                            <div class="pos-short">
+                                Short by Rs @((AmountDue - _paidAmount).ToString("N2"))
+                            </div>
+                        }
+
+                        <button class="btn-checkout" @onclick="Checkout"
+                                disabled="@(_checking || _paidAmount < AmountDue)">
+                            @(_checking ? "Processing..." : "✓ Complete Sale")
+                        </button>
+                        <button class="btn-clear" @onclick="ClearCart">Clear cart</button>
+                    </div>
+                }
+
+                @if (_lastReceipt != null)
+                {
+                    <div class="pos-receipt-box">
+                        <div class="ok-label">✅ Sale Complete</div>
+                        <div id="receipt-printable">
+                            <h3 style="text-align:center;margin:0 0 8px;">RetailSuite</h3>
+                            <p style="text-align:center;margin:0 0 4px;font-size:12px;">@DateTime.Now.ToString("dd MMM yyyy HH:mm")</p>
+                            <hr />
+                            @foreach (var item in _lastReceipt.Items)
+                            {
+                                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
+                                    <span>@item.SKU × @item.Qty</span>
+                                    <span>Rs @item.LineTotal.ToString("N2")</span>
+                                </div>
+                            }
+                            <hr />
+                            <div style="display:flex;justify-content:space-between;font-size:12px;">
+                                <span>Subtotal</span><span>Rs @_lastReceipt.ItemsSubtotal.ToString("N2")</span>
+                            </div>
+                            @if (_lastReceipt.OrderDiscount > 0)
+                            {
+                                <div style="display:flex;justify-content:space-between;font-size:12px;color:#a16207;">
+                                    <span>Discount</span><span>− Rs @_lastReceipt.OrderDiscount.ToString("N2")</span>
+                                </div>
+                            }
+                            @if (_lastReceipt.StoreCreditUsed > 0)
+                            {
+                                <div style="display:flex;justify-content:space-between;font-size:12px;color:#15803d;">
+                                    <span>Store credit</span><span>− Rs @_lastReceipt.StoreCreditUsed.ToString("N2")</span>
+                                </div>
+                            }
+                            @if (_lastReceipt.LoyaltyUsed > 0)
+                            {
+                                <div style="display:flex;justify-content:space-between;font-size:12px;color:#15803d;">
+                                    <span>Loyalty redeemed</span><span>− Rs @_lastReceipt.LoyaltyUsed.ToString("N2")</span>
+                                </div>
+                            }
+                            @if (_lastReceipt.Tax > 0)
+                            {
+                                <div style="display:flex;justify-content:space-between;font-size:12px;">
+                                    <span>Tax</span><span>Rs @_lastReceipt.Tax.ToString("N2")</span>
+                                </div>
+                            }
+                            <hr />
+                            <div style="display:flex;justify-content:space-between;font-weight:700;">
+                                <span>Total</span><span>Rs @_lastReceipt.Total.ToString("N2")</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;font-size:13px;">
+                                <span>Paid</span><span>Rs @_lastReceipt.Paid.ToString("N2")</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;color:#15803d;font-weight:700;">
+                                <span>Change</span><span>Rs @_lastReceipt.Change.ToString("N2")</span>
+                            </div>
+                            <hr />
+                            <p style="text-align:center;font-size:11px;color:#6b7280;">Thank you for shopping!</p>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;">
+                            <button class="btn btn-primary" style="flex:1;" @onclick="PrintReceipt">🖨 Print</button>
+                            <button class="btn" style="flex:1;" @onclick="StartNewSale">New sale</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
     </div>
 </div>
 
@@ -384,6 +629,7 @@
     List<VariantDto> _variants = new();
     List<CartItem>   _cart     = new();
     string           _search   = string.Empty;
+    Guid?            _selectedCategoryId;
     decimal          _paidAmount;
     decimal          _orderDiscount;
     decimal          _storeCreditRedeem;
@@ -421,12 +667,34 @@
     // -------------------------------------------------------------------
     // Computed
     // -------------------------------------------------------------------
-    IEnumerable<VariantDto> FilteredVariants =>
-        string.IsNullOrWhiteSpace(_search)
-            ? _variants
-            : _variants.Where(v =>
-                v.SKU.Contains(_search, StringComparison.OrdinalIgnoreCase)
-             || v.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+    IEnumerable<VariantDto> FilteredVariants
+    {
+        get
+        {
+            IEnumerable<VariantDto> q = _variants;
+            if (_selectedCategoryId.HasValue)
+                q = q.Where(v => v.CategoryId == _selectedCategoryId.Value);
+            if (!string.IsNullOrWhiteSpace(_search))
+                q = q.Where(v =>
+                    v.SKU.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                 || v.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                 || (v.Barcode != null && v.Barcode.Contains(_search, StringComparison.OrdinalIgnoreCase)));
+            return q;
+        }
+    }
+
+    /// <summary>Derive a chip list (id, name, count) from the loaded variants.</summary>
+    IEnumerable<CategoryChip> CategoryChips =>
+        _variants
+            .Where(v => v.CategoryId.HasValue && !string.IsNullOrEmpty(v.CategoryName))
+            .GroupBy(v => new { v.CategoryId, v.CategoryName })
+            .Select(g => new CategoryChip
+            {
+                Id    = g.Key.CategoryId!.Value,
+                Name  = g.Key.CategoryName!,
+                Count = g.Count()
+            })
+            .OrderBy(c => c.Name);
 
     decimal ItemsSubtotal => _cart.Sum(c => c.LineNet);
 
@@ -444,6 +712,8 @@
             return afterLoyalty;
         }
     }
+
+    void SelectCategory(Guid? id) => _selectedCategoryId = id;
 
     // -------------------------------------------------------------------
     // Lifecycle
@@ -482,7 +752,10 @@
                         Price         = item.TryGetProperty("price",         out var pr)  ? pr.GetDecimal()   : 0,
                         TaxRate       = item.TryGetProperty("taxRate",       out var tr)  ? tr.GetDecimal()   : 0,
                         StockQuantity = item.TryGetProperty("stockQuantity", out var sq)  ? sq.GetInt32()     : 0,
-                        ProductName   = item.TryGetProperty("productName",   out var pn)  ? pn.GetString()!   : ""
+                        ProductName   = item.TryGetProperty("productName",   out var pn)  ? pn.GetString()!   : "",
+                        ImageUrl      = item.TryGetProperty("imageUrl",      out var iu) && iu.ValueKind == JsonValueKind.String ? iu.GetString() : null,
+                        CategoryId    = item.TryGetProperty("categoryId",    out var ci) && ci.ValueKind == JsonValueKind.String ? ci.GetGuid()    : (Guid?)null,
+                        CategoryName  = item.TryGetProperty("categoryName",  out var cn) && cn.ValueKind == JsonValueKind.String ? cn.GetString() : null
                     });
                 }
             }
@@ -713,7 +986,6 @@
         _returnResults = new();
         if (string.IsNullOrWhiteSpace(_returnQuery)) return;
 
-        // Try both order# and phone in one go.
         var url = $"api/sales/return-lookup?orderNumber={Uri.EscapeDataString(_returnQuery)}&phone={Uri.EscapeDataString(_returnQuery)}";
         var json = await Http.GetStringAsync(url);
         using var doc = JsonDocument.Parse(json);
@@ -734,7 +1006,6 @@
 
     async Task ProcessReturn(ReturnOrderDto r)
     {
-        // Full-refund all items — simplest UX. Partial returns can be done via /orders detail page.
         var body = new { items = new object[0] };  // empty = refund full order
         var resp = await Http.PostAsJsonAsync($"api/orders/{r.Id}/return", body);
         if (resp.IsSuccessStatusCode)
@@ -752,7 +1023,7 @@
     {
         var body = new
         {
-            cashierId = (Guid?)null,  // server defaults to caller's userId is not implemented; explicit cashierId optional
+            cashierId = (Guid?)null,
             date = (DateTime?)null,
             openingFloat = _openingFloat,
             countedCash = _countedCash
@@ -825,6 +1096,7 @@
             };
 
             ClearCart();
+            await LoadVariants();   // refresh stock after sale
             await LoadHeldCount();
             Toast.Show("Sale complete!");
         }
@@ -838,7 +1110,7 @@
     }
 
     // -------------------------------------------------------------------
-    // Barcode scanner (unchanged from before)
+    // Barcode scanner
     // -------------------------------------------------------------------
     void OnBarcodeKeyDown(KeyboardEventArgs e)
     {
@@ -862,12 +1134,6 @@
         _barcodeTimer.Start();
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        // Refresh held count + held drawer contents when toggled open.
-    }
-
-    // Held drawer auto-loads when opened
     async Task ShowHeldDrawerAsync()
     {
         await LoadHeldSales();
@@ -886,6 +1152,16 @@
         public decimal TaxRate { get; set; }
         public int     StockQuantity { get; set; }
         public string  ProductName { get; set; } = "";
+        public string? ImageUrl { get; set; }
+        public Guid?   CategoryId { get; set; }
+        public string? CategoryName { get; set; }
+    }
+
+    class CategoryChip
+    {
+        public Guid   Id    { get; set; }
+        public string Name  { get; set; } = "";
+        public int    Count { get; set; }
     }
 
     class CartItem
