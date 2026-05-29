@@ -209,6 +209,67 @@
         background:#f0fdf4; border:1px solid #86efac; border-radius:10px;
     }
     .pos-receipt-box .ok-label { font-weight:700; color:#15803d; font-size:14px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+
+    /* ============================== Favorites strip ============================== */
+    .pos-favs-row {
+        background:linear-gradient(135deg,#fffbeb 0%, #fef3c7 100%);
+        border:1px solid #fcd34d; border-radius:10px; padding:10px 12px;
+        display:flex; align-items:center; gap:10px;
+    }
+    .pos-favs-row .label {
+        font-weight:700; color:#a16207; font-size:13px; white-space:nowrap;
+        display:flex; align-items:center; gap:4px;
+    }
+    .pos-favs-scroll { display:flex; gap:8px; overflow-x:auto; flex:1; padding:2px; }
+    .pos-favs-scroll::-webkit-scrollbar { height:6px; }
+    .pos-fav-mini {
+        background:#fff; border:1px solid #fcd34d; border-radius:8px;
+        padding:6px 10px; cursor:pointer; transition:.15s; min-width:110px;
+        text-align:left; flex-shrink:0;
+    }
+    .pos-fav-mini:hover { transform:translateY(-1px); box-shadow:0 4px 10px rgba(251,191,36,.3); }
+    .pos-fav-mini .nm { font-size:12px; font-weight:600; color:#111827;
+                       display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical;
+                       overflow:hidden; }
+    .pos-fav-mini .pr { font-size:13px; font-weight:700; color:#0d3b66; margin-top:2px; }
+    .pos-fav-empty { color:#a16207; font-size:12px; font-style:italic; }
+
+    .pos-tile .pin-btn {
+        position:absolute; top:6px; right:6px;
+        background:rgba(255,255,255,.9); border:none; border-radius:50%;
+        width:24px; height:24px; cursor:pointer;
+        font-size:12px; padding:0; line-height:1;
+        box-shadow:0 1px 3px rgba(0,0,0,.1); opacity:0; transition:.15s;
+    }
+    .pos-tile:hover .pin-btn { opacity:1; }
+    .pos-tile .pin-btn.pinned { opacity:1; background:#fef3c7; color:#a16207; }
+
+    /* ============================== Keypad ============================== */
+    .pos-keypad { padding:0 16px 14px; }
+    .pos-keypad-quicks {
+        display:grid; grid-template-columns:repeat(4, 1fr); gap:5px; margin-bottom:6px;
+    }
+    .pos-keypad-quicks button {
+        background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:6px;
+        padding:8px 4px; font-size:12px; font-weight:600; cursor:pointer; transition:.1s;
+    }
+    .pos-keypad-quicks button:hover { background:#dbeafe; }
+    .pos-keypad-quicks .exact { background:#dcfce7; color:#15803d; border-color:#86efac; }
+    .pos-keypad-quicks .exact:hover { background:#bbf7d0; }
+    .pos-keypad-grid {
+        display:grid; grid-template-columns:repeat(3, 1fr); gap:5px;
+    }
+    .pos-keypad-grid button {
+        background:#fff; border:1px solid #e5e7eb; border-radius:8px;
+        padding:14px 0; font-size:18px; font-weight:700; cursor:pointer;
+        color:#111827; transition:.1s;
+    }
+    .pos-keypad-grid button:hover  { background:#eff6ff; border-color:#1d4ed8; color:#1d4ed8; }
+    .pos-keypad-grid button:active { transform:scale(.96); }
+    .pos-keypad-grid .back { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+    .pos-keypad-grid .back:hover { background:#fee2e2; }
+    .pos-keypad-grid .clear { background:#f3f4f6; color:#374151; font-size:13px; grid-column:span 2; }
+    .pos-keypad-grid .clear:hover { background:#e5e7eb; }
 </style>
 
 <!-- Hidden barcode-scanner input -->
@@ -267,6 +328,28 @@
                 <span class="scan-hint">📷 Scanner active</span>
             </div>
 
+            <!-- Favorites strip -->
+            <div class="pos-favs-row">
+                <span class="label">⭐ Favorites</span>
+                <div class="pos-favs-scroll">
+                    @if (!_favorites.Any())
+                    {
+                        <span class="pos-fav-empty">Hover a product and click ⭐ to pin it here for one-tap access.</span>
+                    }
+                    else
+                    {
+                        @foreach (var v in FavoriteVariants)
+                        {
+                            var oos = v.StockQuantity <= 0;
+                            <div class="pos-fav-mini" @onclick="@(oos ? () => Toast.Show("Out of stock") : (Action)(() => AddToCart(v)))" title="@v.ProductName">
+                                <div class="nm">@v.ProductName</div>
+                                <div class="pr">Rs @v.Price.ToString("N0")</div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
             <!-- Category chips -->
             <div class="pos-cat-chips">
                 <div class="pos-chip @(_selectedCategoryId == null ? "active" : "")"
@@ -307,6 +390,12 @@
                                        : v.StockQuantity <= 5 ? "stock-low" : "stock-ok";
                         <div class="pos-tile @(oos ? "out-of-stock" : "")"
                              @onclick="@(oos ? () => Toast.Show("Out of stock") : (Action)(() => AddToCart(v)))">
+                            <button class="pin-btn @(_favorites.Contains(v.Id) ? "pinned" : "")"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => ToggleFavorite(v.Id)"
+                                    title="@(_favorites.Contains(v.Id) ? "Unpin" : "Pin to favorites")">
+                                @(_favorites.Contains(v.Id) ? "⭐" : "☆")
+                            </button>
                             <div class="pos-tile-img">
                                 @if (!string.IsNullOrEmpty(v.ImageUrl))
                                 {
@@ -408,8 +497,8 @@
 
                     <div class="pos-payment">
                         <label>💵 Cash received</label>
-                        <input class="input full" type="number" min="0" step="1"
-                               placeholder="Enter cash..." @bind="_paidAmount" />
+                        <input class="input full" type="number" min="0" step="1" readonly
+                               placeholder="0" @bind="_paidAmount" style="font-size:18px;font-weight:700;text-align:right;" />
 
                         @if (_paidAmount > 0 && _paidAmount >= AmountDue)
                         {
@@ -430,6 +519,32 @@
                             @(_checking ? "Processing..." : "✓ Complete Sale")
                         </button>
                         <button class="btn-clear" @onclick="ClearCart">Clear cart</button>
+                    </div>
+
+                    <!-- ============================== Inline numeric keypad ============================== -->
+                    <div class="pos-keypad">
+                        <!-- Quick amounts -->
+                        <div class="pos-keypad-quicks">
+                            <button @onclick="() => AddQuickAmount(100)">+100</button>
+                            <button @onclick="() => AddQuickAmount(500)">+500</button>
+                            <button @onclick="() => AddQuickAmount(1000)">+1000</button>
+                            <button class="exact" @onclick="SetExactCash">Exact</button>
+                        </div>
+                        <!-- 3x4 numpad -->
+                        <div class="pos-keypad-grid">
+                            <button @onclick="() => AppendDigit(7)">7</button>
+                            <button @onclick="() => AppendDigit(8)">8</button>
+                            <button @onclick="() => AppendDigit(9)">9</button>
+                            <button @onclick="() => AppendDigit(4)">4</button>
+                            <button @onclick="() => AppendDigit(5)">5</button>
+                            <button @onclick="() => AppendDigit(6)">6</button>
+                            <button @onclick="() => AppendDigit(1)">1</button>
+                            <button @onclick="() => AppendDigit(2)">2</button>
+                            <button @onclick="() => AppendDigit(3)">3</button>
+                            <button class="clear" @onclick="ClearCash">Clear</button>
+                            <button @onclick="() => AppendDigit(0)">0</button>
+                            <button class="back" @onclick="BackspaceCash">⌫</button>
+                        </div>
                     </div>
                 }
 
@@ -664,6 +779,10 @@
     string _barcodeBuffer = "";
     System.Timers.Timer? _barcodeTimer;
 
+    // Favorites — per-user via localStorage
+    const string FAV_KEY = "pos_favorites";
+    HashSet<Guid> _favorites = new();
+
     // -------------------------------------------------------------------
     // Computed
     // -------------------------------------------------------------------
@@ -715,6 +834,57 @@
 
     void SelectCategory(Guid? id) => _selectedCategoryId = id;
 
+    /// <summary>The variants the user has pinned, in the original load order.</summary>
+    IEnumerable<VariantDto> FavoriteVariants =>
+        _variants.Where(v => _favorites.Contains(v.Id));
+
+    // ---- Favorites: load / toggle / persist via localStorage --------------
+    async Task LoadFavoritesAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", FAV_KEY);
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var ids = JsonSerializer.Deserialize<List<Guid>>(raw);
+                if (ids != null) _favorites = new HashSet<Guid>(ids);
+            }
+        }
+        catch { /* localStorage unavailable on first prerender — silent */ }
+    }
+
+    async Task SaveFavoritesAsync()
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(_favorites.ToList());
+            await JS.InvokeVoidAsync("localStorage.setItem", FAV_KEY, json);
+        }
+        catch { }
+    }
+
+    async Task ToggleFavorite(Guid variantId)
+    {
+        if (!_favorites.Add(variantId)) _favorites.Remove(variantId);
+        await SaveFavoritesAsync();
+    }
+
+    // ---- Numeric keypad helpers -------------------------------------------
+    /// <summary>Append a digit to the cash-received amount (treats it as an integer rupee value).</summary>
+    void AppendDigit(int digit)
+    {
+        // Shift existing value up by 10 and add the new digit — simple and predictable.
+        var current = (long)_paidAmount;
+        var next    = current * 10 + digit;
+        if (next > 99_999_999) return;  // sanity cap
+        _paidAmount = next;
+    }
+
+    void BackspaceCash() => _paidAmount = (long)_paidAmount / 10;
+    void ClearCash() => _paidAmount = 0;
+    void AddQuickAmount(decimal amt) => _paidAmount += amt;
+    void SetExactCash() => _paidAmount = AmountDue;
+
     // -------------------------------------------------------------------
     // Lifecycle
     // -------------------------------------------------------------------
@@ -723,6 +893,8 @@
         if (!firstRender) return;
         await LoadVariants();
         await LoadHeldCount();
+        await LoadFavoritesAsync();
+        StateHasChanged();
         try { await JS.InvokeVoidAsync("focusBarcodeInput"); } catch { }
     }
 
