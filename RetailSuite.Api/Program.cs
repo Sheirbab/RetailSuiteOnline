@@ -20,6 +20,7 @@ using RetailSuite.Infrastructure.Modules.Images.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Receiving.Services;
+using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Payments;
@@ -95,6 +96,10 @@ try
     // Suppliers + Receiving (purchase orders).
     builder.Services.AddScoped<IReceivingOrderNumberGenerator, ReceivingOrderNumberGenerator>();
     builder.Services.AddScoped<IReceivingOrderService, ReceivingOrderService>();
+
+    // Supplier returns + credit notes.
+    builder.Services.AddScoped<ISupplierReturnNumberGenerator, SupplierReturnNumberGenerator>();
+    builder.Services.AddScoped<ISupplierReturnService, SupplierReturnService>();
 
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)

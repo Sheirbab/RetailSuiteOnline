@@ -1,0 +1,285 @@
+@page "/supplier-returns"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div>
+        <h3 style="margin:0;">Supplier returns</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Return damaged, wrong, or over-shipped goods to the supplier. Completing a return reduces stock and issues a credit note.
+        </p>
+    </div>
+    <div>
+        <a class="btn" href="/supplier-returns/credit-notes">📜 Credit notes</a>
+        <button class="btn btn-primary" @onclick="OpenCreate">+ New return</button>
+    </div>
+</div>
+
+<!-- Status filter chips -->
+<div style="display:flex;gap:6px;margin-bottom:14px;">
+    @foreach (var s in StatusOptions)
+    {
+        <button class="btn @( _statusFilter == s.Value ? "btn-primary" : "")"
+                style="padding:6px 12px;font-size:13px;"
+                @onclick="() => SetStatus(s.Value)">
+            @s.Label
+        </button>
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_rows == null || !_rows.Any())
+{
+    <div class="card" style="text-align:center;color:#9ca3af;padding:30px;">
+        <div style="font-size:32px;margin-bottom:6px;">📦</div>
+        <p>No supplier returns found.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Return #</th>
+                    <th>Supplier</th>
+                    <th>Reason</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td style="font-family:monospace;font-weight:600;">@r.ReturnNumber</td>
+                        <td>@r.SupplierName</td>
+                        <td>@r.Reason</td>
+                        <td>@r.ItemCount</td>
+                        <td>Rs @r.TotalValue.ToString("N2")</td>
+                        <td>
+                            <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:@StatusBg(r.Status);color:@StatusFg(r.Status);">
+                                @r.Status
+                            </span>
+                        </td>
+                        <td>@r.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/supplier-returns/{r.Id}")">
+                                Open
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- ============================ Create modal ============================ -->
+<Modal Visible="@_showCreate" OnClose="() => _showCreate = false">
+    <h3 style="margin-bottom:14px;">New supplier return</h3>
+
+    <label style="font-size:12px;color:#6b7280;">Supplier *</label>
+    <select class="input full" @bind="_newSupplierId" style="margin-bottom:8px;">
+        <option value="">— Pick a supplier —</option>
+        @if (_suppliers != null)
+        {
+            @foreach (var s in _suppliers)
+            {
+                <option value="@s.Id">@s.Name</option>
+            }
+        }
+    </select>
+
+    <label style="font-size:12px;color:#6b7280;">Reason *</label>
+    <select class="input full" @bind="_newReason" style="margin-bottom:8px;">
+        <option value="Damaged">Damaged / defective</option>
+        <option value="WrongItem">Wrong item</option>
+        <option value="OverShipment">Over-shipment</option>
+        <option value="Other">Other</option>
+    </select>
+
+    <label style="font-size:12px;color:#6b7280;">Notes (optional)</label>
+    <textarea class="input full" rows="3" @bind="_newNotes"
+              placeholder="Brief explanation of the return..." style="margin-bottom:12px;"></textarea>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" @onclick="() => _showCreate = false">Cancel</button>
+        <button class="btn btn-primary" disabled="@_creating" @onclick="CreateReturn">
+            @(_creating ? "Creating..." : "Create draft")
+        </button>
+    </div>
+</Modal>
+
+@code {
+    bool _loading = true;
+    List<ReturnRow>? _rows;
+    string? _statusFilter;
+    List<SupplierOption>? _suppliers;
+
+    // Create-modal form
+    bool   _showCreate;
+    bool   _creating;
+    string _newSupplierId = "";
+    string _newReason     = "Damaged";
+    string _newNotes      = "";
+
+    static readonly (string Label, string? Value)[] StatusOptions = new[]
+    {
+        ("All",          (string?)null),
+        ("Draft",        "Draft"),
+        ("Submitted",    "Submitted"),
+        ("Completed",    "Completed"),
+        ("Cancelled",    "Cancelled")
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadSuppliers();
+            await Load();
+        }
+    }
+
+    async Task SetStatus(string? s) { _statusFilter = s; await Load(); }
+
+    async Task Load()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var url = "api/supplier-returns";
+            if (!string.IsNullOrEmpty(_statusFilter)) url += $"?status={_statusFilter}";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            _rows = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _rows.Add(new ReturnRow
+                    {
+                        Id           = e.GetProperty("id").GetGuid(),
+                        ReturnNumber = e.GetProperty("returnNumber").GetString() ?? "",
+                        SupplierName = e.TryGetProperty("supplierName", out var sn) ? (sn.GetString() ?? "—") : "—",
+                        Status       = e.GetProperty("status").GetString() ?? "",
+                        Reason       = e.GetProperty("reason").GetString() ?? "",
+                        TotalValue   = e.GetProperty("totalValue").GetDecimal(),
+                        ItemCount    = e.GetProperty("itemCount").GetInt32(),
+                        CreatedAt    = e.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    async Task LoadSuppliers()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/suppliers?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _suppliers = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _suppliers.Add(new SupplierOption
+                    {
+                        Id   = e.GetProperty("id").GetGuid(),
+                        Name = e.GetProperty("name").GetString() ?? ""
+                    });
+                }
+            }
+        }
+        catch { }
+    }
+
+    void OpenCreate()
+    {
+        _newSupplierId = ""; _newReason = "Damaged"; _newNotes = "";
+        _showCreate = true;
+    }
+
+    async Task CreateReturn()
+    {
+        if (string.IsNullOrWhiteSpace(_newSupplierId))
+        {
+            Toast.Show("Pick a supplier.");
+            return;
+        }
+
+        _creating = true;
+        try
+        {
+            var body = new
+            {
+                supplierId = Guid.Parse(_newSupplierId),
+                reason     = _newReason,
+                notes      = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes
+            };
+            var resp = await Http.PostAsJsonAsync("api/supplier-returns", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Toast.Show($"Create failed: {msg}");
+                return;
+            }
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("data").GetProperty("id").GetGuid();
+            _showCreate = false;
+            Nav.NavigateTo($"/supplier-returns/{id}");
+        }
+        catch (Exception ex) { Toast.Show($"Error: {ex.Message}"); }
+        finally { _creating = false; }
+    }
+
+    static string StatusBg(string s) => s switch
+    {
+        "Draft"     => "#f3f4f6",
+        "Submitted" => "#dbeafe",
+        "Completed" => "#dcfce7",
+        "Cancelled" => "#fee2e2",
+        _ => "#f3f4f6"
+    };
+    static string StatusFg(string s) => s switch
+    {
+        "Draft"     => "#374151",
+        "Submitted" => "#1d4ed8",
+        "Completed" => "#15803d",
+        "Cancelled" => "#b91c1c",
+        _ => "#374151"
+    };
+
+    class ReturnRow
+    {
+        public Guid     Id           { get; set; }
+        public string   ReturnNumber { get; set; } = "";
+        public string   SupplierName { get; set; } = "";
+        public string   Status       { get; set; } = "";
+        public string   Reason       { get; set; } = "";
+        public decimal  TotalValue   { get; set; }
+        public int      ItemCount    { get; set; }
+        public DateTime CreatedAt    { get; set; }
+    }
+
+    class SupplierOption
+    {
+        public Guid   Id   { get; set; }
+        public string Name { get; set; } = "";
+    }
+}

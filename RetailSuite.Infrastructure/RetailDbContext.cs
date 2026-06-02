@@ -6,6 +6,7 @@ using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Receiving.Entities;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
+using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Payments;
@@ -90,6 +91,13 @@ public class RetailDbContext : DbContext
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<ReceivingOrder> ReceivingOrders => Set<ReceivingOrder>();
     public DbSet<ReceivingOrderItem> ReceivingOrderItems => Set<ReceivingOrderItem>();
+
+    // -----------------------------
+    // Supplier returns + credit notes
+    // -----------------------------
+    public DbSet<SupplierReturn>     SupplierReturns     => Set<SupplierReturn>();
+    public DbSet<SupplierReturnItem> SupplierReturnItems => Set<SupplierReturnItem>();
+    public DbSet<SupplierCreditNote> SupplierCreditNotes => Set<SupplierCreditNote>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -776,6 +784,86 @@ public class RetailDbContext : DbContext
             b.HasOne<ProductVariant>()
                 .WithMany()
                 .HasForeignKey(i => i.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =====================================================
+        //  Supplier returns + credit notes
+        // =====================================================
+        modelBuilder.Entity<SupplierReturn>(b =>
+        {
+            b.ToTable("SupplierReturns");
+            b.HasKey(r => r.Id);
+
+            b.Property(r => r.ReturnNumber).IsRequired().HasMaxLength(50);
+            b.Property(r => r.Notes).HasMaxLength(1000);
+            b.Property(r => r.Currency).IsRequired().HasMaxLength(3);
+            b.Property(r => r.TotalValue).HasColumnType("decimal(18,2)");
+            b.Property(r => r.Status).HasConversion<int>();
+            b.Property(r => r.Reason).HasConversion<int>();
+
+            b.HasIndex(r => new { r.TenantId, r.ReturnNumber }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status });
+            b.HasIndex(r => r.SupplierId);
+            b.HasIndex(r => r.SourceReceivingOrderId);
+
+            b.HasOne<Supplier>()
+                .WithMany()
+                .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne<ReceivingOrder>()
+                .WithMany()
+                .HasForeignKey(r => r.SourceReceivingOrderId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            b.HasMany(r => r.Items)
+                .WithOne()
+                .HasForeignKey(i => i.SupplierReturnId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SupplierReturnItem>(b =>
+        {
+            b.ToTable("SupplierReturnItems");
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.Sku).IsRequired().HasMaxLength(100);
+            b.Property(i => i.Notes).HasMaxLength(500);
+            b.Property(i => i.UnitCost).HasColumnType("decimal(18,4)");
+
+            b.HasIndex(i => i.SupplierReturnId);
+            b.HasIndex(i => i.ProductVariantId);
+
+            b.HasOne<ProductVariant>()
+                .WithMany()
+                .HasForeignKey(i => i.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SupplierCreditNote>(b =>
+        {
+            b.ToTable("SupplierCreditNotes");
+            b.HasKey(c => c.Id);
+
+            b.Property(c => c.CreditNoteNumber).IsRequired().HasMaxLength(50);
+            b.Property(c => c.Currency).IsRequired().HasMaxLength(3);
+            b.Property(c => c.Notes).HasMaxLength(1000);
+            b.Property(c => c.Amount).HasColumnType("decimal(18,2)");
+            b.Property(c => c.AppliedAmount).HasColumnType("decimal(18,2)");
+
+            b.HasIndex(c => new { c.TenantId, c.CreditNoteNumber }).IsUnique();
+            b.HasIndex(c => c.SupplierId);
+            b.HasIndex(c => c.SupplierReturnId).IsUnique();
+
+            b.HasOne<Supplier>()
+                .WithMany()
+                .HasForeignKey(c => c.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne<SupplierReturn>()
+                .WithMany()
+                .HasForeignKey(c => c.SupplierReturnId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

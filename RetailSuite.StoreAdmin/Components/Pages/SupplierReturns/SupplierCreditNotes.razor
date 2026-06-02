@@ -1,0 +1,125 @@
+@page "/supplier-returns/credit-notes"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div>
+        <a class="btn" style="font-size:12px;padding:3px 10px;margin-bottom:8px;"
+           href="/supplier-returns">← All returns</a>
+        <h3 style="margin:0;">Supplier credit notes</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Running ledger of credits owed by suppliers. Issued automatically when a return is completed.
+        </p>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_rows == null || !_rows.Any())
+{
+    <div class="card" style="text-align:center;color:#9ca3af;padding:30px;">
+        <p>No credit notes issued yet.</p>
+    </div>
+}
+else
+{
+    <div style="display:flex;gap:14px;margin-bottom:14px;">
+        <div class="card" style="flex:1;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;">Total issued</div>
+            <div style="font-size:22px;font-weight:700;color:#0d3b66;">Rs @_rows.Sum(r => r.Amount).ToString("N2")</div>
+        </div>
+        <div class="card" style="flex:1;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;">Remaining (unused)</div>
+            <div style="font-size:22px;font-weight:700;color:#15803d;">Rs @_rows.Sum(r => r.Remaining).ToString("N2")</div>
+        </div>
+        <div class="card" style="flex:1;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;">Suppliers</div>
+            <div style="font-size:22px;font-weight:700;color:#374151;">@_rows.Select(r => r.SupplierId).Distinct().Count()</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <table class="table" style="margin:0;">
+            <thead>
+                <tr>
+                    <th>Credit note #</th>
+                    <th>Supplier</th>
+                    <th>Amount</th>
+                    <th>Applied</th>
+                    <th>Remaining</th>
+                    <th>Issued</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td style="font-family:monospace;font-weight:600;">@r.CreditNoteNumber</td>
+                        <td>@r.SupplierName</td>
+                        <td>Rs @r.Amount.ToString("N2")</td>
+                        <td>Rs @r.AppliedAmount.ToString("N2")</td>
+                        <td style="font-weight:700;color:#15803d;">Rs @r.Remaining.ToString("N2")</td>
+                        <td>@r.IssuedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    bool _loading = true;
+    List<CreditRow>? _rows;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/supplier-returns/credit-notes");
+            using var doc = JsonDocument.Parse(json);
+            _rows = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _rows.Add(new CreditRow
+                    {
+                        Id               = e.GetProperty("id").GetGuid(),
+                        CreditNoteNumber = e.GetProperty("creditNoteNumber").GetString() ?? "",
+                        SupplierId       = e.GetProperty("supplierId").GetGuid(),
+                        SupplierName     = e.TryGetProperty("supplierName", out var sn) ? (sn.GetString() ?? "—") : "—",
+                        Amount           = e.GetProperty("amount").GetDecimal(),
+                        AppliedAmount    = e.GetProperty("appliedAmount").GetDecimal(),
+                        Remaining        = e.GetProperty("remaining").GetDecimal(),
+                        IssuedAt         = e.GetProperty("issuedAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    class CreditRow
+    {
+        public Guid     Id               { get; set; }
+        public string   CreditNoteNumber { get; set; } = "";
+        public Guid     SupplierId       { get; set; }
+        public string   SupplierName     { get; set; } = "";
+        public decimal  Amount           { get; set; }
+        public decimal  AppliedAmount    { get; set; }
+        public decimal  Remaining        { get; set; }
+        public DateTime IssuedAt         { get; set; }
+    }
+}
