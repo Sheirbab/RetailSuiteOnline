@@ -95,9 +95,10 @@ public class RetailDbContext : DbContext
     // -----------------------------
     // Supplier returns + credit notes
     // -----------------------------
-    public DbSet<SupplierReturn>     SupplierReturns     => Set<SupplierReturn>();
-    public DbSet<SupplierReturnItem> SupplierReturnItems => Set<SupplierReturnItem>();
-    public DbSet<SupplierCreditNote> SupplierCreditNotes => Set<SupplierCreditNote>();
+    public DbSet<SupplierReturn>             SupplierReturns             => Set<SupplierReturn>();
+    public DbSet<SupplierReturnItem>         SupplierReturnItems         => Set<SupplierReturnItem>();
+    public DbSet<SupplierCreditNote>         SupplierCreditNotes         => Set<SupplierCreditNote>();
+    public DbSet<SupplierCreditApplication>  SupplierCreditApplications  => Set<SupplierCreditApplication>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -864,6 +865,29 @@ public class RetailDbContext : DbContext
             b.HasOne<SupplierReturn>()
                 .WithMany()
                 .HasForeignKey(c => c.SupplierReturnId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SupplierCreditApplication>(b =>
+        {
+            b.ToTable("SupplierCreditApplications");
+            b.HasKey(a => a.Id);
+
+            b.Property(a => a.Amount).HasColumnType("decimal(18,2)");
+            b.Property(a => a.Notes).HasMaxLength(500);
+
+            b.HasIndex(a => a.CreditNoteId);
+            b.HasIndex(a => a.ReceivingOrderId);
+            b.HasIndex(a => a.SupplierId);
+
+            b.HasOne<SupplierCreditNote>()
+                .WithMany()
+                .HasForeignKey(a => a.CreditNoteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne<ReceivingOrder>()
+                .WithMany()
+                .HasForeignKey(a => a.ReceivingOrderId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

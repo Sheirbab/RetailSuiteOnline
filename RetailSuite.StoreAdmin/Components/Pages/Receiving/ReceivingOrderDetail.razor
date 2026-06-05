@@ -24,6 +24,15 @@ else if (order != null)
             <div><strong>Status:</strong> @StatusBadge(order.Status)</div>
             <div><strong>Expected total:</strong> Rs @order.ExpectedTotal.ToString("N2")</div>
             <div><strong>Received total:</strong> Rs @order.ReceivedTotal.ToString("N2")</div>
+            @if (_appliedCredit > 0)
+            {
+                <div style="color:#15803d;">
+                    <strong>Credit applied:</strong> − Rs @_appliedCredit.ToString("N2")
+                </div>
+                <div>
+                    <strong>Net payable:</strong> Rs @(Math.Max(0, order.ReceivedTotal - _appliedCredit).ToString("N2"))
+                </div>
+            }
             @if (!string.IsNullOrEmpty(order.SupplierReference))
             {
                 <div><strong>Supplier ref:</strong> @order.SupplierReference</div>
@@ -197,6 +206,114 @@ else if (order != null)
         }
     </Modal>
 
+    <!-- ============================================================
+         Supplier credit panel — shows any unused credit from prior
+         supplier-returns and lets the user apply it against this PO.
+         ============================================================ -->
+    @if (order.Status != "Cancelled" && order.Status != "Draft" && order.SupplierId.HasValue)
+    {
+        <div class="card" style="margin-bottom:16px;background:#f0fdf4;border:1px solid #86efac;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <h4 style="margin:0;color:#15803d;">💳 Supplier credit</h4>
+                    <p style="margin:4px 0 0;color:#374151;font-size:13px;">
+                        Available: <strong>Rs @_availableCredit.ToString("N2")</strong>
+                        @if (_appliedCredit > 0)
+                        {
+                            <span> · Applied to this PO: <strong>Rs @_appliedCredit.ToString("N2")</strong></span>
+                        }
+                    </p>
+                </div>
+                @if (_availableCredit > 0)
+                {
+                    <button class="btn btn-primary" @onclick="OpenApplyCredit">Apply credit</button>
+                }
+            </div>
+            @if (_appliedHistory.Any())
+            {
+                <table class="table" style="margin-top:10px;font-size:12px;">
+                    <thead>
+                        <tr><th>Credit note</th><th>Amount</th><th>When</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in _appliedHistory)
+                        {
+                            <tr>
+                                <td style="font-family:monospace;">@a.CreditNoteNumber</td>
+                                <td>Rs @a.Amount.ToString("N2")</td>
+                                <td>@a.AppliedAt.ToLocalTime().ToString("dd MMM HH:mm")</td>
+                                <td style="color:#6b7280;">@(a.Notes ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+<!-- ============================ Apply-credit modal ============================ -->
+<Modal Visible="@_showApplyCredit" OnClose="() => _showApplyCredit = false">
+    <h3 style="margin-bottom:10px;">Apply supplier credit</h3>
+    <p style="color:#6b7280;font-size:13px;margin-top:0;">
+        Pick a credit note (oldest shown first) and the amount to apply against this receiving order.
+    </p>
+
+    @if (_availableNotes == null || !_availableNotes.Any())
+    {
+        <p style="color:#9ca3af;">No credit notes available for this supplier.</p>
+    }
+    else
+    {
+        <table class="table" style="font-size:13px;">
+            <thead>
+                <tr><th></th><th>Credit note</th><th>Remaining</th><th>Issued</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var n in _availableNotes)
+                {
+                    <tr>
+                        <td>
+                            <input type="radio" name="creditPick"
+                                   checked="@(_pickedCreditNoteId == n.Id)"
+                                   @onchange="() => PickCredit(n)" />
+                        </td>
+                        <td style="font-family:monospace;">@n.CreditNoteNumber</td>
+                        <td><strong>Rs @n.Remaining.ToString("N2")</strong> / Rs @n.Amount.ToString("N2")</td>
+                        <td>@n.IssuedAt.ToLocalTime().ToString("dd MMM yyyy")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">Amount to apply (Rs)</label>
+                <input class="input full" type="number" min="0" step="0.01"
+                       @bind="_applyAmount" />
+                @if (_pickedCreditMax > 0)
+                {
+                    <p style="font-size:11px;color:#6b7280;margin:2px 0;">
+                        Max usable: Rs @_pickedCreditMax.ToString("N2")
+                        (capped at PO outstanding)
+                    </p>
+                }
+            </div>
+        </div>
+
+        <label style="font-size:12px;color:#6b7280;margin-top:6px;display:block;">Notes (optional)</label>
+        <input class="input full" @bind="_applyNotes"
+               placeholder="e.g. 'Offset against this batch invoice'" style="margin-bottom:12px;" />
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" @onclick="() => _showApplyCredit = false">Cancel</button>
+            <button class="btn btn-primary" disabled="@(_applyAmount <= 0 || !_pickedCreditNoteId.HasValue || _busyApply)"
+                    @onclick="ConfirmApply">
+                @(_busyApply ? "Applying..." : "Apply")
+            </button>
+        </div>
+    }
+</Modal>
+
     @if (order.Status == "Draft")
     {
         <div class="card">
@@ -252,6 +369,19 @@ else if (order != null)
     string? _error;
 
     Dictionary<Guid, int> lineQtyInputs = new();
+
+    // ---- Credit panel state ----
+    decimal _availableCredit;
+    decimal _appliedCredit;
+    List<CreditApplicationDto> _appliedHistory = new();
+    List<CreditNoteDto>? _availableNotes;
+
+    bool _showApplyCredit;
+    bool _busyApply;
+    Guid? _pickedCreditNoteId;
+    decimal _pickedCreditMax;
+    decimal _applyAmount;
+    string? _applyNotes;
 
     // Batch-receive state.
     HashSet<Guid> selectedLineIds = new();
@@ -401,6 +531,8 @@ else if (order != null)
             if (order != null)
                 foreach (var ln in order.Items)
                     lineQtyInputs[ln.Id] = ln.OutstandingQuantity;
+
+            await LoadCreditPanelAsync();
         }
         catch (Exception ex)
         {
@@ -408,6 +540,119 @@ else if (order != null)
         }
         isLoading = false;
         StateHasChanged();
+    }
+
+    /// <summary>Load supplier credit available + amounts already applied to this PO.</summary>
+    async Task LoadCreditPanelAsync()
+    {
+        _availableCredit = 0m;
+        _appliedCredit   = 0m;
+        _appliedHistory  = new();
+        _availableNotes  = null;
+
+        if (order == null || !order.SupplierId.HasValue) return;
+
+        // What's already been applied to THIS PO?
+        try
+        {
+            var json = await Http.GetStringAsync(
+                $"api/supplier-returns/credit-notes/applications?receivingOrderId={Id}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _appliedCredit = d.GetProperty("totalApplied").GetDecimal();
+            if (d.TryGetProperty("applications", out var apps) && apps.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var a in apps.EnumerateArray())
+                {
+                    _appliedHistory.Add(new CreditApplicationDto
+                    {
+                        Id               = a.GetProperty("id").GetGuid(),
+                        CreditNoteNumber = a.TryGetProperty("creditNoteNumber", out var cn) ? (cn.GetString() ?? "") : "",
+                        Amount           = a.GetProperty("amount").GetDecimal(),
+                        AppliedAt        = a.GetProperty("appliedAt").GetDateTime(),
+                        Notes            = a.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String ? nt.GetString() : null
+                    });
+                }
+            }
+        }
+        catch { /* non-fatal */ }
+
+        // What credit is available across all notes for this supplier (post-application)?
+        try
+        {
+            var json = await Http.GetStringAsync(
+                $"api/supplier-returns/credit-notes/available?supplierId={order.SupplierId}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _availableCredit = d.GetProperty("totalRemaining").GetDecimal();
+            _availableNotes = new();
+            if (d.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var n in notes.EnumerateArray())
+                {
+                    _availableNotes.Add(new CreditNoteDto
+                    {
+                        Id               = n.GetProperty("id").GetGuid(),
+                        CreditNoteNumber = n.GetProperty("creditNoteNumber").GetString() ?? "",
+                        Amount           = n.GetProperty("amount").GetDecimal(),
+                        AppliedAmount    = n.GetProperty("appliedAmount").GetDecimal(),
+                        Remaining        = n.GetProperty("remaining").GetDecimal(),
+                        IssuedAt         = n.GetProperty("issuedAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch { /* non-fatal */ }
+    }
+
+    void OpenApplyCredit()
+    {
+        _pickedCreditNoteId = null;
+        _pickedCreditMax    = 0;
+        _applyAmount        = 0;
+        _applyNotes         = null;
+        _showApplyCredit    = true;
+    }
+
+    void PickCredit(CreditNoteDto n)
+    {
+        _pickedCreditNoteId = n.Id;
+        // Cap at the smaller of (credit remaining, PO net payable).
+        var poPayable = Math.Max(0m, (order?.ReceivedTotal ?? 0m) - _appliedCredit);
+        _pickedCreditMax = Math.Min(n.Remaining, poPayable);
+        _applyAmount     = _pickedCreditMax;
+    }
+
+    async Task ConfirmApply()
+    {
+        if (!_pickedCreditNoteId.HasValue || _applyAmount <= 0) return;
+        if (_pickedCreditMax > 0 && _applyAmount > _pickedCreditMax)
+        {
+            Toast.Show($"Amount exceeds max usable (Rs {_pickedCreditMax:N2}).");
+            return;
+        }
+
+        _busyApply = true;
+        try
+        {
+            var body = new
+            {
+                receivingOrderId = Id,
+                amount           = _applyAmount,
+                notes            = string.IsNullOrWhiteSpace(_applyNotes) ? null : _applyNotes
+            };
+            var resp = await Http.PostAsJsonAsync(
+                $"api/supplier-returns/credit-notes/{_pickedCreditNoteId}/apply", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Apply failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show($"Applied Rs {_applyAmount:N2} of credit.");
+            _showApplyCredit = false;
+            await LoadCreditPanelAsync();
+        }
+        finally { _busyApply = false; }
     }
 
     async Task LoadVariantsAsync()
@@ -561,6 +806,7 @@ else if (order != null)
             Id                = data.TryGetProperty("id",                out var id) ? id.GetGuid()       : Guid.Empty,
             OrderNumber       = data.TryGetProperty("orderNumber",       out var on) ? (on.GetString() ?? "") : "",
             Status            = data.TryGetProperty("status",            out var st) ? (st.GetString() ?? "") : "",
+            SupplierId        = data.TryGetProperty("supplierId",        out var sid) && sid.ValueKind == JsonValueKind.String ? sid.GetGuid() : (Guid?)null,
             SupplierReference = data.TryGetProperty("supplierReference", out var sr) ? sr.GetString()   : null,
             ExpectedTotal     = data.TryGetProperty("expectedTotal",     out var et) ? et.GetDecimal() : 0m,
             ReceivedTotal     = data.TryGetProperty("receivedTotal",     out var rt) ? rt.GetDecimal() : 0m
@@ -590,10 +836,30 @@ else if (order != null)
         public Guid    Id { get; set; }
         public string  OrderNumber { get; set; } = "";
         public string  Status { get; set; } = "";
+        public Guid?   SupplierId { get; set; }
         public string? SupplierReference { get; set; }
         public decimal ExpectedTotal { get; set; }
         public decimal ReceivedTotal { get; set; }
         public List<LineDto> Items { get; set; } = new();
+    }
+
+    class CreditNoteDto
+    {
+        public Guid     Id               { get; set; }
+        public string   CreditNoteNumber { get; set; } = "";
+        public decimal  Amount           { get; set; }
+        public decimal  AppliedAmount    { get; set; }
+        public decimal  Remaining        { get; set; }
+        public DateTime IssuedAt         { get; set; }
+    }
+
+    class CreditApplicationDto
+    {
+        public Guid     Id               { get; set; }
+        public string   CreditNoteNumber { get; set; } = "";
+        public decimal  Amount           { get; set; }
+        public DateTime AppliedAt        { get; set; }
+        public string?  Notes            { get; set; }
     }
 
     class LineDto

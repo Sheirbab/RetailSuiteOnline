@@ -32,12 +32,32 @@ public interface ISupplierReturnService
     Task SubmitAsync(Guid returnId);
 
     /// <summary>
+    /// Pre-fills the return from its <c>SourceReceivingOrderId</c> — adds a line for
+    /// every received line on the source PO, defaulting qty to ReceivedQuantity and
+    /// unit cost to the PO line's UnitCost. Skips variants that are already on the
+    /// return (no duplicates). Throws if no source PO is set or the return is not in Draft.
+    /// </summary>
+    Task<int> PullFromSourceAsync(Guid returnId);
+
+    /// <summary>
     /// Mark the return Completed. Deducts stock for every line and issues a
     /// SupplierCreditNote for the total value. Idempotent if already Completed.
     /// </summary>
     Task<SupplierCreditNote> CompleteAsync(Guid returnId);
 
     Task CancelAsync(Guid returnId);
+
+    /// <summary>
+    /// Apply <paramref name="amount"/> of <paramref name="creditNoteId"/> against
+    /// <paramref name="receivingOrderId"/>. Both must belong to the same supplier.
+    /// The credit's <c>AppliedAmount</c> is bumped and a SupplierCreditApplication
+    /// record is created for audit.
+    /// </summary>
+    Task<SupplierCreditApplication> ApplyCreditAsync(
+        Guid creditNoteId,
+        Guid receivingOrderId,
+        decimal amount,
+        string? notes);
 }
 
 public class SupplierReturnService : ISupplierReturnService
@@ -134,6 +154,46 @@ public class SupplierReturnService : ISupplierReturnService
         await _db.SaveChangesAsync();
     }
 
+    public async Task<int> PullFromSourceAsync(Guid returnId)
+    {
+        var ret = await _db.SupplierReturns
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == returnId)
+            ?? throw new NotFoundException("SupplierReturn", returnId);
+
+        if (ret.Status != SupplierReturnStatus.Draft)
+            throw new BusinessRuleException("Only Draft returns can be pre-filled from a source PO.");
+        if (!ret.SourceReceivingOrderId.HasValue)
+            throw new BusinessRuleException("This return is not linked to a source receiving order.");
+
+        var poItems = await _db.ReceivingOrderItems
+            .Where(i => i.ReceivingOrderId == ret.SourceReceivingOrderId.Value)
+            .ToListAsync();
+
+        // Skip variants already on the return — caller can re-pull safely.
+        var existingVariantIds = ret.Items.Select(i => i.ProductVariantId).ToHashSet();
+
+        var added = 0;
+        foreach (var poLine in poItems.Where(p => p.ReceivedQuantity > 0))
+        {
+            if (existingVariantIds.Contains(poLine.ProductVariantId)) continue;
+
+            var line = new SupplierReturnItem(
+                tenantId:         ret.TenantId,
+                supplierReturnId: ret.Id,
+                productVariantId: poLine.ProductVariantId,
+                sku:              poLine.Sku,
+                quantity:         poLine.ReceivedQuantity,
+                unitCost:         poLine.UnitCost,
+                notes:            null);
+            ret.AddItem(line);
+            added++;
+        }
+
+        if (added > 0) await _db.SaveChangesAsync();
+        return added;
+    }
+
     public async Task<SupplierCreditNote> CompleteAsync(Guid returnId)
     {
         var ret = await _db.SupplierReturns
@@ -206,5 +266,47 @@ public class SupplierReturnService : ISupplierReturnService
             ?? throw new NotFoundException("SupplierReturn", returnId);
         ret.Cancel();
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<SupplierCreditApplication> ApplyCreditAsync(
+        Guid creditNoteId,
+        Guid receivingOrderId,
+        decimal amount,
+        string? notes)
+    {
+        if (amount <= 0)
+            throw new BusinessRuleException("Applied amount must be positive.");
+
+        var credit = await _db.SupplierCreditNotes
+            .FirstOrDefaultAsync(c => c.Id == creditNoteId)
+            ?? throw new NotFoundException("SupplierCreditNote", creditNoteId);
+
+        var po = await _db.ReceivingOrders
+            .FirstOrDefaultAsync(o => o.Id == receivingOrderId)
+            ?? throw new NotFoundException("ReceivingOrder", receivingOrderId);
+
+        if (po.SupplierId != credit.SupplierId)
+            throw new BusinessRuleException(
+                "Credit note and receiving order belong to different suppliers.");
+
+        // SupplierCreditNote.Apply enforces the "cannot exceed remaining" rule.
+        credit.Apply(amount);
+
+        var application = new SupplierCreditApplication(
+            tenantId:         credit.TenantId,
+            creditNoteId:     credit.Id,
+            receivingOrderId: po.Id,
+            supplierId:       credit.SupplierId,
+            amount:           amount,
+            notes:            notes);
+
+        _db.SupplierCreditApplications.Add(application);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Applied Rs {Amount} of credit note {CreditNote} against PO {Po}. Remaining on credit: Rs {Remaining}",
+            amount, credit.CreditNoteNumber, po.OrderNumber, credit.Remaining);
+
+        return application;
     }
 }

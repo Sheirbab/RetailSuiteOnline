@@ -89,7 +89,7 @@ else
     <h3 style="margin-bottom:14px;">New supplier return</h3>
 
     <label style="font-size:12px;color:#6b7280;">Supplier *</label>
-    <select class="input full" @bind="_newSupplierId" style="margin-bottom:8px;">
+    <select class="input full" @bind="_newSupplierId" @bind:after="OnSupplierChanged" style="margin-bottom:8px;">
         <option value="">— Pick a supplier —</option>
         @if (_suppliers != null)
         {
@@ -107,6 +107,22 @@ else
         <option value="OverShipment">Over-shipment</option>
         <option value="Other">Other</option>
     </select>
+
+    <label style="font-size:12px;color:#6b7280;">Source receiving order (optional)</label>
+    <select class="input full" @bind="_newSourcePo" style="margin-bottom:4px;"
+            disabled="@(string.IsNullOrEmpty(_newSupplierId))">
+        <option value="">— None / standalone return —</option>
+        @if (_sourcePos != null)
+        {
+            @foreach (var po in _sourcePos)
+            {
+                <option value="@po.Id">@po.OrderNumber · @po.Status · Rs @po.ReceivedTotal.ToString("N0")</option>
+            }
+        }
+    </select>
+    <p style="margin:2px 0 8px;font-size:11px;color:#6b7280;">
+        Linking a PO lets you one-click pull its received lines after creating the return.
+    </p>
 
     <label style="font-size:12px;color:#6b7280;">Notes (optional)</label>
     <textarea class="input full" rows="3" @bind="_newNotes"
@@ -131,7 +147,9 @@ else
     bool   _creating;
     string _newSupplierId = "";
     string _newReason     = "Damaged";
+    string _newSourcePo   = "";
     string _newNotes      = "";
+    List<SourcePoOption>? _sourcePos;
 
     static readonly (string Label, string? Value)[] StatusOptions = new[]
     {
@@ -211,7 +229,38 @@ else
     void OpenCreate()
     {
         _newSupplierId = ""; _newReason = "Damaged"; _newNotes = "";
+        _newSourcePo = ""; _sourcePos = null;
         _showCreate = true;
+    }
+
+    /// <summary>When the supplier is changed, refresh the list of receiving orders for that supplier.</summary>
+    async Task OnSupplierChanged()
+    {
+        _newSourcePo = "";
+        _sourcePos = null;
+        if (string.IsNullOrWhiteSpace(_newSupplierId)) { StateHasChanged(); return; }
+
+        try
+        {
+            var json = await Http.GetStringAsync($"api/supplier-returns/source-pos?supplierId={_newSupplierId}");
+            using var doc = JsonDocument.Parse(json);
+            _sourcePos = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _sourcePos.Add(new SourcePoOption
+                    {
+                        Id            = e.GetProperty("id").GetGuid(),
+                        OrderNumber   = e.GetProperty("orderNumber").GetString() ?? "",
+                        Status        = e.GetProperty("status").GetString() ?? "",
+                        ReceivedTotal = e.GetProperty("receivedTotal").GetDecimal()
+                    });
+                }
+            }
+        }
+        catch { /* non-fatal — the picker stays empty */ }
+        StateHasChanged();
     }
 
     async Task CreateReturn()
@@ -227,9 +276,10 @@ else
         {
             var body = new
             {
-                supplierId = Guid.Parse(_newSupplierId),
-                reason     = _newReason,
-                notes      = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes
+                supplierId             = Guid.Parse(_newSupplierId),
+                reason                 = _newReason,
+                sourceReceivingOrderId = string.IsNullOrWhiteSpace(_newSourcePo) ? (Guid?)null : Guid.Parse(_newSourcePo),
+                notes                  = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes
             };
             var resp = await Http.PostAsJsonAsync("api/supplier-returns", body);
             if (!resp.IsSuccessStatusCode)
@@ -281,5 +331,13 @@ else
     {
         public Guid   Id   { get; set; }
         public string Name { get; set; } = "";
+    }
+
+    class SourcePoOption
+    {
+        public Guid    Id            { get; set; }
+        public string  OrderNumber   { get; set; } = "";
+        public string  Status        { get; set; } = "";
+        public decimal ReceivedTotal { get; set; }
     }
 }

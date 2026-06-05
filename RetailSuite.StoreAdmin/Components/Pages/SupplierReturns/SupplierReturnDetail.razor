@@ -33,6 +33,14 @@ else
                 Reason: <strong>@_ret.Reason</strong> ·
                 Created: @_ret.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")
             </p>
+            @if (!string.IsNullOrEmpty(_ret.SourcePoNumber))
+            {
+                <p style="margin:6px 0 0;font-size:12px;">
+                    🔗 Linked to receiving order:
+                    <a href="@($"/receiving-orders/{_ret.SourceReceivingOrderId}")"
+                       style="font-family:monospace;font-weight:600;">@_ret.SourcePoNumber</a>
+                </p>
+            }
         </div>
 
         <div style="display:flex;gap:6px;">
@@ -66,7 +74,16 @@ else
             <h4 style="margin:0;">Items</h4>
             @if (_ret.Status == "Draft")
             {
-                <button class="btn btn-primary" @onclick="OpenAddLine">+ Add line</button>
+                <div style="display:flex;gap:8px;">
+                    @if (_ret.SourceReceivingOrderId.HasValue)
+                    {
+                        <button class="btn" disabled="@_busy" @onclick="PullFromPo"
+                                title="Copy received lines from the linked receiving order">
+                            ⤵ Pull from PO
+                        </button>
+                    }
+                    <button class="btn btn-primary" @onclick="OpenAddLine">+ Add line</button>
+                </div>
             }
         </div>
 
@@ -227,6 +244,8 @@ else
                 CreatedAt     = d.GetProperty("createdAt").GetDateTime(),
                 CreditNoteNumber = d.TryGetProperty("creditNoteNumber", out var cn) && cn.ValueKind == JsonValueKind.String ? cn.GetString() : null,
                 CreditAmount     = d.TryGetProperty("creditAmount", out var ca) && ca.ValueKind == JsonValueKind.Number ? ca.GetDecimal() : (decimal?)null,
+                SourceReceivingOrderId = d.TryGetProperty("sourceReceivingOrderId", out var sp) && sp.ValueKind == JsonValueKind.String ? sp.GetGuid() : (Guid?)null,
+                SourcePoNumber         = d.TryGetProperty("sourcePoNumber", out var spn) && spn.ValueKind == JsonValueKind.String ? spn.GetString() : null,
                 Items = new()
             };
             if (d.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
@@ -348,6 +367,26 @@ else
     async Task Submit() => await Action("submit", "Submitted.");
     async Task Cancel() => await Action("cancel", "Cancelled.");
 
+    async Task PullFromPo()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Http.PostAsync($"api/supplier-returns/{Id}/pull-from-source", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Pull failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var n = doc.RootElement.GetProperty("data").GetProperty("linesAdded").GetInt32();
+            Toast.Show(n == 0 ? "Nothing new to pull — all PO lines already on the return." : $"Pulled {n} line(s) from the PO.");
+            await Load();
+        }
+        finally { _busy = false; }
+    }
+
     async Task Complete()
     {
         _busy = true;
@@ -414,6 +453,8 @@ else
         public DateTime      CreatedAt       { get; set; }
         public string?       CreditNoteNumber { get; set; }
         public decimal?      CreditAmount    { get; set; }
+        public Guid?         SourceReceivingOrderId { get; set; }
+        public string?       SourcePoNumber  { get; set; }
         public List<LineDto> Items           { get; set; } = new();
     }
 

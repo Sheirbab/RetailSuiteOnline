@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
+using RetailSuite.Infrastructure.Modules.Receiving.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
 using RetailSuite.Shared;
@@ -91,12 +92,20 @@ public class SupplierReturnsController : ControllerBase
             creditAmount     = cn?.Amount;
         }
 
+        var sourcePoNumber = r.SourceReceivingOrderId.HasValue
+            ? await _db.ReceivingOrders
+                .Where(o => o.Id == r.SourceReceivingOrderId.Value)
+                .Select(o => o.OrderNumber)
+                .FirstOrDefaultAsync()
+            : null;
+
         return Ok(ApiResponse<object>.Ok(new
         {
             r.Id,
             r.ReturnNumber,
             Supplier = supplier,
             r.SourceReceivingOrderId,
+            SourcePoNumber = sourcePoNumber,
             Status   = r.Status.ToString(),
             Reason   = r.Reason.ToString(),
             r.Notes,
@@ -189,6 +198,48 @@ public class SupplierReturnsController : ControllerBase
     }
 
     // -------------------------------------------------------------
+    // POST /api/supplier-returns/{id}/pull-from-source
+    // One-click: copy received lines from the source PO into the return.
+    // -------------------------------------------------------------
+    [HttpPost("{id:guid}/pull-from-source")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> PullFromSource(Guid id)
+    {
+        var added = await _service.PullFromSourceAsync(id);
+        return Ok(ApiResponse<object>.Ok(new { LinesAdded = added }));
+    }
+
+    // -------------------------------------------------------------
+    // GET /api/supplier-returns/source-pos?supplierId=
+    // Helper for the create-modal: which receiving orders can we pull from?
+    // -------------------------------------------------------------
+    [HttpGet("source-pos")]
+    public async Task<IActionResult> ListSourcePos([FromQuery] Guid supplierId)
+    {
+        if (supplierId == Guid.Empty)
+            return BadRequest(ApiResponse<object>.Fail("supplierId is required."));
+
+        var rows = await _db.ReceivingOrders
+            .Where(o => o.SupplierId == supplierId
+                     && (o.Status == ReceivingStatus.Closed
+                      || o.Status == ReceivingStatus.PartiallyReceived
+                      || o.Status == ReceivingStatus.Open))
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderNumber,
+                Status        = o.Status.ToString(),
+                o.ReceivedTotal,
+                o.CreatedAt
+            })
+            .Take(50)
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(rows));
+    }
+
+    // -------------------------------------------------------------
     // POST /api/supplier-returns/{id}/submit
     // -------------------------------------------------------------
     [HttpPost("{id:guid}/submit")]
@@ -224,6 +275,96 @@ public class SupplierReturnsController : ControllerBase
     {
         await _service.CancelAsync(id);
         return Ok(ApiResponse<object>.Ok(new { Cancelled = id }));
+    }
+
+    // -------------------------------------------------------------
+    // POST /api/supplier-returns/credit-notes/{id}/apply
+    // Apply (part of) a credit note's remaining balance against a receiving order.
+    // -------------------------------------------------------------
+    [HttpPost("credit-notes/{id:guid}/apply")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ApplyCredit(Guid id, [FromBody] ApplyCreditRequest request)
+    {
+        if (request.ReceivingOrderId == Guid.Empty)
+            return BadRequest(ApiResponse<object>.Fail("ReceivingOrderId is required."));
+        if (request.Amount <= 0)
+            return BadRequest(ApiResponse<object>.Fail("Amount must be positive."));
+
+        var app = await _service.ApplyCreditAsync(id, request.ReceivingOrderId, request.Amount, request.Notes);
+        var credit = await _db.SupplierCreditNotes.FirstOrDefaultAsync(c => c.Id == id);
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            ApplicationId    = app.Id,
+            Amount           = app.Amount,
+            RemainingOnNote  = credit?.Remaining ?? 0m
+        }));
+    }
+
+    // -------------------------------------------------------------
+    // GET /api/supplier-returns/credit-notes/available?supplierId=
+    // Lists credit notes for a supplier that still have a remaining balance.
+    // -------------------------------------------------------------
+    [HttpGet("credit-notes/available")]
+    public async Task<IActionResult> AvailableCredit([FromQuery] Guid supplierId)
+    {
+        if (supplierId == Guid.Empty)
+            return BadRequest(ApiResponse<object>.Fail("supplierId is required."));
+
+        var rows = await _db.SupplierCreditNotes
+            .Where(c => c.SupplierId == supplierId && c.AppliedAmount < c.Amount)
+            .OrderBy(c => c.IssuedAt)
+            .Select(c => new
+            {
+                c.Id,
+                c.CreditNoteNumber,
+                c.Amount,
+                c.AppliedAmount,
+                Remaining = c.Amount - c.AppliedAmount,
+                c.IssuedAt
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            SupplierId  = supplierId,
+            TotalRemaining = rows.Sum(r => r.Remaining),
+            Notes = rows
+        }));
+    }
+
+    // -------------------------------------------------------------
+    // GET /api/supplier-returns/credit-notes/applications?receivingOrderId=
+    // Lists how much credit has been applied to a given receiving order.
+    // -------------------------------------------------------------
+    [HttpGet("credit-notes/applications")]
+    public async Task<IActionResult> ListApplications([FromQuery] Guid? receivingOrderId)
+    {
+        var q = _db.SupplierCreditApplications.AsQueryable();
+        if (receivingOrderId.HasValue) q = q.Where(a => a.ReceivingOrderId == receivingOrderId.Value);
+
+        var rows = await q
+            .OrderByDescending(a => a.AppliedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.CreditNoteId,
+                CreditNoteNumber = _db.SupplierCreditNotes
+                                     .Where(c => c.Id == a.CreditNoteId)
+                                     .Select(c => c.CreditNoteNumber)
+                                     .FirstOrDefault(),
+                a.ReceivingOrderId,
+                a.Amount,
+                a.AppliedAt,
+                a.Notes
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            TotalApplied = rows.Sum(r => r.Amount),
+            Applications = rows
+        }));
     }
 
     // -------------------------------------------------------------
@@ -271,5 +412,12 @@ public class AddSupplierReturnLineRequest
     public Guid    ProductVariantId { get; set; }
     public int     Quantity         { get; set; }
     public decimal? UnitCost        { get; set; }
+    public string? Notes            { get; set; }
+}
+
+public class ApplyCreditRequest
+{
+    public Guid    ReceivingOrderId { get; set; }
+    public decimal Amount           { get; set; }
     public string? Notes            { get; set; }
 }
