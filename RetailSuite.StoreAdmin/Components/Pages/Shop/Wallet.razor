@@ -1,0 +1,397 @@
+@page "/wallet"
+@layout CustomerLayout
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject IJSRuntime JS
+@using System.Text.Json
+@using System.Net.Http.Headers
+
+<style>
+    .wallet-shell { max-width:760px; margin:0 auto; padding:20px 0; }
+    .wallet-card  { background:#fff; padding:20px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+    .wallet-grid  { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .wallet-stat  { padding:18px; border-radius:10px; }
+    .wallet-stat .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; }
+    .wallet-stat .val { font-size:26px; font-weight:700; margin-top:4px; }
+    .stat-credit  { background:linear-gradient(135deg,#dcfce7 0%, #bbf7d0 100%); }
+    .stat-credit .val  { color:#15803d; }
+    .stat-loyalty { background:linear-gradient(135deg,#fef3c7 0%, #fde68a 100%); }
+    .stat-loyalty .val { color:#a16207; }
+
+    .tx-row { display:flex; justify-content:space-between; align-items:center;
+              padding:10px 0; border-bottom:1px dashed #f3f4f6; font-size:13px; }
+    .tx-row:last-child { border:none; }
+    .tx-pos { color:#15803d; font-weight:600; }
+    .tx-neg { color:#b91c1c; font-weight:600; }
+
+    .step-badge { display:inline-flex; align-items:center; justify-content:center;
+                  width:26px; height:26px; border-radius:50%; background:#1d4ed8; color:#fff;
+                  font-weight:700; font-size:13px; margin-right:8px; }
+</style>
+
+<div class="wallet-shell">
+
+    @if (_step == "phone")
+    {
+        <div class="wallet-card">
+            <h3 style="margin-top:0;">💳 My wallet</h3>
+            <p style="color:#6b7280;font-size:14px;">
+                Enter the phone number you used at the store. We'll send you a one-time code.
+            </p>
+            <label style="font-size:12px;color:#6b7280;">Phone</label>
+            <input class="input full" placeholder="03xx-xxxxxxx" @bind="_phone"
+                   style="margin-bottom:12px;" />
+            <button class="btn btn-primary" disabled="@_busy" @onclick="RequestOtp">
+                @(_busy ? "Sending..." : "Send code")
+            </button>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div style="margin-top:10px;color:#b91c1c;font-size:13px;">@_error</div>
+            }
+        </div>
+    }
+    else if (_step == "otp")
+    {
+        <div class="wallet-card">
+            <h3 style="margin-top:0;">📱 Enter code</h3>
+            <p style="color:#6b7280;font-size:13px;">
+                We sent a 6-digit code to <strong>@_phone</strong>.
+                @if (!string.IsNullOrEmpty(_devOtp))
+                {
+                    <br/><span style="color:#a16207;font-size:12px;">
+                        ⚠️ <strong>Dev mode</strong>: code is <strong style="font-family:monospace;">@_devOtp</strong>
+                        (no SMS gateway wired)
+                    </span>
+                }
+            </p>
+            <input class="input full" type="text" inputmode="numeric" maxlength="6"
+                   placeholder="6-digit code"
+                   @bind="_code"
+                   style="margin-bottom:12px;font-size:18px;letter-spacing:6px;text-align:center;" />
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-primary" disabled="@_busy" @onclick="VerifyOtp">
+                    @(_busy ? "Verifying..." : "Sign in")
+                </button>
+                <button class="btn" @onclick="ChangeNumber">Change number</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div style="margin-top:10px;color:#b91c1c;font-size:13px;">@_error</div>
+            }
+        </div>
+    }
+    else if (_step == "wallet")
+    {
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div>
+                <h3 style="margin:0;">Hello @_customerName 👋</h3>
+                <p style="margin:2px 0 0;color:#6b7280;font-size:12px;">@_phone</p>
+            </div>
+            <button class="btn" @onclick="Logout">Sign out</button>
+        </div>
+
+        <!-- Balances -->
+        <div class="wallet-grid" style="margin-bottom:14px;">
+            <div class="wallet-stat stat-credit">
+                <div class="lbl">💳 Store credit</div>
+                <div class="val">Rs @_storeCredit.ToString("N0")</div>
+            </div>
+            <div class="wallet-stat stat-loyalty">
+                <div class="lbl">⭐ Loyalty points</div>
+                <div class="val">@_loyaltyPoints</div>
+                <div style="font-size:12px;color:#a16207;margin-top:2px;">≈ Rs @_loyaltyRupees.ToString("N0") at till</div>
+            </div>
+        </div>
+
+        <!-- Recent orders -->
+        <div class="wallet-card" style="margin-bottom:14px;">
+            <h4 style="margin-top:0;">📦 Recent orders</h4>
+            @if (_orders == null || !_orders.Any())
+            {
+                <p style="color:#9ca3af;font-size:13px;">No orders yet.</p>
+            }
+            else
+            {
+                @foreach (var o in _orders)
+                {
+                    <div class="tx-row">
+                        <div>
+                            <div style="font-weight:600;font-family:monospace;">@o.OrderNumber</div>
+                            <div style="font-size:11px;color:#6b7280;">
+                                @o.CreatedAt.ToLocalTime().ToString("dd MMM yyyy") · @o.Channel · @o.Status
+                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div><strong>Rs @o.TotalAmount.ToString("N2")</strong></div>
+                            @if (!string.IsNullOrEmpty(o.InvoiceNumber))
+                            {
+                                <a href="@($"/invoice/{o.Id}")" target="_blank"
+                                   style="font-size:11px;color:#1d4ed8;">📄 Invoice</a>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Transactions -->
+        <div class="wallet-card">
+            <h4 style="margin-top:0;">💸 Activity</h4>
+
+            <div style="margin-bottom:14px;">
+                <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">Store credit</p>
+                @if (_creditTx == null || !_creditTx.Any())
+                {
+                    <p style="color:#9ca3af;font-size:13px;margin:0;">No store-credit activity yet.</p>
+                }
+                else
+                {
+                    @foreach (var t in _creditTx)
+                    {
+                        <div class="tx-row">
+                            <div>
+                                <div>@t.Reason</div>
+                                <div style="font-size:11px;color:#6b7280;">@t.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm") · @t.Note</div>
+                            </div>
+                            <div class="@(t.Amount > 0 ? "tx-pos" : "tx-neg")">
+                                @(t.Amount > 0 ? "+" : "−") Rs @Math.Abs(t.Amount).ToString("N2")
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div>
+                <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">Loyalty</p>
+                @if (_loyaltyTx == null || !_loyaltyTx.Any())
+                {
+                    <p style="color:#9ca3af;font-size:13px;margin:0;">No loyalty activity yet.</p>
+                }
+                else
+                {
+                    @foreach (var t in _loyaltyTx)
+                    {
+                        <div class="tx-row">
+                            <div>
+                                <div>@t.Reason</div>
+                                <div style="font-size:11px;color:#6b7280;">@t.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm") · @t.Note</div>
+                            </div>
+                            <div class="@(t.Points > 0 ? "tx-pos" : "tx-neg")">
+                                @(t.Points > 0 ? "+" : "")@t.Points pts
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    const string TOKEN_KEY = "wallet_token";
+
+    string _step  = "phone";        // phone -> otp -> wallet
+    string _phone = "";
+    string _code  = "";
+    string? _devOtp;
+    string? _error;
+    bool _busy;
+
+    string? _walletToken;
+    string  _customerName = "";
+    decimal _storeCredit;
+    int     _loyaltyPoints;
+    decimal _loyaltyRupees;
+    List<CreditTx>?  _creditTx;
+    List<LoyaltyTx>? _loyaltyTx;
+    List<OrderRow>?  _orders;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Restore session if a wallet token is already in localStorage.
+            try
+            {
+                var t = await JS.InvokeAsync<string?>("localStorage.getItem", TOKEN_KEY);
+                if (!string.IsNullOrEmpty(t))
+                {
+                    _walletToken = t;
+                    await LoadWalletAsync();
+                }
+            }
+            catch { /* localStorage unavailable on prerender — ignore */ }
+        }
+    }
+
+    async Task RequestOtp()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_phone)) { _error = "Enter your phone."; return; }
+
+        _busy = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/wallet/otp/request", new { phone = _phone });
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await resp.Content.ReadAsStringAsync();
+                return;
+            }
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            var sent = d.GetProperty("sent").GetBoolean();
+            _devOtp = d.TryGetProperty("devOtp", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            if (!sent)
+            {
+                _error = d.GetProperty("message").GetString();
+                return;
+            }
+            _step = "otp";
+        }
+        finally { _busy = false; }
+    }
+
+    async Task VerifyOtp()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/wallet/otp/verify", new { phone = _phone, code = _code });
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Invalid or expired code.";
+                return;
+            }
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _walletToken = d.GetProperty("token").GetString();
+            try { await JS.InvokeVoidAsync("localStorage.setItem", TOKEN_KEY, _walletToken); } catch { }
+
+            await LoadWalletAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    async Task LoadWalletAsync()
+    {
+        if (string.IsNullOrEmpty(_walletToken)) return;
+
+        Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _walletToken);
+        try
+        {
+            // /me
+            var meJson = await Http.GetStringAsync("api/wallet/me");
+            using (var doc = JsonDocument.Parse(meJson))
+            {
+                var d = doc.RootElement.GetProperty("data");
+                _customerName  = d.GetProperty("customer").GetProperty("fullName").GetString() ?? "";
+                _phone         = d.GetProperty("customer").GetProperty("phone").GetString() ?? _phone;
+                _storeCredit   = d.GetProperty("balances").GetProperty("storeCredit").GetDecimal();
+                _loyaltyPoints = d.GetProperty("balances").GetProperty("loyaltyPoints").GetInt32();
+                _loyaltyRupees = d.GetProperty("balances").GetProperty("loyaltyRupeesValue").GetDecimal();
+            }
+
+            // /transactions
+            _creditTx = new(); _loyaltyTx = new();
+            var txJson = await Http.GetStringAsync("api/wallet/transactions");
+            using (var doc = JsonDocument.Parse(txJson))
+            {
+                var d = doc.RootElement.GetProperty("data");
+                foreach (var t in d.GetProperty("storeCredit").EnumerateArray())
+                {
+                    _creditTx.Add(new CreditTx
+                    {
+                        CreatedAt = t.GetProperty("createdAt").GetDateTime(),
+                        Amount    = t.GetProperty("amount").GetDecimal(),
+                        Reason    = t.GetProperty("reason").GetString() ?? "",
+                        Note      = t.TryGetProperty("note", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null
+                    });
+                }
+                foreach (var t in d.GetProperty("loyalty").EnumerateArray())
+                {
+                    _loyaltyTx.Add(new LoyaltyTx
+                    {
+                        CreatedAt = t.GetProperty("createdAt").GetDateTime(),
+                        Points    = t.GetProperty("points").GetInt32(),
+                        Reason    = t.GetProperty("reason").GetString() ?? "",
+                        Note      = t.TryGetProperty("note", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null
+                    });
+                }
+            }
+
+            // /orders
+            _orders = new();
+            var oJson = await Http.GetStringAsync("api/wallet/orders");
+            using (var doc = JsonDocument.Parse(oJson))
+            {
+                foreach (var o in doc.RootElement.GetProperty("data").EnumerateArray())
+                {
+                    _orders.Add(new OrderRow
+                    {
+                        Id            = o.GetProperty("id").GetGuid(),
+                        OrderNumber   = o.GetProperty("orderNumber").GetString() ?? "",
+                        InvoiceNumber = o.TryGetProperty("invoiceNumber", out var inv) && inv.ValueKind == JsonValueKind.String ? inv.GetString() : null,
+                        Channel       = o.GetProperty("channel").GetString() ?? "",
+                        Status        = o.GetProperty("status").GetString() ?? "",
+                        TotalAmount   = o.GetProperty("totalAmount").GetDecimal(),
+                        CreatedAt     = o.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+
+            _step = "wallet";
+        }
+        catch
+        {
+            // Token bad / expired — back to login.
+            await Logout();
+        }
+    }
+
+    async Task Logout()
+    {
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", TOKEN_KEY); } catch { }
+        _walletToken = null;
+        _step = "phone";
+        _phone = ""; _code = ""; _devOtp = null;
+        Http.DefaultRequestHeaders.Authorization = null;
+    }
+
+    void ChangeNumber()
+    {
+        _step  = "phone";
+        _code  = "";
+        _error = null;
+    }
+
+    class CreditTx
+    {
+        public DateTime CreatedAt { get; set; }
+        public decimal  Amount    { get; set; }
+        public string   Reason    { get; set; } = "";
+        public string?  Note      { get; set; }
+    }
+    class LoyaltyTx
+    {
+        public DateTime CreatedAt { get; set; }
+        public int      Points    { get; set; }
+        public string   Reason    { get; set; } = "";
+        public string?  Note      { get; set; }
+    }
+    class OrderRow
+    {
+        public Guid     Id { get; set; }
+        public string   OrderNumber { get; set; } = "";
+        public string?  InvoiceNumber { get; set; }
+        public string   Channel { get; set; } = "";
+        public string   Status { get; set; } = "";
+        public decimal  TotalAmount { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}
