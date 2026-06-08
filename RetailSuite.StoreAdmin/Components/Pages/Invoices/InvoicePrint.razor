@@ -1,0 +1,336 @@
+@page "/invoice/{OrderId:guid}"
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ToastService Toast
+@using System.Text.Json
+
+<style>
+    /* Inline styles so the page is self-contained for print. */
+    .inv-shell { max-width:780px; margin:0 auto; padding:24px; background:#fff; color:#111827; font-size:13px; line-height:1.5; }
+    .inv-actions { display:flex; gap:8px; justify-content:flex-end; margin-bottom:14px; }
+    .inv-header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #0d3b66; padding-bottom:14px; margin-bottom:18px; }
+    .inv-header h1 { margin:0; font-size:24px; color:#0d3b66; letter-spacing:.5px; }
+    .inv-seller-name { font-weight:700; font-size:15px; }
+    .inv-seller-line { font-size:11px; color:#374151; }
+    .inv-meta { font-size:12px; color:#374151; text-align:right; }
+    .inv-meta .num { font-size:14px; font-weight:700; color:#0d3b66; font-family:monospace; }
+
+    .inv-section-title { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; margin:0 0 4px; font-weight:700; }
+
+    .inv-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:18px; font-size:12px; }
+    .inv-table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:12px; }
+    .inv-table th, .inv-table td { padding:6px 8px; border-bottom:1px solid #e5e7eb; text-align:left; }
+    .inv-table th { background:#f3f4f6; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#374151; }
+    .inv-table td.num, .inv-table th.num { text-align:right; }
+
+    .inv-totals { width:300px; margin-left:auto; font-size:13px; }
+    .inv-totals .row { display:flex; justify-content:space-between; padding:3px 0; }
+    .inv-totals .grand { border-top:2px solid #0d3b66; margin-top:6px; padding-top:8px;
+                        font-size:16px; font-weight:700; color:#0d3b66; }
+
+    .inv-footer { margin-top:24px; padding-top:14px; border-top:1px dashed #d1d5db;
+                  font-size:11px; color:#6b7280; text-align:center; }
+
+    .pill { display:inline-block; padding:1px 6px; background:#dbeafe; color:#1d4ed8; border-radius:4px; font-size:10px; font-weight:600; }
+
+    /* Print rules: hide everything outside the invoice, no margins, no page chrome. */
+    @@media print {
+        .inv-actions { display:none; }
+        body { background:#fff; }
+        .inv-shell { padding:0; max-width:none; }
+        @@page { margin:1cm; }
+    }
+</style>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_inv == null)
+{
+    <div class="card" style="color:#b91c1c;">Invoice not found.</div>
+}
+else
+{
+    <div class="inv-shell">
+
+        <div class="inv-actions">
+            <button class="btn" onclick="window.history.back()">← Back</button>
+            <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
+        </div>
+
+        <!-- ============================ Header ============================ -->
+        <div class="inv-header">
+            <div>
+                <div class="inv-seller-name">@(_inv.Seller.BusinessName ?? "(Business name not configured)")</div>
+                <div class="inv-seller-line">@_inv.Seller.Address</div>
+                <div class="inv-seller-line">
+                    @if (!string.IsNullOrEmpty(_inv.Seller.Ntn))  { <span>NTN: <strong>@_inv.Seller.Ntn</strong></span> }
+                    @if (!string.IsNullOrEmpty(_inv.Seller.Strn)) { <span style="margin-left:10px;">STRN: <strong>@_inv.Seller.Strn</strong></span> }
+                </div>
+            </div>
+            <div class="inv-meta">
+                <h1>SALES TAX INVOICE</h1>
+                <div>No: <span class="num">@_inv.Invoice.Number</span></div>
+                <div>Date: @_inv.Invoice.IssuedAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div>
+                <div><span class="pill">@_inv.Invoice.Channel</span> · Ref @_inv.Invoice.OrderNumber</div>
+                @if (!string.IsNullOrEmpty(_inv.Invoice.FbrNumber))
+                {
+                    <div style="margin-top:4px;">FBR No: <strong>@_inv.Invoice.FbrNumber</strong></div>
+                }
+            </div>
+        </div>
+
+        <!-- ============================ Buyer ============================ -->
+        <div class="inv-grid">
+            <div>
+                <p class="inv-section-title">Buyer</p>
+                <div><strong>@(_inv.Buyer?.FullName ?? "Walk-in customer")</strong></div>
+                @if (!string.IsNullOrEmpty(_inv.Buyer?.Phone)) { <div>@_inv.Buyer.Phone</div> }
+                @if (!string.IsNullOrEmpty(_inv.Buyer?.Email)) { <div>@_inv.Buyer.Email</div> }
+                @if (!string.IsNullOrEmpty(_inv.Buyer?.Cnic))  { <div>CNIC: @_inv.Buyer.Cnic</div> }
+            </div>
+            <div>
+                <p class="inv-section-title">Issued at</p>
+                <div>@_inv.Invoice.IssuedAt?.ToLocalTime().ToString("dddd, dd MMMM yyyy")</div>
+                <div>@_inv.Invoice.IssuedAt?.ToLocalTime().ToString("HH:mm")</div>
+            </div>
+        </div>
+
+        <!-- ============================ Items ============================ -->
+        <table class="inv-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>SKU / Description</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Unit price</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Net</th>
+                    <th class="num">Tax %</th>
+                    <th class="num">Tax</th>
+                    <th class="num">Line total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ var n = 1; }
+                @foreach (var i in _inv.Items)
+                {
+                    <tr>
+                        <td>@(n++)</td>
+                        <td style="font-family:monospace;">@i.Sku</td>
+                        <td class="num">@i.Quantity</td>
+                        <td class="num">@i.UnitPrice.ToString("N2")</td>
+                        <td class="num">@(i.LineDiscountAmount > 0 ? i.LineDiscountAmount.ToString("N2") : "—")</td>
+                        <td class="num">@i.LineNet.ToString("N2")</td>
+                        <td class="num">@i.TaxRatePct.ToString("0.##")%</td>
+                        <td class="num">@i.LineTaxValue.ToString("N2")</td>
+                        <td class="num"><strong>@i.LineTotal.ToString("N2")</strong></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <!-- ============================ Tax breakdown + totals ============================ -->
+        <div style="display:flex;gap:24px;align-items:flex-start;">
+            <div style="flex:1;">
+                <p class="inv-section-title">Tax breakdown</p>
+                <table class="inv-table" style="margin:0;">
+                    <thead>
+                        <tr>
+                            <th>Rate</th>
+                            <th class="num">Taxable</th>
+                            <th class="num">Tax value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var b in _inv.Totals.TaxBreakdown)
+                        {
+                            <tr>
+                                <td>@b.RatePct.ToString("0.##")%</td>
+                                <td class="num">@b.Taxable.ToString("N2")</td>
+                                <td class="num">@b.TaxValue.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="inv-totals">
+                <div class="row"><span>Subtotal (net)</span><strong>Rs @_inv.Totals.SubtotalNet.ToString("N2")</strong></div>
+                @if (_inv.Totals.OrderDiscount > 0)
+                {
+                    <div class="row" style="color:#a16207;"><span>Discount</span><strong>− Rs @_inv.Totals.OrderDiscount.ToString("N2")</strong></div>
+                }
+                <div class="row"><span>Sales tax</span><strong>Rs @_inv.Totals.TaxTotal.ToString("N2")</strong></div>
+                @if (_inv.Totals.ShippingAmount > 0)
+                {
+                    <div class="row"><span>Shipping</span><strong>Rs @_inv.Totals.ShippingAmount.ToString("N2")</strong></div>
+                }
+                @if (_inv.Totals.StoreCreditUsed > 0)
+                {
+                    <div class="row" style="color:#15803d;"><span>Store credit</span><strong>− Rs @_inv.Totals.StoreCreditUsed.ToString("N2")</strong></div>
+                }
+                @if (_inv.Totals.LoyaltyRupeesUsed > 0)
+                {
+                    <div class="row" style="color:#15803d;"><span>Loyalty redeemed</span><strong>− Rs @_inv.Totals.LoyaltyRupeesUsed.ToString("N2")</strong></div>
+                }
+                <div class="row grand"><span>Grand total</span><span>Rs @_inv.Totals.GrandTotal.ToString("N2")</span></div>
+                <div class="row" style="font-size:12px;color:#6b7280;"><span>Paid</span><strong>Rs @_inv.Totals.PaidAmount.ToString("N2")</strong></div>
+                @if (_inv.Totals.Outstanding > 0)
+                {
+                    <div class="row" style="color:#b91c1c;"><span>Outstanding</span><strong>Rs @_inv.Totals.Outstanding.ToString("N2")</strong></div>
+                }
+            </div>
+        </div>
+
+        <div class="inv-footer">
+            This is a computer-generated invoice and does not require a signature.<br/>
+            Thank you for your purchase.
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid OrderId { get; set; }
+
+    bool _loading = true;
+    InvoiceDto? _inv;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/invoices/{OrderId}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _inv = new InvoiceDto
+            {
+                Seller = new SellerDto
+                {
+                    Ntn          = ReadStr(d.GetProperty("seller"), "ntn"),
+                    Strn         = ReadStr(d.GetProperty("seller"), "strn"),
+                    BusinessName = ReadStr(d.GetProperty("seller"), "businessName"),
+                    Address      = ReadStr(d.GetProperty("seller"), "address")
+                },
+                Invoice = new InvoiceMetaDto
+                {
+                    Number      = d.GetProperty("invoice").GetProperty("number").GetString() ?? "",
+                    IssuedAt    = d.GetProperty("invoice").TryGetProperty("issuedAt", out var ia) && ia.ValueKind == JsonValueKind.String ? ia.GetDateTime() : (DateTime?)null,
+                    Channel     = ReadStr(d.GetProperty("invoice"), "channel") ?? "POS",
+                    FbrNumber   = ReadStr(d.GetProperty("invoice"), "fbrNumber"),
+                    OrderNumber = ReadStr(d.GetProperty("invoice"), "orderNumber") ?? ""
+                },
+                Buyer = ParseBuyer(d.GetProperty("buyer")),
+                Items = new(),
+                Totals = ParseTotals(d.GetProperty("totals"))
+            };
+
+            foreach (var i in d.GetProperty("items").EnumerateArray())
+            {
+                _inv.Items.Add(new LineDto
+                {
+                    Sku                = ReadStr(i, "sku") ?? "",
+                    UnitPrice          = i.GetProperty("unitPrice").GetDecimal(),
+                    Quantity           = i.GetProperty("quantity").GetInt32(),
+                    LineDiscountAmount = i.GetProperty("lineDiscountAmount").GetDecimal(),
+                    LineNet            = i.GetProperty("lineNet").GetDecimal(),
+                    TaxRatePct         = i.GetProperty("taxRatePct").GetDecimal(),
+                    LineTaxValue       = i.GetProperty("lineTaxValue").GetDecimal(),
+                    LineTotal          = i.GetProperty("lineTotal").GetDecimal()
+                });
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    static BuyerDto? ParseBuyer(JsonElement b)
+    {
+        if (b.ValueKind != JsonValueKind.Object) return null;
+        return new BuyerDto
+        {
+            FullName = ReadStr(b, "fullName"),
+            Phone    = ReadStr(b, "phone"),
+            Email    = ReadStr(b, "email"),
+            Cnic     = ReadStr(b, "cnic")
+        };
+    }
+
+    static TotalsDto ParseTotals(JsonElement t)
+    {
+        var totals = new TotalsDto
+        {
+            SubtotalNet        = t.GetProperty("subtotalNet").GetDecimal(),
+            TaxTotal           = t.GetProperty("taxTotal").GetDecimal(),
+            OrderDiscount      = t.GetProperty("orderDiscount").GetDecimal(),
+            ShippingAmount     = t.GetProperty("shippingAmount").GetDecimal(),
+            StoreCreditUsed    = t.GetProperty("storeCreditUsed").GetDecimal(),
+            LoyaltyRupeesUsed  = t.GetProperty("loyaltyRupeesUsed").GetDecimal(),
+            GrandTotal         = t.GetProperty("grandTotal").GetDecimal(),
+            PaidAmount         = t.GetProperty("paidAmount").GetDecimal(),
+            Outstanding        = t.GetProperty("outstanding").GetDecimal(),
+            TaxBreakdown       = new()
+        };
+        if (t.TryGetProperty("taxBreakdown", out var tb) && tb.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var b in tb.EnumerateArray())
+            {
+                totals.TaxBreakdown.Add(new TaxBreakdownDto
+                {
+                    Rate     = b.GetProperty("rate").GetDecimal(),
+                    RatePct  = b.GetProperty("ratePct").GetDecimal(),
+                    Taxable  = b.GetProperty("taxable").GetDecimal(),
+                    TaxValue = b.GetProperty("taxValue").GetDecimal()
+                });
+            }
+        }
+        return totals;
+    }
+
+    static string? ReadStr(JsonElement p, string name)
+        => p.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    class InvoiceDto
+    {
+        public SellerDto      Seller  { get; set; } = new();
+        public InvoiceMetaDto Invoice { get; set; } = new();
+        public BuyerDto?      Buyer   { get; set; }
+        public List<LineDto>  Items   { get; set; } = new();
+        public TotalsDto      Totals  { get; set; } = new();
+    }
+    class SellerDto      { public string? Ntn; public string? Strn; public string? BusinessName; public string? Address; }
+    class InvoiceMetaDto { public string Number = ""; public DateTime? IssuedAt; public string Channel = ""; public string? FbrNumber; public string OrderNumber = ""; }
+    class BuyerDto       { public string? FullName; public string? Phone; public string? Email; public string? Cnic; }
+    class LineDto
+    {
+        public string  Sku { get; set; } = "";
+        public decimal UnitPrice { get; set; }
+        public int     Quantity { get; set; }
+        public decimal LineDiscountAmount { get; set; }
+        public decimal LineNet { get; set; }
+        public decimal TaxRatePct { get; set; }
+        public decimal LineTaxValue { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+    class TotalsDto
+    {
+        public decimal SubtotalNet { get; set; }
+        public decimal TaxTotal { get; set; }
+        public decimal OrderDiscount { get; set; }
+        public decimal ShippingAmount { get; set; }
+        public decimal StoreCreditUsed { get; set; }
+        public decimal LoyaltyRupeesUsed { get; set; }
+        public decimal GrandTotal { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal Outstanding { get; set; }
+        public List<TaxBreakdownDto> TaxBreakdown { get; set; } = new();
+    }
+    class TaxBreakdownDto { public decimal Rate; public decimal RatePct; public decimal Taxable; public decimal TaxValue; }
+}

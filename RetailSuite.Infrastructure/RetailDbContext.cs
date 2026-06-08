@@ -8,6 +8,8 @@ using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
+using RetailSuite.Infrastructure.Modules.Tax.Entities;
+using RetailSuite.Infrastructure.Modules.Wallet.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Payments;
 using RetailSuite.Modules.Accounting.Entities;
@@ -99,6 +101,16 @@ public class RetailDbContext : DbContext
     public DbSet<SupplierReturnItem>         SupplierReturnItems         => Set<SupplierReturnItem>();
     public DbSet<SupplierCreditNote>         SupplierCreditNotes         => Set<SupplierCreditNote>();
     public DbSet<SupplierCreditApplication>  SupplierCreditApplications  => Set<SupplierCreditApplication>();
+
+    // -----------------------------
+    // Tax / FBR settings
+    // -----------------------------
+    public DbSet<TaxSettings> TaxSettings => Set<TaxSettings>();
+
+    // -----------------------------
+    // Wallet (customer OTP login + ledger)
+    // -----------------------------
+    public DbSet<CustomerOtpToken> CustomerOtpTokens => Set<CustomerOtpToken>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -866,6 +878,48 @@ public class RetailDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(c => c.SupplierReturnId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CustomerOtpToken>(b =>
+        {
+            b.ToTable("CustomerOtpTokens");
+            b.HasKey(t => t.Id);
+            b.Property(t => t.Phone).IsRequired().HasMaxLength(20);
+            b.Property(t => t.CodeHash).IsRequired().HasMaxLength(128);
+
+            b.HasIndex(t => new { t.TenantId, t.Phone, t.CreatedAt });
+        });
+
+        modelBuilder.Entity<TaxSettings>(b =>
+        {
+            b.ToTable("TaxSettings");
+            b.HasKey(t => t.Id);
+            b.Property(t => t.Ntn).HasMaxLength(20);
+            b.Property(t => t.Strn).HasMaxLength(20);
+            b.Property(t => t.BusinessNameAsRegistered).HasMaxLength(200);
+            b.Property(t => t.RegisteredAddress).HasMaxLength(500);
+            b.Property(t => t.InvoicePrefix).IsRequired().HasMaxLength(10);
+            b.Property(t => t.DefaultTaxRate).HasColumnType("decimal(5,4)");
+            b.Property(t => t.FbrPosId).HasMaxLength(50);
+            b.Property(t => t.FbrStatus).HasMaxLength(50);
+
+            // One TaxSettings per tenant.
+            b.HasIndex(t => t.TenantId).IsUnique();
+        });
+
+        modelBuilder.Entity<Order>(b =>
+        {
+            b.Property(o => o.InvoiceNumber).HasMaxLength(50);
+            b.Property(o => o.SellerNtnSnapshot).HasMaxLength(20);
+            b.Property(o => o.SellerStrnSnapshot).HasMaxLength(20);
+            b.Property(o => o.SellerBusinessNameSnapshot).HasMaxLength(200);
+            b.Property(o => o.SellerAddressSnapshot).HasMaxLength(500);
+            b.Property(o => o.FbrInvoiceNumber).HasMaxLength(100);
+
+            // InvoiceNumber must be unique within a tenant when set.
+            b.HasIndex(o => new { o.TenantId, o.InvoiceNumber })
+             .IsUnique()
+             .HasFilter("[InvoiceNumber] IS NOT NULL");
         });
 
         modelBuilder.Entity<SupplierCreditApplication>(b =>

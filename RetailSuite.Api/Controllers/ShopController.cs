@@ -7,6 +7,7 @@ using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
+using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
@@ -26,17 +27,20 @@ public class ShopController : ControllerBase
     private readonly AccountingService _accounting;
     private readonly IEmailService _email;
     private readonly ITenantContext _tenantContext;
+    private readonly IInvoiceStampingService _invoiceStamper;
 
     public ShopController(
         RetailDbContext db,
         AccountingService accounting,
         IEmailService email,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IInvoiceStampingService invoiceStamper)
     {
         _db = db;
         _accounting = accounting;
         _email = email;
         _tenantContext = tenantContext;
+        _invoiceStamper = invoiceStamper;
     }
 
     // ============================================================
@@ -281,7 +285,9 @@ public class ShopController : ControllerBase
 
             // ---- 4. Confirm. For COD we don't complete or register a payment yet —
             //         the order sits in Confirmed/Pending fulfillment until courier returns cash.
+            //         FBR invoice is stamped at Confirm time since the document is needed for delivery.
             order.Confirm();
+            await _invoiceStamper.StampAsync(order);
             _db.Orders.Add(order);
 
             // ---- 5. Accounting — book inventory issue (COGS) only.

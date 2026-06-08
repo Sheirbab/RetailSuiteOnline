@@ -61,6 +61,31 @@ public class Order : TenantEntity
     /// <summary>Fulfillment lifecycle: Pending / Shipped / Delivered / Cancelled. Distinct from Status (Order lifecycle).</summary>
     public string FulfillmentStatus { get; private set; } = "Pending";
 
+    // ---- FBR-compliant invoice snapshot --------------------------------
+    // Stamped when the order is Completed. Snapshotted so historical
+    // receipts don't change if the tenant later edits their tax settings.
+
+    /// <summary>FBR-format invoice number — distinct from OrderNumber. Sequential per tenant per fiscal year.</summary>
+    public string? InvoiceNumber { get; private set; }
+
+    /// <summary>When the invoice was issued — typically the moment the order moved to Completed.</summary>
+    public DateTime? InvoiceIssuedAt { get; private set; }
+
+    /// <summary>Seller NTN at the time of issue.</summary>
+    public string? SellerNtnSnapshot { get; private set; }
+
+    /// <summary>Seller STRN at the time of issue.</summary>
+    public string? SellerStrnSnapshot { get; private set; }
+
+    /// <summary>Seller registered business name at the time of issue.</summary>
+    public string? SellerBusinessNameSnapshot { get; private set; }
+
+    /// <summary>Seller registered address at the time of issue.</summary>
+    public string? SellerAddressSnapshot { get; private set; }
+
+    /// <summary>FBR-assigned invoice number when real-time PRAL integration is wired. Null until then.</summary>
+    public string? FbrInvoiceNumber { get; private set; }
+
     public decimal PaidAmount { get; private set; }
     public decimal OutstandingAmount => TotalAmount - PaidAmount;
     public bool IsFullyPaid => OutstandingAmount <= 0;
@@ -125,6 +150,38 @@ public class Order : TenantEntity
         PaidAmount += amount;
     }
     public void Complete() => Status = OrderStatus.Completed;
+
+    /// <summary>
+    /// Stamp the FBR-compliant invoice number and seller-identity snapshot.
+    /// Once stamped, the values are frozen — historical receipts must not change
+    /// if the tenant later edits their tax settings. Called by the sale flow at completion.
+    /// </summary>
+    public void StampInvoice(
+        string invoiceNumber,
+        string? sellerNtn,
+        string? sellerStrn,
+        string? sellerBusinessName,
+        string? sellerAddress)
+    {
+        if (!string.IsNullOrEmpty(InvoiceNumber)) return; // idempotent — never overwrite
+        if (string.IsNullOrWhiteSpace(invoiceNumber))
+            throw new ArgumentException("InvoiceNumber is required.", nameof(invoiceNumber));
+
+        InvoiceNumber              = invoiceNumber;
+        InvoiceIssuedAt            = DateTime.UtcNow;
+        SellerNtnSnapshot          = sellerNtn;
+        SellerStrnSnapshot         = sellerStrn;
+        SellerBusinessNameSnapshot = sellerBusinessName;
+        SellerAddressSnapshot      = sellerAddress;
+    }
+
+    /// <summary>Record the FBR-assigned invoice number once real-time PRAL integration is wired up.</summary>
+    public void SetFbrInvoiceNumber(string fbrInvoiceNumber)
+    {
+        if (string.IsNullOrWhiteSpace(fbrInvoiceNumber))
+            throw new ArgumentException("FbrInvoiceNumber is required.", nameof(fbrInvoiceNumber));
+        FbrInvoiceNumber = fbrInvoiceNumber.Trim();
+    }
 
     // ---- POS extensions (cash counter) ---------------------------------
 

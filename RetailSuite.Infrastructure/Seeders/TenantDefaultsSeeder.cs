@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
+using RetailSuite.Infrastructure.Modules.Tax.Entities;
 
 namespace RetailSuite.Infrastructure.Seeders;
 
@@ -47,6 +48,15 @@ public static class TenantDefaultsSeeder
 
         db.ShippingMethods.Add(flat);
         db.ShippingMethods.Add(pickup);
+
+        // Default empty TaxSettings — tenant admin fills in NTN/STRN under /settings/tax.
+        var hasTax = await db.TaxSettings
+            .IgnoreQueryFilters()
+            .AnyAsync(t => t.TenantId == tenantId, ct);
+        if (!hasTax)
+        {
+            db.TaxSettings.Add(new TaxSettings(tenantId));
+        }
 
         await db.SaveChangesAsync(ct);
     }

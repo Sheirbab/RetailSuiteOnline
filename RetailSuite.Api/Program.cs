@@ -21,6 +21,8 @@ using RetailSuite.Infrastructure.Modules.Inventory.Services;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Receiving.Services;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
+using RetailSuite.Infrastructure.Modules.Tax.Services;
+using RetailSuite.Infrastructure.Modules.Wallet.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Payments;
@@ -101,6 +103,14 @@ try
     builder.Services.AddScoped<ISupplierReturnNumberGenerator, SupplierReturnNumberGenerator>();
     builder.Services.AddScoped<ISupplierReturnService, SupplierReturnService>();
 
+    // FBR-compliant invoice stamping (per-tenant invoice numbers + seller snapshot).
+    builder.Services.AddScoped<ISalesInvoiceNumberGenerator, SalesInvoiceNumberGenerator>();
+    builder.Services.AddScoped<IInvoiceStampingService, InvoiceStampingService>();
+
+    // Customer wallet OTP login. LogOnlyOtpDelivery for dev — swap for real SMS in prod.
+    builder.Services.AddScoped<IOtpDeliveryService, LogOnlyOtpDelivery>();
+    builder.Services.AddScoped<IOtpService, OtpService>();
+
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)
     // ---------------------------------------------------------------
@@ -164,6 +174,7 @@ try
         options.AddPolicy("AdminOnly",         policy => policy.RequireRole("Admin"));
         options.AddPolicy("StaffOrAdmin",      policy => policy.RequireRole("Admin", "Staff"));
         options.AddPolicy("CustomerOnly",      policy => policy.RequireRole("Customer"));
+        options.AddPolicy("WalletCustomer",    policy => policy.RequireRole("WalletCustomer"));
 
         // Sub-phase 3a — gate tenant-side APIs behind verified email.
         // Apply via [Authorize(Policy = "RequireVerifiedEmail")] on controllers/actions

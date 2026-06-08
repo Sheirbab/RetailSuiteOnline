@@ -8,6 +8,7 @@ using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
+using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Catalog.Entities;
@@ -44,13 +45,16 @@ public class SaleServiceTests
         var storeCredit = new StoreCreditService(db, NullLogger<StoreCreditService>.Instance);
         var loyalty     = new LoyaltyService(db, NullLogger<LoyaltyService>.Instance);
 
+        var invoiceStamper = new InvoiceStampingService(db, new SalesInvoiceNumberGenerator(db));
+
         return new SaleService(
             db,
             new AccountingService(db),
             new NoopEmailService(),
             storeCredit,
             loyalty,
-            currentUser.Object);
+            currentUser.Object,
+            invoiceStamper);
     }
 
     [Fact]

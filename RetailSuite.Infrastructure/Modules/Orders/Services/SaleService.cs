@@ -4,6 +4,7 @@ using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
+using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
@@ -31,6 +32,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         private readonly IStoreCreditService _storeCredit;
         private readonly ILoyaltyService _loyalty;
         private readonly ICurrentUserContext _currentUser;
+        private readonly IInvoiceStampingService _invoices;
 
         public SaleService(
             RetailDbContext db,
@@ -38,7 +40,8 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             IEmailService emailService,
             IStoreCreditService storeCredit,
             ILoyaltyService loyalty,
-            ICurrentUserContext currentUser)
+            ICurrentUserContext currentUser,
+            IInvoiceStampingService invoices)
         {
             _db                = db;
             _accountingService = accountingService;
@@ -46,6 +49,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             _storeCredit       = storeCredit;
             _loyalty           = loyalty;
             _currentUser       = currentUser;
+            _invoices          = invoices;
         }
 
         public async Task<Guid> ProcessPosSaleAsync(CreatePosSaleRequest request)
@@ -140,9 +144,10 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 throw new BusinessRuleException(
                     $"Insufficient cash: due {amountDue:N2}, received {request.PaidAmount:N2}.");
 
-            // 6. Finalise — confirm + complete + register payment + earn loyalty
+            // 6. Finalise — confirm + complete + stamp FBR-compliant invoice + register payment + earn loyalty
             order.Confirm();
             order.Complete();
+            await _invoices.StampAsync(order);
 
             if (amountDue > 0)
                 order.RegisterPayment(amountDue);

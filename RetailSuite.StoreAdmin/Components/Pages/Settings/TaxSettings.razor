@@ -1,0 +1,225 @@
+@page "/settings/tax"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<h3 style="margin-bottom:8px;">Tax & FBR settings</h3>
+<p style="color:#6b7280;font-size:13px;margin-bottom:20px;">
+    These details are printed on every compliant invoice. Update them carefully — past invoices keep their snapshot of these values.
+</p>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_form != null)
+{
+    <!-- ============================ Legal identity ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <h4 style="margin-top:0;">Legal identity (FBR registration)</h4>
+
+        <div style="display:flex;gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">NTN</label>
+                <input class="input full" @bind="_form.Ntn" placeholder="1234567-8" />
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">STRN</label>
+                <input class="input full" @bind="_form.Strn" placeholder="12-34-5678-901-23" />
+            </div>
+        </div>
+
+        <label style="font-size:12px;color:#6b7280;margin-top:8px;display:block;">Business name as registered</label>
+        <input class="input full" @bind="_form.BusinessNameAsRegistered"
+               placeholder="ABC Traders (Pvt) Ltd" />
+
+        <label style="font-size:12px;color:#6b7280;margin-top:8px;display:block;">Registered address</label>
+        <textarea class="input full" rows="2" @bind="_form.RegisteredAddress"
+                  placeholder="Shop No. 12, Main Bazaar, Karachi"></textarea>
+    </div>
+
+    <!-- ============================ Invoice numbering ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <h4 style="margin-top:0;">Invoice numbering</h4>
+        <div style="display:flex;gap:10px;align-items:flex-end;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">Invoice prefix</label>
+                <input class="input full" @bind="_form.InvoicePrefix"
+                       placeholder="INV" style="text-transform:uppercase;" />
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">Fiscal year starts in</label>
+                <select class="input full" @bind="_form.FiscalYearStartMonth">
+                    <option value="1">January</option>
+                    <option value="4">April</option>
+                    <option value="7">July (Pakistan default)</option>
+                    <option value="10">October</option>
+                </select>
+            </div>
+        </div>
+        <p style="font-size:11px;color:#6b7280;margin:6px 0 0;">
+            Example next invoice: <strong>@SampleInvoiceNumber()</strong>
+        </p>
+    </div>
+
+    <!-- ============================ Pricing convention ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <h4 style="margin-top:0;">Pricing convention</h4>
+
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <input type="checkbox" @bind="_form.PricesIncludeTax" />
+            <span>Catalogue prices already include sales tax (common in retail)</span>
+        </label>
+
+        <label style="font-size:12px;color:#6b7280;display:block;">Default tax rate (fraction)</label>
+        <input class="input" type="number" min="0" max="1" step="0.01"
+               style="width:140px;" @bind="_form.DefaultTaxRate" />
+        <p style="font-size:11px;color:#6b7280;margin:4px 0 0;">
+            Used when a variant has no tax rate set. Examples: 0.18 = 18% GST.
+        </p>
+    </div>
+
+    <!-- ============================ FBR PRAL integration ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <h4 style="margin-top:0;">FBR POS-integration (PRAL)</h4>
+        <p style="color:#6b7280;font-size:12px;margin:0 0 10px;">
+            Off by default. Enable once enrolled with FBR and you have a PRAL-issued POS ID.
+            When on, each sale will be transmitted live to FBR for an authoritative invoice number.
+        </p>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <input type="checkbox" @bind="_form.FbrEnabled" />
+            <span>FBR real-time integration enabled</span>
+        </label>
+        <div style="display:flex;gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">FBR POS ID</label>
+                <input class="input full" @bind="_form.FbrPosId" placeholder="POS123456" />
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">FBR status</label>
+                <input class="input full" @bind="_form.FbrStatus" placeholder="Active" />
+            </div>
+        </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
+            @(_saving ? "Saving..." : "Save changes")
+        </button>
+    </div>
+}
+
+@code {
+    bool _loading = true;
+    bool _saving;
+    FormDto? _form;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/tax-settings");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            var legal = d.GetProperty("legalIdentity");
+            var num   = d.GetProperty("invoiceNumbering");
+            var price = d.GetProperty("pricingConvention");
+            var fbr   = d.GetProperty("fbrIntegration");
+
+            _form = new FormDto
+            {
+                Ntn                       = ReadStringOrNull(legal, "ntn"),
+                Strn                      = ReadStringOrNull(legal, "strn"),
+                BusinessNameAsRegistered  = ReadStringOrNull(legal, "businessNameAsRegistered"),
+                RegisteredAddress         = ReadStringOrNull(legal, "registeredAddress"),
+                InvoicePrefix             = num.GetProperty("invoicePrefix").GetString() ?? "INV",
+                FiscalYearStartMonth      = num.GetProperty("fiscalYearStartMonth").GetInt32(),
+                PricesIncludeTax          = price.GetProperty("pricesIncludeTax").GetBoolean(),
+                DefaultTaxRate            = price.GetProperty("defaultTaxRate").GetDecimal(),
+                FbrEnabled                = fbr.GetProperty("fbrEnabled").GetBoolean(),
+                FbrPosId                  = ReadStringOrNull(fbr, "fbrPosId"),
+                FbrStatus                 = ReadStringOrNull(fbr, "fbrStatus")
+            };
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    async Task Save()
+    {
+        if (_form == null) return;
+
+        _saving = true;
+        try
+        {
+            var body = new
+            {
+                legalIdentity = new
+                {
+                    ntn                       = _form.Ntn,
+                    strn                      = _form.Strn,
+                    businessNameAsRegistered  = _form.BusinessNameAsRegistered,
+                    registeredAddress         = _form.RegisteredAddress
+                },
+                invoiceNumbering = new
+                {
+                    invoicePrefix         = _form.InvoicePrefix,
+                    fiscalYearStartMonth  = _form.FiscalYearStartMonth
+                },
+                pricingConvention = new
+                {
+                    pricesIncludeTax = _form.PricesIncludeTax,
+                    defaultTaxRate   = _form.DefaultTaxRate
+                },
+                fbrIntegration = new
+                {
+                    fbrEnabled = _form.FbrEnabled,
+                    fbrPosId   = _form.FbrPosId,
+                    fbrStatus  = _form.FbrStatus
+                }
+            };
+            var resp = await Http.PatchAsJsonAsync("api/tax-settings", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show("Tax settings saved.");
+        }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    string SampleInvoiceNumber()
+    {
+        if (_form == null) return string.Empty;
+        var now = DateTime.UtcNow;
+        var fyStartYear = now.Month >= _form.FiscalYearStartMonth ? now.Year : now.Year - 1;
+        var tag = $"{fyStartYear % 100:D2}{(fyStartYear + 1) % 100:D2}";
+        return $"{(_form.InvoicePrefix ?? "INV").ToUpperInvariant()}-FY{tag}-0000001";
+    }
+
+    static string? ReadStringOrNull(JsonElement parent, string name) =>
+        parent.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+
+    class FormDto
+    {
+        public string? Ntn { get; set; }
+        public string? Strn { get; set; }
+        public string? BusinessNameAsRegistered { get; set; }
+        public string? RegisteredAddress { get; set; }
+        public string  InvoicePrefix { get; set; } = "INV";
+        public int     FiscalYearStartMonth { get; set; } = 7;
+        public bool    PricesIncludeTax { get; set; }
+        public decimal DefaultTaxRate { get; set; }
+        public bool    FbrEnabled { get; set; }
+        public string? FbrPosId { get; set; }
+        public string? FbrStatus { get; set; }
+    }
+}
