@@ -8,6 +8,7 @@ using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
+using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Entities;
 using RetailSuite.Infrastructure.Modules.Wallet.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
@@ -111,6 +112,11 @@ public class RetailDbContext : DbContext
     // Wallet (customer OTP login + ledger)
     // -----------------------------
     public DbSet<CustomerOtpToken> CustomerOtpTokens => Set<CustomerOtpToken>();
+
+    // -----------------------------
+    // Locations (branches / shops)
+    // -----------------------------
+    public DbSet<Location> Locations => Set<Location>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -878,6 +884,23 @@ public class RetailDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(c => c.SupplierReturnId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Location>(b =>
+        {
+            b.ToTable("Locations");
+            b.HasKey(l => l.Id);
+            b.Property(l => l.Code).IsRequired().HasMaxLength(20);
+            b.Property(l => l.Name).IsRequired().HasMaxLength(150);
+            b.Property(l => l.Address).HasMaxLength(500);
+            b.Property(l => l.Phone).HasMaxLength(50);
+            b.Property(l => l.Notes).HasMaxLength(1000);
+
+            b.HasIndex(l => new { l.TenantId, l.Code }).IsUnique();
+            // At most one default per tenant.
+            b.HasIndex(l => new { l.TenantId, l.IsDefault })
+             .IsUnique()
+             .HasFilter("[IsDefault] = 1");
         });
 
         modelBuilder.Entity<CustomerOtpToken>(b =>

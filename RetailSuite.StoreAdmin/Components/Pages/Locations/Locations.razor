@@ -1,0 +1,304 @@
+@page "/locations"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div>
+        <h3 style="margin:0;">Locations</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Branches / shops where stock is held and sales happen. Each tenant has one default location used by the storefront.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Add location</button>
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_rows == null || !_rows.Any())
+{
+    <div class="card" style="text-align:center;color:#9ca3af;padding:30px;">
+        <p>No locations yet. Click <strong>+ Add location</strong> to get started.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Contact</th>
+                    <th>Default</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td style="font-family:monospace;font-weight:600;">@r.Code</td>
+                        <td>
+                            <strong>@r.Name</strong>
+                            @if (!string.IsNullOrEmpty(r.Address))
+                            {
+                                <div style="color:#6b7280;font-size:11px;">@r.Address</div>
+                            }
+                        </td>
+                        <td>@(r.Phone ?? "—")</td>
+                        <td>
+                            @if (r.IsDefault)
+                            {
+                                <span style="background:#dbeafe;color:#1d4ed8;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;">⭐ Default</span>
+                            }
+                            else if (r.IsActive)
+                            {
+                                <button class="btn" style="padding:3px 8px;font-size:11px;"
+                                        @onclick="() => SetDefault(r.Id)">Make default</button>
+                            }
+                        </td>
+                        <td>
+                            @if (r.IsActive)
+                            {
+                                <span style="background:#dcfce7;color:#15803d;font-size:11px;padding:2px 8px;border-radius:4px;">Active</span>
+                            }
+                            else
+                            {
+                                <span style="background:#fee2e2;color:#b91c1c;font-size:11px;padding:2px 8px;border-radius:4px;">Inactive</span>
+                            }
+                        </td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button class="btn" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="() => OpenEdit(r)">Edit</button>
+                            @if (r.IsActive && !r.IsDefault)
+                            {
+                                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;margin-left:4px;"
+                                        @onclick="() => Deactivate(r.Id)">Disable</button>
+                            }
+                            else if (!r.IsActive)
+                            {
+                                <button class="btn" style="padding:4px 10px;font-size:12px;margin-left:4px;"
+                                        @onclick="() => Reactivate(r)">Enable</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- ============================ Modal ============================ -->
+<Modal Visible="@_showModal" OnClose="CloseModal">
+    <h3 style="margin-bottom:14px;">@(_editing == null ? "Add location" : "Edit location")</h3>
+
+    @if (_editing == null)
+    {
+        <label style="font-size:12px;color:#6b7280;">Code (stable, uppercase)</label>
+        <input class="input full" @bind="_form.Code"
+               placeholder="MAIN, DHA, KHI-01" style="margin-bottom:8px;text-transform:uppercase;" />
+    }
+    else
+    {
+        <label style="font-size:12px;color:#6b7280;">Code</label>
+        <input class="input full" value="@_editing.Code" disabled style="margin-bottom:8px;background:#f3f4f6;" />
+    }
+
+    <label style="font-size:12px;color:#6b7280;">Display name *</label>
+    <input class="input full" @bind="_form.Name" placeholder="Main Branch" style="margin-bottom:8px;" />
+
+    <label style="font-size:12px;color:#6b7280;">Address</label>
+    <textarea class="input full" rows="2" @bind="_form.Address"
+              placeholder="Shop No. 12, Main Bazaar, Karachi" style="margin-bottom:8px;"></textarea>
+
+    <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">Phone</label>
+            <input class="input full" @bind="_form.Phone" placeholder="021-1234567" />
+        </div>
+    </div>
+
+    <label style="font-size:12px;color:#6b7280;margin-top:8px;display:block;">Notes</label>
+    <textarea class="input full" rows="2" @bind="_form.Notes"
+              placeholder="Manager name, hours, etc." style="margin-bottom:8px;"></textarea>
+
+    @if (_editing == null)
+    {
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <input type="checkbox" @bind="_form.MakeDefault" />
+            <span>Make this the default location (used for online orders)</span>
+        </label>
+    }
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" @onclick="CloseModal">Cancel</button>
+        <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
+            @(_saving ? "Saving..." : (_editing == null ? "Add" : "Save changes"))
+        </button>
+    </div>
+</Modal>
+
+@code {
+    bool _loading = true;
+    bool _saving;
+    bool _showModal;
+    List<LocationRow>? _rows;
+    LocationRow? _editing;
+    Form _form = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/locations");
+            using var doc = JsonDocument.Parse(json);
+            _rows = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _rows.Add(new LocationRow
+                    {
+                        Id        = e.GetProperty("id").GetGuid(),
+                        Code      = e.GetProperty("code").GetString() ?? "",
+                        Name      = e.GetProperty("name").GetString() ?? "",
+                        Address   = e.TryGetProperty("address", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null,
+                        Phone     = e.TryGetProperty("phone",   out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null,
+                        Notes     = e.TryGetProperty("notes",   out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null,
+                        IsActive  = e.GetProperty("isActive").GetBoolean(),
+                        IsDefault = e.GetProperty("isDefault").GetBoolean()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    void OpenCreate()
+    {
+        _editing = null;
+        _form = new Form();
+        _showModal = true;
+    }
+
+    void OpenEdit(LocationRow r)
+    {
+        _editing = r;
+        _form = new Form
+        {
+            Code    = r.Code,
+            Name    = r.Name,
+            Address = r.Address,
+            Phone   = r.Phone,
+            Notes   = r.Notes
+        };
+        _showModal = true;
+    }
+
+    void CloseModal()
+    {
+        _showModal = false;
+        _editing   = null;
+    }
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name)) { Toast.Show("Name is required."); return; }
+        if (_editing == null && string.IsNullOrWhiteSpace(_form.Code)) { Toast.Show("Code is required."); return; }
+
+        _saving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (_editing == null)
+            {
+                var body = new
+                {
+                    code        = _form.Code?.Trim().ToUpperInvariant(),
+                    name        = _form.Name.Trim(),
+                    address     = string.IsNullOrWhiteSpace(_form.Address) ? null : _form.Address,
+                    phone       = string.IsNullOrWhiteSpace(_form.Phone)   ? null : _form.Phone,
+                    notes       = string.IsNullOrWhiteSpace(_form.Notes)   ? null : _form.Notes,
+                    makeDefault = _form.MakeDefault
+                };
+                resp = await Http.PostAsJsonAsync("api/locations", body);
+            }
+            else
+            {
+                var body = new
+                {
+                    name    = _form.Name.Trim(),
+                    address = _form.Address,
+                    phone   = _form.Phone,
+                    notes   = _form.Notes
+                };
+                resp = await Http.PatchAsJsonAsync($"api/locations/{_editing.Id}", body);
+            }
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show(_editing == null ? "Location added." : "Location updated.");
+            CloseModal();
+            await Load();
+        }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    async Task SetDefault(Guid id)
+    {
+        var resp = await Http.PostAsync($"api/locations/{id}/set-default", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Default location updated."); await Load(); }
+        else Toast.Show("Could not set default.");
+    }
+
+    async Task Deactivate(Guid id)
+    {
+        var resp = await Http.DeleteAsync($"api/locations/{id}");
+        if (resp.IsSuccessStatusCode) { Toast.Show("Disabled."); await Load(); }
+        else Toast.Show($"Failed: {await resp.Content.ReadAsStringAsync()}");
+    }
+
+    async Task Reactivate(LocationRow r)
+    {
+        var resp = await Http.PatchAsJsonAsync($"api/locations/{r.Id}", new { isActive = true });
+        if (resp.IsSuccessStatusCode) { Toast.Show("Enabled."); await Load(); }
+        else Toast.Show("Failed.");
+    }
+
+    class Form
+    {
+        public string? Code        { get; set; }
+        public string  Name        { get; set; } = "";
+        public string? Address     { get; set; }
+        public string? Phone       { get; set; }
+        public string? Notes       { get; set; }
+        public bool    MakeDefault { get; set; }
+    }
+
+    class LocationRow
+    {
+        public Guid    Id        { get; set; }
+        public string  Code      { get; set; } = "";
+        public string  Name      { get; set; } = "";
+        public string? Address   { get; set; }
+        public string? Phone     { get; set; }
+        public string? Notes     { get; set; }
+        public bool    IsActive  { get; set; }
+        public bool    IsDefault { get; set; }
+    }
+}

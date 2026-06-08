@@ -22,6 +22,7 @@ using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Receiving.Services;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
+using RetailSuite.Infrastructure.Modules.Locations.Services;
 using RetailSuite.Infrastructure.Modules.Wallet.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
@@ -110,6 +111,9 @@ try
     // Customer wallet OTP login. LogOnlyOtpDelivery for dev — swap for real SMS in prod.
     builder.Services.AddScoped<IOtpDeliveryService, LogOnlyOtpDelivery>();
     builder.Services.AddScoped<IOtpService, OtpService>();
+
+    // Locations (branches / shops).
+    builder.Services.AddScoped<ILocationService, LocationService>();
 
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Entities;
 
@@ -56,6 +57,16 @@ public static class TenantDefaultsSeeder
         if (!hasTax)
         {
             db.TaxSettings.Add(new TaxSettings(tenantId));
+        }
+
+        // Default "Main Branch" location — every tenant needs at least one for stock to live in.
+        var hasLocation = await db.Locations
+            .IgnoreQueryFilters()
+            .AnyAsync(l => l.TenantId == tenantId, ct);
+        if (!hasLocation)
+        {
+            var main = new Location(tenantId, code: "MAIN", name: "Main Branch", isDefault: true);
+            db.Locations.Add(main);
         }
 
         await db.SaveChangesAsync(ct);
