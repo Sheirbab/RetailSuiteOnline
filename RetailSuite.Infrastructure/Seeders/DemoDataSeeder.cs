@@ -31,6 +31,12 @@ public static class DemoDataSeeder
 
         Console.WriteLine($"✓ Created demo tenant: {demoTenant.Name} ({demoTenant.Subdomain})");
 
+        // Every tenant needs a default Location for stock to live in.
+        var mainLocation = new RetailSuite.Infrastructure.Modules.Locations.Entities.Location(
+            demoTenant.Id, code: "MAIN", name: "Main Branch", isDefault: true);
+        context.Locations.Add(mainLocation);
+        await context.SaveChangesAsync();
+
         // Create Admin user for demo tenant
         var adminEmail = "admin@demo-store.com";
         var adminPassword = "Demo@12345";
@@ -220,7 +226,7 @@ public static class DemoDataSeeder
 
         for (int i = 0; i < allVariants.Length; i++)
         {
-            var inventoryItem = new InventoryItem(allVariants[i].Id, lowStockThreshold: 10) { TenantId = demoTenant.Id };
+            var inventoryItem = new InventoryItem(allVariants[i].Id, mainLocation.Id, lowStockThreshold: 10) { TenantId = demoTenant.Id };
             inventoryItem.ReceiveStock(stockQuantities[i], allVariants[i].CostPrice);
             inventoryItems.Add(inventoryItem);
 

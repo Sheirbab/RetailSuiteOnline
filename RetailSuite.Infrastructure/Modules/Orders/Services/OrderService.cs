@@ -167,6 +167,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                     new InventoryTransaction(
                         inventoryItem.Id,
                         item.ProductVariantId,
+                        inventoryItem.LocationId,
                         item.Quantity,
                         InventoryTransactionType.AdjustmentIncrease,
                         order.Id.ToString(),
@@ -337,6 +338,7 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 _db.InventoryTransactions.Add(new InventoryTransaction(
                     inventoryItem.Id,
                     line.ProductVariantId,
+                    inventoryItem.LocationId,
                     line.Quantity,
                     InventoryTransactionType.AdjustmentIncrease,
                     order.Id.ToString(),

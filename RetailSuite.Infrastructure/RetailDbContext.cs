@@ -328,8 +328,15 @@ public class RetailDbContext : DbContext
             b.ToTable("InventoryItems");
             b.HasKey(i => i.Id);
 
-            b.HasIndex(i => new { i.TenantId, i.ProductVariantId })
+            // One row per (variant, location). The old unique on (tenant, variant)
+            // is replaced with (tenant, variant, location) now that stock is per-location.
+            b.HasIndex(i => new { i.TenantId, i.ProductVariantId, i.LocationId })
                 .IsUnique();
+
+            b.HasOne<Location>()
+                .WithMany()
+                .HasForeignKey(i => i.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             b.HasMany(i => i.Transactions)
                 .WithOne()
@@ -356,6 +363,12 @@ public class RetailDbContext : DbContext
 
             b.HasIndex(t => new { t.TenantId, t.ProductVariantId });
             b.HasIndex(t => t.CreatedAt);
+            b.HasIndex(t => t.LocationId);
+
+            b.HasOne<Location>()
+                .WithMany()
+                .HasForeignKey(t => t.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =====================================================
@@ -776,10 +789,16 @@ public class RetailDbContext : DbContext
             b.HasIndex(r => new { r.TenantId, r.OrderNumber }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status });
             b.HasIndex(r => r.SupplierId);
+            b.HasIndex(r => r.DestinationLocationId);
 
             b.HasOne<Supplier>()
                 .WithMany()
                 .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne<Location>()
+                .WithMany()
+                .HasForeignKey(r => r.DestinationLocationId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             b.HasMany(r => r.Items)

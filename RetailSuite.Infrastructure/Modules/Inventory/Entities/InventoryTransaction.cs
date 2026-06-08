@@ -7,6 +7,9 @@ public class InventoryTransaction : TenantEntity
     public Guid InventoryItemId { get; private set; }
     public Guid ProductVariantId { get; private set; }
 
+    /// <summary>The branch / shop where this movement happened.</summary>
+    public Guid LocationId { get; private set; }
+
     public int QuantityChange { get; private set; }
 
     public InventoryTransactionType TransactionType { get; private set; }
@@ -19,16 +22,21 @@ public class InventoryTransaction : TenantEntity
     public InventoryTransaction(
         Guid inventoryItemId,
         Guid productVariantId,
+        Guid locationId,
         int quantityChange,
         InventoryTransactionType type,
         string? referenceId = null,
         string? notes = null)
     {
-        InventoryItemId = inventoryItemId;
+        if (locationId == Guid.Empty)
+            throw new ArgumentException("LocationId is required.", nameof(locationId));
+
+        InventoryItemId  = inventoryItemId;
         ProductVariantId = productVariantId;
-        QuantityChange = quantityChange;
-        TransactionType = type;
-        ReferenceId = referenceId;
-        Notes = notes;
+        LocationId       = locationId;
+        QuantityChange   = quantityChange;
+        TransactionType  = type;
+        ReferenceId      = referenceId;
+        Notes            = notes;
     }
 }

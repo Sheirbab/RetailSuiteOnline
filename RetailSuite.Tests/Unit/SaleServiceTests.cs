@@ -6,6 +6,7 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
@@ -63,6 +64,10 @@ public class SaleServiceTests
         var tenantId = Guid.NewGuid();
         await using var db = CreateInMemoryDb(tenantId);
 
+        var location = new Location(tenantId, code: "MAIN", name: "Main Branch", isDefault: true);
+        db.Locations.Add(location);
+        await db.SaveChangesAsync();
+
         var product = new Product("Test Product", null);
         var variant = new ProductVariant(product.Id, "SKU-SALE", 100m);
         variant.StockQuantity = 5;
@@ -71,7 +76,7 @@ public class SaleServiceTests
         db.ProductVariants.Add(variant);
         await db.SaveChangesAsync();
 
-        var inventoryItem = new InventoryItem(variant.Id);
+        var inventoryItem = new InventoryItem(variant.Id, location.Id);
         inventoryItem.ReceiveStock(5, 40m);
         db.InventoryItems.Add(inventoryItem);
         db.Accounts.AddRange(

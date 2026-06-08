@@ -1,11 +1,20 @@
-﻿using RetailSuite.Infrastructure.Exceptions;
+using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Shared;
 
 namespace RetailSuite.Infrastructure.Modules.Inventory.Entities;
 
+/// <summary>
+/// Per-(variant, location) stock row. Each row represents the stock of one
+/// product variant at one physical branch / shop. The aggregate stock for a
+/// variant across all locations is denormalised onto <c>ProductVariant.StockQuantity</c>
+/// — the <see cref="Services.InventoryService"/> recomputes that rollup on every adjust.
+/// </summary>
 public class InventoryItem : TenantEntity
 {
     public Guid ProductVariantId { get; private set; }
+
+    /// <summary>The branch / shop where this stock physically lives.</summary>
+    public Guid LocationId { get; private set; }
 
     public int CurrentStock { get; private set; }
 
@@ -18,11 +27,15 @@ public class InventoryItem : TenantEntity
 
     private InventoryItem() { }
 
-    public InventoryItem(Guid productVariantId, int lowStockThreshold = 5)
+    public InventoryItem(Guid productVariantId, Guid locationId, int lowStockThreshold = 5)
     {
-        ProductVariantId = productVariantId;
+        if (locationId == Guid.Empty)
+            throw new ArgumentException("LocationId is required.", nameof(locationId));
+
+        ProductVariantId  = productVariantId;
+        LocationId        = locationId;
         LowStockThreshold = lowStockThreshold;
-        CurrentStock = 0;
+        CurrentStock      = 0;
     }
 
     public void ApplyTransaction(int quantityChange)

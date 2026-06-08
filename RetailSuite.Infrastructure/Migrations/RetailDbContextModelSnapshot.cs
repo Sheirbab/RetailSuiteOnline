@@ -462,6 +462,9 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("LowStockThreshold")
                         .HasColumnType("int");
 
@@ -476,7 +479,9 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "ProductVariantId")
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("TenantId", "ProductVariantId", "LocationId")
                         .IsUnique();
 
                     b.ToTable("InventoryItems", (string)null);
@@ -496,6 +501,9 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
@@ -520,6 +528,8 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("InventoryItemId");
+
+                    b.HasIndex("LocationId");
 
                     b.HasIndex("TenantId", "ProductVariantId");
 
@@ -2194,11 +2204,26 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", b =>
+                {
+                    b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryTransaction", b =>
                 {
                     b.HasOne("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", null)
                         .WithMany("Transactions")
                         .HasForeignKey("InventoryItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
+                        .WithMany()
+                        .HasForeignKey("LocationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

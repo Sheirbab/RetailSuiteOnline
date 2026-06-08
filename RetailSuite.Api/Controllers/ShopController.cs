@@ -272,7 +272,8 @@ public class ShopController : ControllerBase
                     variant.Price, line.Quantity, variant.TaxRate));
 
                 _db.InventoryTransactions.Add(new InventoryTransaction(
-                    inventory.Id, variant.Id, -line.Quantity,
+                    inventory.Id, variant.Id, inventory.LocationId,
+                    -line.Quantity,
                     InventoryTransactionType.Sale, order.Id.ToString(), "Online sale"));
             }
 

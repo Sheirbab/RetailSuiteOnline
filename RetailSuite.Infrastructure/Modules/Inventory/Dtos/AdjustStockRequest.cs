@@ -16,5 +16,8 @@ namespace RetailSuite.Infrastructure.Modules.Inventory.Dtos
 
         public string? Reference { get; set; }
         public string? Reason { get; set; }
+
+        /// <summary>Optional — defaults to the tenant's default location.</summary>
+        public Guid? LocationId { get; set; }
     }
 }

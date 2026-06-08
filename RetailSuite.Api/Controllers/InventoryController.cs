@@ -24,7 +24,7 @@ public class InventoryController : ControllerBase
         _inventoryService = inventoryService;
     }
     [HttpGet("all")]
-    public async Task<IActionResult> GetAll(int page = 1, int pageSize = 50)
+    public async Task<IActionResult> GetAll(int page = 1, int pageSize = 50, Guid? locationId = null)
     {
         var query = _db.ProductVariants
             .Include(v => v.Product)
@@ -32,21 +32,38 @@ public class InventoryController : ControllerBase
 
         var total = await query.CountAsync();
 
-        var data = await query
+        // Stock comes from the rollup (v.StockQuantity) unless a location filter
+        // is supplied — in which case we read the per-location InventoryItem.
+        var rows = await query
             .OrderBy(v => v.SKU)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(v => new InventoryItemDto
+            .Select(v => new
             {
-                Id = v.Id,
-                ProductName = v.Product.Name,
-                SKU = v.SKU,
-                CurrentStock = v.StockQuantity,
-                AverageCost = v.AverageCost
+                v.Id,
+                ProductName  = v.Product.Name,
+                SKU          = v.SKU,
+                TotalStock   = v.StockQuantity,
+                AverageCost  = v.AverageCost,
+                LocationStock = locationId.HasValue
+                    ? _db.InventoryItems
+                          .Where(i => i.ProductVariantId == v.Id && i.LocationId == locationId.Value)
+                          .Select(i => (int?)i.CurrentStock)
+                          .FirstOrDefault()
+                    : null
             })
             .ToListAsync();
 
-        return Ok(new { Total = total, Page = page, PageSize = pageSize, Items = data });
+        var items = rows.Select(r => new InventoryItemDto
+        {
+            Id           = r.Id,
+            ProductName  = r.ProductName,
+            SKU          = r.SKU,
+            CurrentStock = locationId.HasValue ? (r.LocationStock ?? 0) : r.TotalStock,
+            AverageCost  = r.AverageCost
+        }).ToList();
+
+        return Ok(new { Total = total, Page = page, PageSize = pageSize, Items = items });
     }
 
     // ---------------------------------------
@@ -60,7 +77,8 @@ public class InventoryController : ControllerBase
             request.Quantity,
             request.Type,
             request.Reference,
-            request.Reason);
+            request.Reason,
+            request.LocationId);
 
         return Ok();
     }

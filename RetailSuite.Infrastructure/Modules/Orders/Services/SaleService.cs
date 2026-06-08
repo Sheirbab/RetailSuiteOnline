@@ -61,6 +61,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             var cashierId  = _currentUser.UserId;
             var customerId = request.CustomerId ?? Guid.Empty;
 
+            // Resolve the selling location once for this sale.
+            var sellingLocationId = await ResolveSellingLocationAsync(tenantId, request.LocationId);
+
             using var transaction = await _db.Database.BeginTransactionAsync();
 
             // 1. Order header
@@ -70,23 +73,28 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 
             decimal totalCogs = 0;
 
-            // 2. Cart lines — decrement stock, write inventory ledger, add to order
+            // 2. Cart lines — decrement stock at the selling location, write inventory ledger, add to order
             foreach (var lineReq in request.Items)
             {
                 var variant = await _db.ProductVariants
                     .FirstAsync(v => v.Id == lineReq.ProductVariantId);
 
                 var inventoryItem = await _db.InventoryItems
-                    .FirstAsync(i => i.ProductVariantId == variant.Id);
+                    .FirstOrDefaultAsync(i => i.ProductVariantId == variant.Id
+                                           && i.LocationId == sellingLocationId);
 
-                if (inventoryItem.CurrentStock < lineReq.Quantity)
+                if (inventoryItem == null || inventoryItem.CurrentStock < lineReq.Quantity)
+                {
+                    var have = inventoryItem?.CurrentStock ?? 0;
                     throw new BusinessRuleException(
-                        $"Insufficient stock for {variant.SKU} — have {inventoryItem.CurrentStock}, need {lineReq.Quantity}.");
+                        $"Insufficient stock at this branch for {variant.SKU} — have {have}, need {lineReq.Quantity}.");
+                }
 
                 var costAmount = inventoryItem.IssueStock(lineReq.Quantity);
-                variant.StockQuantity = inventoryItem.CurrentStock;
-                variant.AverageCost   = inventoryItem.AverageCost;
+                variant.AverageCost = inventoryItem.AverageCost;
                 totalCogs += costAmount;
+
+                // Defer the StockQuantity rollup recompute until after all lines are processed.
 
                 var orderItem = new OrderItem(
                     orderId:            order.Id,
@@ -102,10 +110,22 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 _db.InventoryTransactions.Add(new InventoryTransaction(
                     inventoryItem.Id,
                     variant.Id,
+                    inventoryItem.LocationId,
                     -lineReq.Quantity,
                     InventoryTransactionType.Sale,
                     order.Id.ToString(),
                     "POS sale"));
+            }
+
+            // 2b. Recompute the rollup denormalised onto ProductVariant.StockQuantity
+            //     across all locations for every variant touched in this sale.
+            var touchedVariantIds = request.Items.Select(i => i.ProductVariantId).Distinct().ToList();
+            foreach (var vid in touchedVariantIds)
+            {
+                var variantToUpdate = await _db.ProductVariants.FirstAsync(v => v.Id == vid);
+                variantToUpdate.StockQuantity = await _db.InventoryItems
+                    .Where(i => i.ProductVariantId == vid)
+                    .SumAsync(i => (int?)i.CurrentStock) ?? 0;
             }
 
             // 3. Order-level discount (after lines accumulated)
@@ -243,6 +263,26 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             }
 
             return order.Id;
+        }
+
+        /// <summary>
+        /// Resolve which branch this sale is happening at. Prefers the explicit
+        /// location id sent by the POS terminal (from localStorage); falls back
+        /// to the tenant's default location.
+        /// </summary>
+        private async Task<Guid> ResolveSellingLocationAsync(Guid tenantId, Guid? explicitLocationId)
+        {
+            if (explicitLocationId.HasValue && explicitLocationId.Value != Guid.Empty)
+                return explicitLocationId.Value;
+
+            var def = await _db.Locations
+                .Where(l => l.IsDefault && l.IsActive)
+                .Select(l => (Guid?)l.Id)
+                .FirstOrDefaultAsync();
+            if (!def.HasValue)
+                throw new BusinessRuleException(
+                    "POS terminal has no location bound and no default location is configured for this tenant.");
+            return def.Value;
         }
     }
 }
