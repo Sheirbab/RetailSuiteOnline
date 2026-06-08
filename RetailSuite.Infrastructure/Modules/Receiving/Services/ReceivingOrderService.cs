@@ -14,7 +14,7 @@ namespace RetailSuite.Infrastructure.Modules.Receiving.Services;
 /// </summary>
 public interface IReceivingOrderService
 {
-    Task<ReceivingOrder> CreateDraftAsync(Guid tenantId, Guid? supplierId, string? supplierReference, DateTime? expectedDate, string? notes);
+    Task<ReceivingOrder> CreateDraftAsync(Guid tenantId, Guid? supplierId, string? supplierReference, DateTime? expectedDate, string? notes, Guid? destinationLocationId = null);
     Task AddLineAsync(Guid tenantId, Guid orderId, Guid variantId, int expectedQty, decimal unitCost, string? notes);
     Task RemoveLineAsync(Guid tenantId, Guid orderId, Guid lineId);
     Task SubmitAsync(Guid tenantId, Guid orderId);
@@ -58,7 +58,8 @@ public class ReceivingOrderService : IReceivingOrderService
         Guid? supplierId,
         string? supplierReference,
         DateTime? expectedDate,
-        string? notes)
+        string? notes,
+        Guid? destinationLocationId = null)
     {
         if (supplierId.HasValue)
         {
@@ -69,8 +70,19 @@ public class ReceivingOrderService : IReceivingOrderService
                 throw new NotFoundException("Supplier", supplierId.Value);
         }
 
+        // Default to the tenant's default location if not specified.
+        var resolvedLocation = destinationLocationId
+            ?? (await _db.Locations
+                .IgnoreQueryFilters()
+                .Where(l => l.TenantId == tenantId && l.IsDefault && l.IsActive)
+                .Select(l => (Guid?)l.Id)
+                .FirstOrDefaultAsync());
+        if (!resolvedLocation.HasValue)
+            throw new BusinessRuleException("No destination location specified and no default location is configured.");
+
         var number = await _numbers.NextAsync(tenantId);
         var order  = new ReceivingOrder(tenantId, number, supplierId);
+        order.SetDestinationLocation(resolvedLocation.Value);
         if (!string.IsNullOrWhiteSpace(supplierReference)) order.SetSupplierReference(supplierReference);
         if (expectedDate.HasValue) order.SetExpectedDate(expectedDate);
         if (!string.IsNullOrWhiteSpace(notes)) order.SetNotes(notes);
@@ -142,11 +154,13 @@ public class ReceivingOrderService : IReceivingOrderService
             if (!string.IsNullOrWhiteSpace(notes)) line.SetNotes(notes);
 
             // 2. Apply inventory side-effect — this also writes an InventoryTransaction.
+            //    Stock lands in the PO's destination location.
             await _inventory.ReceiveStockAsync(
                 productVariantId: line.ProductVariantId,
                 quantity:         receivedQty,
                 unitCost:         line.UnitCost,
-                referenceId:      $"PO:{order.OrderNumber}");
+                referenceId:      $"PO:{order.OrderNumber}",
+                locationId:       order.DestinationLocationId);
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -181,7 +195,8 @@ public class ReceivingOrderService : IReceivingOrderService
                     productVariantId: line.ProductVariantId,
                     quantity:         qty,
                     unitCost:         line.UnitCost,
-                    referenceId:      $"PO:{order.OrderNumber}");
+                    referenceId:      $"PO:{order.OrderNumber}",
+                    locationId:       order.DestinationLocationId);
             }
 
             await _db.SaveChangesAsync();

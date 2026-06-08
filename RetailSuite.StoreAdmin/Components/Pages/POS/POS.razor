@@ -286,6 +286,11 @@
     <div class="pos-topbar">
         <h3>🛒 Point of Sale</h3>
 
+        <button class="icon-btn" @onclick="() => _showLocationPicker = true"
+                title="Change selling location">
+            🏪 @(_locationName ?? "Pick location")
+        </button>
+
         @if (_customer != null)
         {
             <span class="pos-customer-pill">
@@ -615,6 +620,43 @@
     </div>
 </div>
 
+<!-- ========= Location-picker modal ========= -->
+<Modal Visible="@_showLocationPicker" OnClose="() => _showLocationPicker = false">
+    <h3 style="margin-bottom:10px;">Selling location</h3>
+    <p style="color:#6b7280;font-size:13px;margin-top:0;">
+        Pick which branch this terminal is selling from. Stored on this device only.
+    </p>
+    @if (_availableLocations == null)
+    {
+        <div class="spinner"></div>
+    }
+    else if (!_availableLocations.Any())
+    {
+        <p style="color:#b91c1c;">No active locations configured. Add one under Settings → Locations.</p>
+    }
+    else
+    {
+        @foreach (var loc in _availableLocations)
+        {
+            <label style="display:flex;align-items:center;gap:8px;padding:10px;
+                          border:1px solid @(_locationId == loc.Id ? "#1d4ed8" : "#e5e7eb");
+                          border-radius:8px;margin-bottom:6px;cursor:pointer;">
+                <input type="radio" name="loc"
+                       checked="@(_locationId == loc.Id)"
+                       @onchange="() => PickLocation(loc)" />
+                <div style="flex:1;">
+                    <strong>@loc.Name</strong>
+                    <span style="margin-left:8px;font-family:monospace;color:#6b7280;font-size:11px;">@loc.Code</span>
+                    @if (loc.IsDefault) { <span style="margin-left:6px;font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;">DEFAULT</span> }
+                </div>
+            </label>
+        }
+    }
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+        <button class="btn btn-primary" @onclick="() => _showLocationPicker = false">Done</button>
+    </div>
+</Modal>
+
 <!-- ========= Customer-lookup modal ========= -->
 <Modal Visible="@_showCustomerLookup" OnClose="() => _showCustomerLookup = false">
     <h3 style="margin-bottom:12px;">Attach customer</h3>
@@ -783,6 +825,13 @@
     const string FAV_KEY = "pos_favorites";
     HashSet<Guid> _favorites = new();
 
+    // Selling location — per-terminal via localStorage
+    const string LOC_KEY = "pos_location_id";
+    Guid? _locationId;
+    string _locationName = "";
+    List<LocationOption>? _availableLocations;
+    bool _showLocationPicker;
+
     // -------------------------------------------------------------------
     // Computed
     // -------------------------------------------------------------------
@@ -891,11 +940,64 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        await LoadLocationsAsync();
         await LoadVariants();
         await LoadHeldCount();
         await LoadFavoritesAsync();
         StateHasChanged();
         try { await JS.InvokeVoidAsync("focusBarcodeInput"); } catch { }
+    }
+
+    /// <summary>Load the tenant's locations and restore the per-terminal pick from localStorage.</summary>
+    async Task LoadLocationsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/locations?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _availableLocations = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _availableLocations.Add(new LocationOption
+                    {
+                        Id        = e.GetProperty("id").GetGuid(),
+                        Code      = e.GetProperty("code").GetString() ?? "",
+                        Name      = e.GetProperty("name").GetString() ?? "",
+                        IsDefault = e.GetProperty("isDefault").GetBoolean()
+                    });
+                }
+            }
+
+            // Restore previously-picked location for this terminal, or fall back to default.
+            try
+            {
+                var stored = await JS.InvokeAsync<string?>("localStorage.getItem", LOC_KEY);
+                if (!string.IsNullOrEmpty(stored) && Guid.TryParse(stored, out var lid))
+                {
+                    var match = _availableLocations.FirstOrDefault(l => l.Id == lid);
+                    if (match != null) { _locationId = match.Id; _locationName = match.Name; }
+                }
+            }
+            catch { /* localStorage unavailable on prerender */ }
+
+            if (!_locationId.HasValue)
+            {
+                var def = _availableLocations.FirstOrDefault(l => l.IsDefault) ?? _availableLocations.FirstOrDefault();
+                if (def != null) { _locationId = def.Id; _locationName = def.Name; }
+            }
+        }
+        catch { /* non-fatal */ }
+    }
+
+    async Task PickLocation(LocationOption loc)
+    {
+        _locationId   = loc.Id;
+        _locationName = loc.Name;
+        try { await JS.InvokeVoidAsync("localStorage.setItem", LOC_KEY, loc.Id.ToString()); } catch { }
+        // Reload products so the picker shows the new branch's stock badges.
+        await LoadVariants();
     }
 
     public void Dispose() => _barcodeTimer?.Dispose();
@@ -907,6 +1009,8 @@
     {
         try
         {
+            // We still hit /products/variants for catalogue data (image, category, taxRate);
+            // stock per the selected location is overlaid after via /inventory/all?locationId=.
             var json = await Http.GetStringAsync("api/products/variants");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
@@ -933,6 +1037,30 @@
             }
         }
         catch (Exception ex) { Toast.Show($"Could not load products: {ex.Message}"); }
+
+        // Overlay per-location stock if a location is selected — the variants endpoint
+        // returns the rollup; the picker tiles should reflect the active branch.
+        if (_locationId.HasValue && _variants.Any())
+        {
+            try
+            {
+                var url = $"api/inventory/all?page=1&pageSize=500&locationId={_locationId}";
+                var json = await Http.GetStringAsync(url);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                {
+                    var byId = _variants.ToDictionary(v => v.Id);
+                    foreach (var i in items.EnumerateArray())
+                    {
+                        var id = i.GetProperty("id").GetGuid();
+                        if (byId.TryGetValue(id, out var v))
+                            v.StockQuantity = i.GetProperty("currentStock").GetInt32();
+                    }
+                }
+            }
+            catch { /* non-fatal — fall back to rollup numbers */ }
+        }
+
         StateHasChanged();
     }
 
@@ -1236,6 +1364,7 @@
             storeCreditRedeem     = _storeCreditRedeem,
             loyaltyPointsRedeem   = _loyaltyRedeem,
             resumedFromHeldSaleId = _resumedFromId,
+            locationId            = _locationId,
             items = _cart.Select(c => new
             {
                 productVariantId   = c.VariantId,
@@ -1334,6 +1463,14 @@
         public Guid   Id    { get; set; }
         public string Name  { get; set; } = "";
         public int    Count { get; set; }
+    }
+
+    class LocationOption
+    {
+        public Guid    Id { get; set; }
+        public string  Code { get; set; } = "";
+        public string  Name { get; set; } = "";
+        public bool    IsDefault { get; set; }
     }
 
     class CartItem

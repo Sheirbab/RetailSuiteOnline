@@ -3,7 +3,22 @@
 @inject ToastService Toast
 @using System.Text.Json
 
-<h3 style="margin-bottom:20px;">Inventory</h3>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <h3 style="margin:0;">Inventory</h3>
+    <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;color:#6b7280;">📍 Branch:</span>
+        <select class="input" style="width:200px;" @bind="_locationFilter" @bind:after="OnLocationChanged">
+            <option value="">All locations (rollup)</option>
+            @if (_locations != null)
+            {
+                @foreach (var l in _locations)
+                {
+                    <option value="@l.Id">@l.Name @(l.IsDefault ? "★" : "")</option>
+                }
+            }
+        </select>
+    </div>
+</div>
 
 @if (isLoading)
 {
@@ -95,6 +110,10 @@ else if (!isLoading)
     bool isLoading = true;
     string? _error;
 
+    // Location filter
+    string _locationFilter = "";
+    List<LocationFilterRow>? _locations;
+
     bool showReceive = false;
     bool showAdjust  = false;
 
@@ -110,8 +129,36 @@ else if (!isLoading)
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
+            await LoadLocationsAsync();
             await LoadInventory();
+        }
     }
+
+    async Task LoadLocationsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/locations?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _locations = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _locations.Add(new LocationFilterRow
+                    {
+                        Id        = e.GetProperty("id").GetGuid(),
+                        Name      = e.GetProperty("name").GetString() ?? "",
+                        IsDefault = e.GetProperty("isDefault").GetBoolean()
+                    });
+                }
+            }
+        }
+        catch { _locations = new(); }
+    }
+
+    async Task OnLocationChanged() => await LoadInventory();
 
     async Task LoadInventory()
     {
@@ -120,9 +167,9 @@ else if (!isLoading)
 
         try
         {
-            // API returns { Total, Page, PageSize, Items: [...] }
-            // (InventoryController returns the paginated envelope directly, no ApiResponse wrapper)
-            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            var url = "api/inventory/all?page=1&pageSize=500";
+            if (!string.IsNullOrEmpty(_locationFilter)) url += $"&locationId={_locationFilter}";
+            var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
 
             var root = doc.RootElement;
@@ -230,5 +277,12 @@ else if (!isLoading)
         public string? SKU          { get; set; }
         public int     CurrentStock { get; set; }
         public decimal AverageCost  { get; set; }
+    }
+
+    class LocationFilterRow
+    {
+        public Guid   Id { get; set; }
+        public string Name { get; set; } = "";
+        public bool   IsDefault { get; set; }
     }
 }

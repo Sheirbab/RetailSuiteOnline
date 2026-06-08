@@ -23,6 +23,12 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Dtos
 
         /// <summary>Optional held-sale id being resumed — service deletes it after a successful checkout.</summary>
         public Guid? ResumedFromHeldSaleId { get; set; }
+
+        /// <summary>
+        /// Branch / location selling this sale. POS terminal sends this from localStorage.
+        /// If omitted, SaleService falls back to the tenant's default location.
+        /// </summary>
+        public Guid? LocationId { get; set; }
     }
 
     /// <summary>Single line in a POS cart, with optional per-line discount.</summary>

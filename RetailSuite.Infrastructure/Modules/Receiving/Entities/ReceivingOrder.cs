@@ -36,6 +36,9 @@ public class ReceivingOrder : TenantEntity
 
     public string Currency { get; private set; } = "PKR";
 
+    /// <summary>The branch / shop these goods are being received into. Stamped at create.</summary>
+    public Guid? DestinationLocationId { get; private set; }
+
     private readonly List<ReceivingOrderItem> _items = new();
     public IReadOnlyCollection<ReceivingOrderItem> Items => _items;
 
@@ -57,6 +60,16 @@ public class ReceivingOrder : TenantEntity
     public void SetExpectedDate(DateTime? date) => ExpectedDate = date;
     public void SetSupplierReference(string? r) => SupplierReference = r;
     public void SetNotes(string? notes)         => Notes = notes;
+
+    /// <summary>Set the destination branch for these goods. Can only be set while the order is in Draft.</summary>
+    public void SetDestinationLocation(Guid locationId)
+    {
+        if (Status != ReceivingStatus.Draft)
+            throw new BusinessRuleException("Destination location can only be set while the order is in Draft.");
+        if (locationId == Guid.Empty)
+            throw new ArgumentException("LocationId is required.", nameof(locationId));
+        DestinationLocationId = locationId;
+    }
 
     public void AddItem(ReceivingOrderItem item)
     {

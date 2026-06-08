@@ -16,7 +16,8 @@ public record ReceivingOrderResponse(
     decimal  ReceivedTotal,
     string   Currency,
     DateTime CreatedAt,
-    IReadOnlyList<ReceivingOrderItemResponse> Items);
+    IReadOnlyList<ReceivingOrderItemResponse> Items,
+    Guid?    DestinationLocationId);
 
 public record ReceivingOrderItemResponse(
     Guid     Id,
@@ -35,6 +36,9 @@ public class CreateReceivingOrderRequest
     public string?  SupplierReference { get; set; }
     public DateTime? ExpectedDate { get; set; }
     public string?  Notes { get; set; }
+
+    /// <summary>Destination branch for the goods. Defaults to the tenant's default location if omitted.</summary>
+    public Guid?    DestinationLocationId { get; set; }
 }
 
 public class AddLineRequest
@@ -85,7 +89,8 @@ public static class ReceivingMappers
         new(o.Id, o.OrderNumber, o.SupplierId, o.SupplierReference,
             o.Status.ToString(), o.ExpectedDate, o.SubmittedAt, o.ClosedAt,
             o.Notes, o.ExpectedTotal, o.ReceivedTotal, o.Currency, o.CreatedAt,
-            o.Items.Select(i => i.ToResponse()).ToList());
+            o.Items.Select(i => i.ToResponse()).ToList(),
+            o.DestinationLocationId);
 
     public static ReceivingOrderItemResponse ToResponse(this ReceivingOrderItem i) =>
         new(i.Id, i.ProductVariantId, i.Sku,

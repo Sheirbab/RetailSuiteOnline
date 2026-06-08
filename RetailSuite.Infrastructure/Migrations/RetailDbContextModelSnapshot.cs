@@ -611,6 +611,9 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("nvarchar(3)");
 
+                    b.Property<Guid?>("DestinationLocationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("ExpectedDate")
                         .HasColumnType("datetime2");
 
@@ -649,6 +652,8 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DestinationLocationId");
 
                     b.HasIndex("SupplierId");
 
@@ -2230,6 +2235,11 @@ namespace RetailSuite.Infrastructure.Migrations
 
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Receiving.Entities.ReceivingOrder", b =>
                 {
+                    b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("RetailSuite.Infrastructure.Modules.Suppliers.Entities.Supplier", null)
                         .WithMany()
                         .HasForeignKey("SupplierId")

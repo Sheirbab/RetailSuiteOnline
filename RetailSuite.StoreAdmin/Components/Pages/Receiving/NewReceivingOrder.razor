@@ -55,6 +55,17 @@
     }
     <div style="margin-bottom:12px;"></div>
 
+    <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Destination location *</label>
+    <select class="input full" @bind="form.DestinationLocationId" style="margin-bottom:12px;">
+        @if (locations != null)
+        {
+            @foreach (var l in locations)
+            {
+                <option value="@l.Id">@l.Name @(l.IsDefault ? "(default)" : "")</option>
+            }
+        }
+    </select>
+
     <label style="display:block;margin-bottom:6px;font-size:12px;color:#6b7785;">Supplier reference (their PO #)</label>
     <input class="input full" @bind="form.SupplierReference"
            placeholder="e.g. INV-2026-1234" style="margin-bottom:12px;" />
@@ -78,6 +89,7 @@
 
 @code {
     List<SupplierRow>? suppliers;
+    List<LocationRow>? locations;
     FormModel form = new();
 
     // Inline supplier-create state.
@@ -136,7 +148,38 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await LoadSuppliersAsync();
+        if (firstRender)
+        {
+            await LoadSuppliersAsync();
+            await LoadLocationsAsync();
+        }
+    }
+
+    async Task LoadLocationsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/locations?active=true");
+            using var doc = JsonDocument.Parse(json);
+            locations = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    locations.Add(new LocationRow
+                    {
+                        Id        = e.GetProperty("id").GetGuid(),
+                        Name      = e.GetProperty("name").GetString() ?? "",
+                        IsDefault = e.GetProperty("isDefault").GetBoolean()
+                    });
+                }
+            }
+            // Pre-select the default location.
+            var def = locations.FirstOrDefault(l => l.IsDefault) ?? locations.FirstOrDefault();
+            if (def != null) form.DestinationLocationId = def.Id.ToString();
+            StateHasChanged();
+        }
+        catch { locations = new(); }
     }
 
     async Task LoadSuppliersAsync()
@@ -156,12 +199,19 @@
 
     async Task CreateAsync()
     {
+        if (string.IsNullOrWhiteSpace(form.DestinationLocationId))
+        {
+            Toast.Show("Pick a destination location.");
+            return;
+        }
+
         var body = new
         {
-            supplierId        = string.IsNullOrEmpty(form.SupplierId) ? (Guid?)null : Guid.Parse(form.SupplierId),
-            supplierReference = form.SupplierReference,
-            expectedDate      = form.ExpectedDate,
-            notes             = form.Notes
+            supplierId             = string.IsNullOrEmpty(form.SupplierId) ? (Guid?)null : Guid.Parse(form.SupplierId),
+            supplierReference      = form.SupplierReference,
+            expectedDate           = form.ExpectedDate,
+            notes                  = form.Notes,
+            destinationLocationId  = Guid.Parse(form.DestinationLocationId)
         };
 
         var resp = await Http.PostAsJsonAsync("api/receiving-orders", body);
@@ -204,11 +254,19 @@
         public string?  SupplierReference { get; set; }
         public DateTime? ExpectedDate { get; set; }
         public string?  Notes { get; set; }
+        public string?  DestinationLocationId { get; set; }
     }
 
     class SupplierRow
     {
         public Guid   Id { get; set; }
         public string Name { get; set; } = "";
+    }
+
+    class LocationRow
+    {
+        public Guid   Id { get; set; }
+        public string Name { get; set; } = "";
+        public bool   IsDefault { get; set; }
     }
 }

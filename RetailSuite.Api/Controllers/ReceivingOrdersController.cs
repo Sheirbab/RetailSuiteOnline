@@ -80,7 +80,8 @@ public class ReceivingOrdersController : ControllerBase
     {
         var tenantId = RequireTenantId();
         var order = await _service.CreateDraftAsync(
-            tenantId, request.SupplierId, request.SupplierReference, request.ExpectedDate, request.Notes);
+            tenantId, request.SupplierId, request.SupplierReference, request.ExpectedDate, request.Notes,
+            request.DestinationLocationId);
         return Ok(ApiResponse<object>.Ok(order.ToResponse()));
     }
 
