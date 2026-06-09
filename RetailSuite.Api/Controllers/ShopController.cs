@@ -6,6 +6,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Exceptions;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
+using RetailSuite.Infrastructure.Modules.Payments.Entities;
+using RetailSuite.Infrastructure.Modules.Payments.Services;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Modules.Accounting.Services;
@@ -28,19 +30,22 @@ public class ShopController : ControllerBase
     private readonly IEmailService _email;
     private readonly ITenantContext _tenantContext;
     private readonly IInvoiceStampingService _invoiceStamper;
+    private readonly IOrderPaymentService _paymentService;
 
     public ShopController(
         RetailDbContext db,
         AccountingService accounting,
         IEmailService email,
         ITenantContext tenantContext,
-        IInvoiceStampingService invoiceStamper)
+        IInvoiceStampingService invoiceStamper,
+        IOrderPaymentService paymentService)
     {
         _db = db;
         _accounting = accounting;
         _email = email;
         _tenantContext = tenantContext;
         _invoiceStamper = invoiceStamper;
+        _paymentService = paymentService;
     }
 
     // ============================================================
@@ -322,6 +327,16 @@ public class ShopController : ControllerBase
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // ---- 5b. Payment intent for QR-based providers (EasyPaisa / JazzCash).
+            //         COD orders skip this — cash is collected on delivery, no QR needed.
+            OrderPaymentIntent? paymentIntent = null;
+            var providerLower = (order.PaymentMethodCode ?? "").ToLowerInvariant();
+            if (providerLower is "easypaisa" or "jazzcash")
+            {
+                paymentIntent = await _paymentService.CreateIntentAsync(
+                    order.Id, order.PaymentMethodCode!, order.TotalAmount);
+            }
+
             // ---- 6. Email confirmation (best-effort)
             if (!string.IsNullOrWhiteSpace(order.GuestEmail))
             {
@@ -354,7 +369,17 @@ public class ShopController : ControllerBase
                 PaymentMethod   = order.PaymentMethodCode,
                 ShippingMethod  = shipping.Name,
                 IsPickup        = shipping.IsPickup,
-                ExpectedDelivery = shipping.Eta
+                ExpectedDelivery = shipping.Eta,
+                // Present only for QR-based providers — null otherwise.
+                Payment = paymentIntent == null ? null : new
+                {
+                    IntentId  = paymentIntent.Id,
+                    Provider  = paymentIntent.Provider,
+                    AmountDue = paymentIntent.AmountDue,
+                    QrPayload = paymentIntent.QrPayload,
+                    ExpiresAt = paymentIntent.ExpiresAt,
+                    QrImageUrl = $"/api/payments/qr/{paymentIntent.Id}.png"
+                }
             }));
         }
         catch

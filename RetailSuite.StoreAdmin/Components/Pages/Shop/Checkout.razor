@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Text.Json
+@implements IDisposable
 
 @if (_confirmed)
 {
@@ -13,6 +14,37 @@
         <h2>Order placed!</h2>
         <p style="color:#6b7280;margin-bottom:4px;">Order number:</p>
         <p style="font-size:22px;font-family:monospace;font-weight:700;margin:0 0 16px;">@_orderNumber</p>
+
+        @if (_paymentQrUrl != null && _paymentStatus != "Paid")
+        {
+            <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:18px;">
+                <p style="margin:0 0 8px;font-weight:600;color:#a16207;">
+                    Scan with your @_paymentProvider app to pay
+                </p>
+                <p style="margin:0 0 12px;font-size:22px;font-weight:700;color:#0d3b66;">
+                    Rs @_paymentAmount.ToString("N2")
+                </p>
+                <img src="@_paymentQrUrl" alt="Payment QR" style="width:240px;height:240px;border:1px solid #e5e7eb;border-radius:8px;" />
+                <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">
+                    Waiting for payment confirmation...
+                </p>
+                @if (_devSimulatePaidUrl != null)
+                {
+                    <button class="btn" style="margin-top:10px;font-size:11px;background:#fee2e2;color:#b91c1c;"
+                            @onclick="DevSimulatePaid">
+                        🛠 DEV: Simulate paid
+                    </button>
+                }
+            </div>
+        }
+
+        @if (_paymentStatus == "Paid")
+        {
+            <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:12px;margin-bottom:18px;color:#15803d;font-weight:600;">
+                ✓ Payment received. Your order is confirmed.
+            </div>
+        }
+
         <p style="color:#6b7280;font-size:13px;margin-bottom:4px;">
             @if (_isPickup)
             {
@@ -143,11 +175,30 @@ else
                            checked="@(_paymentMethod == "COD")"
                            @onchange="@(() => SelectPayment("COD"))" />
                     <div style="flex:1;">
-                        <strong>Cash on Delivery</strong>
+                        <strong>💵 Cash on Delivery</strong>
                         <div style="font-size:12px;color:#9ca3af;">Pay in cash when your order arrives.</div>
                     </div>
                 </label>
-                <!-- More payment methods can be added later when EP/JC are live -->
+
+                <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid @(_paymentMethod == "EasyPaisa" ? "#0d3b66" : "#e5e7eb");border-radius:6px;margin-bottom:6px;cursor:pointer;">
+                    <input type="radio" name="pay" value="EasyPaisa"
+                           checked="@(_paymentMethod == "EasyPaisa")"
+                           @onchange="@(() => SelectPayment("EasyPaisa"))" />
+                    <div style="flex:1;">
+                        <strong>📱 EasyPaisa</strong>
+                        <div style="font-size:12px;color:#9ca3af;">Scan a QR with your EasyPaisa app to pay.</div>
+                    </div>
+                </label>
+
+                <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid @(_paymentMethod == "JazzCash" ? "#0d3b66" : "#e5e7eb");border-radius:6px;margin-bottom:6px;cursor:pointer;">
+                    <input type="radio" name="pay" value="JazzCash"
+                           checked="@(_paymentMethod == "JazzCash")"
+                           @onchange="@(() => SelectPayment("JazzCash"))" />
+                    <div style="flex:1;">
+                        <strong>📱 JazzCash</strong>
+                        <div style="font-size:12px;color:#9ca3af;">Scan a QR with your JazzCash app to pay.</div>
+                    </div>
+                </label>
             </div>
 
             <!-- Totals + place -->
@@ -200,6 +251,15 @@ else
 
     // Payment
     string _paymentMethod = "COD";
+
+    // Post-checkout QR-payment state
+    Guid?   _paymentIntentId;
+    string? _paymentProvider;
+    string? _paymentQrUrl;
+    string? _devSimulatePaidUrl;
+    decimal _paymentAmount;
+    string  _paymentStatus = "Pending";
+    System.Threading.Timer? _statusPoller;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -308,8 +368,19 @@ else
             _orderNumber = d.GetProperty("orderNumber").GetString();
             _isPickup    = d.TryGetProperty("isPickup", out var ip) && ip.GetBoolean();
             _eta         = d.TryGetProperty("expectedDelivery", out var et) ? et.GetString() : null;
-            _confirmed   = true;
 
+            // QR-based payment? Stash the intent details and start polling for status.
+            if (d.TryGetProperty("payment", out var pay) && pay.ValueKind == JsonValueKind.Object)
+            {
+                _paymentIntentId    = pay.GetProperty("intentId").GetGuid();
+                _paymentProvider    = pay.GetProperty("provider").GetString();
+                _paymentAmount      = pay.GetProperty("amountDue").GetDecimal();
+                _paymentQrUrl       = pay.GetProperty("qrImageUrl").GetString();
+                _devSimulatePaidUrl = $"api/payments/intent/{_paymentIntentId}/simulate-paid";
+                StartStatusPolling();
+            }
+
+            _confirmed = true;
             Cart.Clear();
         }
         catch (Exception ex)
@@ -326,6 +397,49 @@ else
     void SelectPayment(string code) => _paymentMethod = code;
 
     void GoShop() => Nav.NavigateTo("/shop");
+
+    void StartStatusPolling()
+    {
+        _statusPoller?.Dispose();
+        _statusPoller = new System.Threading.Timer(async _ =>
+        {
+            if (!_paymentIntentId.HasValue) return;
+            try
+            {
+                var json = await Http.GetStringAsync($"api/payments/intent/{_paymentIntentId}/status");
+                using var doc = JsonDocument.Parse(json);
+                var status = doc.RootElement.GetProperty("data").GetProperty("status").GetString() ?? "Pending";
+                if (status != _paymentStatus)
+                {
+                    _paymentStatus = status;
+                    await InvokeAsync(StateHasChanged);
+                }
+                if (status is "Paid" or "Failed" or "Expired")
+                {
+                    _statusPoller?.Dispose();
+                    _statusPoller = null;
+                }
+            }
+            catch { /* network blip — try again next tick */ }
+        }, null, dueTime: TimeSpan.FromSeconds(3), period: TimeSpan.FromSeconds(3));
+    }
+
+    async Task DevSimulatePaid()
+    {
+        if (!_paymentIntentId.HasValue) return;
+        try
+        {
+            await Http.PostAsync($"api/payments/intent/{_paymentIntentId}/simulate-paid", null);
+            // Status poller picks up the change within ~3s.
+        }
+        catch (Exception ex) { Toast.Show($"Simulate failed: {ex.Message}"); }
+    }
+
+    public void Dispose()
+    {
+        _statusPoller?.Dispose();
+        _statusPoller = null;
+    }
 
     class ShippingDto
     {

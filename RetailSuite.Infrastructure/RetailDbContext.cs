@@ -9,6 +9,7 @@ using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Infrastructure.Modules.Locations.Entities;
+using RetailSuite.Infrastructure.Modules.Payments.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Entities;
 using RetailSuite.Infrastructure.Modules.Transfers.Entities;
 using RetailSuite.Infrastructure.Modules.Wallet.Entities;
@@ -124,6 +125,11 @@ public class RetailDbContext : DbContext
     // -----------------------------
     public DbSet<InventoryTransfer>     InventoryTransfers     => Set<InventoryTransfer>();
     public DbSet<InventoryTransferItem> InventoryTransferItems => Set<InventoryTransferItem>();
+
+    // -----------------------------
+    // Order payment intents (storefront gateway flow)
+    // -----------------------------
+    public DbSet<OrderPaymentIntent> OrderPaymentIntents => Set<OrderPaymentIntent>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -936,6 +942,28 @@ public class RetailDbContext : DbContext
                 .WithOne()
                 .HasForeignKey(i => i.InventoryTransferId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderPaymentIntent>(b =>
+        {
+            b.ToTable("OrderPaymentIntents");
+            b.HasKey(i => i.Id);
+            b.Property(i => i.Provider).IsRequired().HasMaxLength(50);
+            b.Property(i => i.ProviderTxnId).HasMaxLength(100);
+            b.Property(i => i.Currency).IsRequired().HasMaxLength(3);
+            b.Property(i => i.AmountDue).HasColumnType("decimal(18,2)");
+            b.Property(i => i.QrPayload).HasMaxLength(2000);
+            b.Property(i => i.FailureReason).HasMaxLength(500);
+            b.Property(i => i.Status).HasConversion<int>();
+
+            b.HasIndex(i => i.OrderId);
+            b.HasIndex(i => new { i.Provider, i.ProviderTxnId });
+            b.HasIndex(i => i.Status);
+
+            b.HasOne<Order>()
+                .WithMany()
+                .HasForeignKey(i => i.OrderId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<InventoryTransferItem>(b =>
