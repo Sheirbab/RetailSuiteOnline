@@ -1436,6 +1436,115 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.ToTable("Tenants", (string)null);
                 });
 
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid>("DestinationLocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("SourceLocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalValue")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("TransferNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinationLocationId");
+
+                    b.HasIndex("SourceLocationId");
+
+                    b.HasIndex("TenantId", "Status");
+
+                    b.HasIndex("TenantId", "TransferNumber")
+                        .IsUnique();
+
+                    b.ToTable("InventoryTransfers", (string)null);
+                });
+
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransferItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("InventoryTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("ProductVariantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryTransferId");
+
+                    b.HasIndex("ProductVariantId");
+
+                    b.ToTable("InventoryTransferItems", (string)null);
+                });
+
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Wallet.Entities.CustomerOtpToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2338,6 +2447,30 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
+                {
+                    b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
+                        .WithMany()
+                        .HasForeignKey("SourceLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransferItem", b =>
+                {
+                    b.HasOne("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", null)
+                        .WithMany("Items")
+                        .HasForeignKey("InventoryTransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductVariant", null)
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntryLine", b =>
                 {
                     b.HasOne("RetailSuite.Modules.Accounting.Entities.JournalEntry", null)
@@ -2467,6 +2600,11 @@ namespace RetailSuite.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.SupplierReturns.Entities.SupplierReturn", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
                 {
                     b.Navigation("Items");
                 });

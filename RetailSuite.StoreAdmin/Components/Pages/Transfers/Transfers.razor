@@ -1,0 +1,291 @@
+@page "/inventory/transfers"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div>
+        <h3 style="margin:0;">Stock transfers</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Move stock between branches. Submitting deducts from the source; receiving adds at the destination.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ New transfer</button>
+</div>
+
+<!-- Status chips -->
+<div style="display:flex;gap:6px;margin-bottom:14px;">
+    @foreach (var s in StatusOptions)
+    {
+        <button class="btn @( _statusFilter == s.Value ? "btn-primary" : "")"
+                style="padding:6px 12px;font-size:13px;"
+                @onclick="() => SetStatus(s.Value)">
+            @s.Label
+        </button>
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_rows == null || !_rows.Any())
+{
+    <div class="card" style="text-align:center;color:#9ca3af;padding:30px;">
+        <div style="font-size:32px;margin-bottom:6px;">🚚</div>
+        <p>No transfers yet.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Number</th>
+                    <th>From → To</th>
+                    <th>Items</th>
+                    <th>Value</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td style="font-family:monospace;font-weight:600;">@r.TransferNumber</td>
+                        <td>
+                            <strong>@r.SourceName</strong>
+                            <span style="color:#9ca3af;"> → </span>
+                            <strong>@r.DestinationName</strong>
+                        </td>
+                        <td>@r.ItemCount</td>
+                        <td>Rs @r.TotalValue.ToString("N2")</td>
+                        <td>
+                            <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:@StatusBg(r.Status);color:@StatusFg(r.Status);">@r.Status</span>
+                        </td>
+                        <td>@r.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/inventory/transfers/{r.Id}")">Open</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- ============================ Create modal ============================ -->
+<Modal Visible="@_showCreate" OnClose="() => _showCreate = false">
+    <h3 style="margin-bottom:14px;">New stock transfer</h3>
+
+    <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">From (source) *</label>
+            <select class="input full" @bind="_newSource">
+                <option value="">— Pick a branch —</option>
+                @if (_locations != null)
+                {
+                    @foreach (var l in _locations)
+                    {
+                        <option value="@l.Id">@l.Name @(l.IsDefault ? "★" : "")</option>
+                    }
+                }
+            </select>
+        </div>
+        <div style="flex:1;">
+            <label style="font-size:12px;color:#6b7280;">To (destination) *</label>
+            <select class="input full" @bind="_newDest">
+                <option value="">— Pick a branch —</option>
+                @if (_locations != null)
+                {
+                    @foreach (var l in _locations.Where(x => x.Id.ToString() != _newSource))
+                    {
+                        <option value="@l.Id">@l.Name @(l.IsDefault ? "★" : "")</option>
+                    }
+                }
+            </select>
+        </div>
+    </div>
+
+    <label style="font-size:12px;color:#6b7280;margin-top:8px;display:block;">Notes (optional)</label>
+    <textarea class="input full" rows="2" @bind="_newNotes"
+              placeholder="Why this transfer?" style="margin-bottom:12px;"></textarea>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" @onclick="() => _showCreate = false">Cancel</button>
+        <button class="btn btn-primary" disabled="@_creating" @onclick="CreateTransfer">
+            @(_creating ? "Creating..." : "Create draft")
+        </button>
+    </div>
+</Modal>
+
+@code {
+    bool _loading = true;
+    List<TransferRow>? _rows;
+    string? _statusFilter;
+    List<LocationRow>? _locations;
+
+    // Create form
+    bool _showCreate;
+    bool _creating;
+    string _newSource = "";
+    string _newDest   = "";
+    string _newNotes  = "";
+
+    static readonly (string Label, string? Value)[] StatusOptions = new[]
+    {
+        ("All",       (string?)null),
+        ("Draft",     "Draft"),
+        ("InTransit", "InTransit"),
+        ("Received",  "Received"),
+        ("Cancelled", "Cancelled")
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadLocations();
+            await Load();
+        }
+    }
+
+    async Task SetStatus(string? s) { _statusFilter = s; await Load(); }
+
+    async Task Load()
+    {
+        _loading = true; StateHasChanged();
+        try
+        {
+            var url = "api/inventory-transfers";
+            if (!string.IsNullOrEmpty(_statusFilter)) url += $"?status={_statusFilter}";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            _rows = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _rows.Add(new TransferRow
+                    {
+                        Id              = e.GetProperty("id").GetGuid(),
+                        TransferNumber  = e.GetProperty("transferNumber").GetString() ?? "",
+                        SourceName      = e.TryGetProperty("sourceName", out var sn) ? (sn.GetString() ?? "—") : "—",
+                        DestinationName = e.TryGetProperty("destinationName", out var dn) ? (dn.GetString() ?? "—") : "—",
+                        Status          = e.GetProperty("status").GetString() ?? "",
+                        TotalValue      = e.GetProperty("totalValue").GetDecimal(),
+                        ItemCount       = e.GetProperty("itemCount").GetInt32(),
+                        CreatedAt       = e.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    async Task LoadLocations()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/locations?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _locations = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _locations.Add(new LocationRow
+                    {
+                        Id        = e.GetProperty("id").GetGuid(),
+                        Name      = e.GetProperty("name").GetString() ?? "",
+                        IsDefault = e.GetProperty("isDefault").GetBoolean()
+                    });
+                }
+            }
+        }
+        catch { _locations = new(); }
+    }
+
+    void OpenCreate()
+    {
+        _newSource = ""; _newDest = ""; _newNotes = "";
+        _showCreate = true;
+    }
+
+    async Task CreateTransfer()
+    {
+        if (string.IsNullOrWhiteSpace(_newSource) || string.IsNullOrWhiteSpace(_newDest))
+        {
+            Toast.Show("Pick both branches."); return;
+        }
+        if (_newSource == _newDest)
+        {
+            Toast.Show("Source and destination must differ."); return;
+        }
+
+        _creating = true;
+        try
+        {
+            var body = new
+            {
+                sourceLocationId      = Guid.Parse(_newSource),
+                destinationLocationId = Guid.Parse(_newDest),
+                notes                 = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes
+            };
+            var resp = await Http.PostAsJsonAsync("api/inventory-transfers", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Create failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("data").GetProperty("id").GetGuid();
+            _showCreate = false;
+            Nav.NavigateTo($"/inventory/transfers/{id}");
+        }
+        finally { _creating = false; }
+    }
+
+    static string StatusBg(string s) => s switch
+    {
+        "Draft"     => "#f3f4f6",
+        "InTransit" => "#fef3c7",
+        "Received"  => "#dcfce7",
+        "Cancelled" => "#fee2e2",
+        _ => "#f3f4f6"
+    };
+    static string StatusFg(string s) => s switch
+    {
+        "Draft"     => "#374151",
+        "InTransit" => "#a16207",
+        "Received"  => "#15803d",
+        "Cancelled" => "#b91c1c",
+        _ => "#374151"
+    };
+
+    class TransferRow
+    {
+        public Guid     Id              { get; set; }
+        public string   TransferNumber  { get; set; } = "";
+        public string   SourceName      { get; set; } = "";
+        public string   DestinationName { get; set; } = "";
+        public string   Status          { get; set; } = "";
+        public decimal  TotalValue      { get; set; }
+        public int      ItemCount       { get; set; }
+        public DateTime CreatedAt       { get; set; }
+    }
+
+    class LocationRow
+    {
+        public Guid   Id        { get; set; }
+        public string Name      { get; set; } = "";
+        public bool   IsDefault { get; set; }
+    }
+}

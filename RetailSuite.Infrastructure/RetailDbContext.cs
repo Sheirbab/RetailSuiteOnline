@@ -10,6 +10,7 @@ using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Entities;
+using RetailSuite.Infrastructure.Modules.Transfers.Entities;
 using RetailSuite.Infrastructure.Modules.Wallet.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Payments;
@@ -117,6 +118,12 @@ public class RetailDbContext : DbContext
     // Locations (branches / shops)
     // -----------------------------
     public DbSet<Location> Locations => Set<Location>();
+
+    // -----------------------------
+    // Inter-location stock transfers
+    // -----------------------------
+    public DbSet<InventoryTransfer>     InventoryTransfers     => Set<InventoryTransfer>();
+    public DbSet<InventoryTransferItem> InventoryTransferItems => Set<InventoryTransferItem>();
 
     // -----------------------------
     // Customer extensions: addresses, store credit, loyalty
@@ -902,6 +909,49 @@ public class RetailDbContext : DbContext
             b.HasOne<SupplierReturn>()
                 .WithMany()
                 .HasForeignKey(c => c.SupplierReturnId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<InventoryTransfer>(b =>
+        {
+            b.ToTable("InventoryTransfers");
+            b.HasKey(t => t.Id);
+            b.Property(t => t.TransferNumber).IsRequired().HasMaxLength(50);
+            b.Property(t => t.Notes).HasMaxLength(1000);
+            b.Property(t => t.Currency).IsRequired().HasMaxLength(3);
+            b.Property(t => t.TotalValue).HasColumnType("decimal(18,2)");
+            b.Property(t => t.Status).HasConversion<int>();
+
+            b.HasIndex(t => new { t.TenantId, t.TransferNumber }).IsUnique();
+            b.HasIndex(t => new { t.TenantId, t.Status });
+            b.HasIndex(t => t.SourceLocationId);
+            b.HasIndex(t => t.DestinationLocationId);
+
+            b.HasOne<Location>()
+                .WithMany()
+                .HasForeignKey(t => t.SourceLocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasMany(t => t.Items)
+                .WithOne()
+                .HasForeignKey(i => i.InventoryTransferId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InventoryTransferItem>(b =>
+        {
+            b.ToTable("InventoryTransferItems");
+            b.HasKey(i => i.Id);
+            b.Property(i => i.Sku).IsRequired().HasMaxLength(100);
+            b.Property(i => i.Notes).HasMaxLength(500);
+            b.Property(i => i.UnitCost).HasColumnType("decimal(18,4)");
+
+            b.HasIndex(i => i.InventoryTransferId);
+            b.HasIndex(i => i.ProductVariantId);
+
+            b.HasOne<ProductVariant>()
+                .WithMany()
+                .HasForeignKey(i => i.ProductVariantId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

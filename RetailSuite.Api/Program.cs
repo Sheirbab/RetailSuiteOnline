@@ -23,6 +23,7 @@ using RetailSuite.Infrastructure.Modules.Receiving.Services;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Infrastructure.Modules.Locations.Services;
+using RetailSuite.Infrastructure.Modules.Transfers.Services;
 using RetailSuite.Infrastructure.Modules.Wallet.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
@@ -114,6 +115,10 @@ try
 
     // Locations (branches / shops).
     builder.Services.AddScoped<ILocationService, LocationService>();
+
+    // Inter-location stock transfers.
+    builder.Services.AddScoped<ITransferNumberGenerator, TransferNumberGenerator>();
+    builder.Services.AddScoped<IInventoryTransferService, InventoryTransferService>();
 
     // ---------------------------------------------------------------
     // Payment gateway configuration (config-driven)
