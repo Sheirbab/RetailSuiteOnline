@@ -502,8 +502,9 @@
 
                     <div class="pos-payment">
                         <label>💵 Cash received</label>
-                        <input class="input full" type="number" min="0" step="1" readonly
-                               placeholder="0" @bind="_paidAmount" style="font-size:18px;font-weight:700;text-align:right;" />
+                        <input class="input full" type="number" min="0" step="1"
+                               placeholder="0" @bind="_paidAmount" @bind:event="oninput"
+                               style="font-size:18px;font-weight:700;text-align:right;" />
 
                         @if (_paidAmount > 0 && _paidAmount >= AmountDue)
                         {
@@ -657,18 +658,37 @@
     </div>
 </Modal>
 
-<!-- ========= Customer-lookup modal ========= -->
-<Modal Visible="@_showCustomerLookup" OnClose="() => _showCustomerLookup = false">
+<!-- ========= Customer-lookup / quick-add modal ========= -->
+<Modal Visible="@_showCustomerLookup" OnClose="CloseCustomerLookup">
     <h3 style="margin-bottom:12px;">Attach customer</h3>
     <p style="color:#6b7785;font-size:13px;margin-top:0;">
-        Type the customer's phone or CNIC. We'll attach them and show any store credit / loyalty they have.
+        Search by phone or CNIC. If they're new, you can register them right here with just name + phone.
     </p>
-    <input class="input full" placeholder="Phone or CNIC" @bind="_lookupQuery" style="margin-bottom:8px;" />
+    <input class="input full" placeholder="Phone or CNIC"
+           @bind="_lookupQuery"
+           @bind:event="oninput"
+           style="margin-bottom:8px;" />
     <div style="display:flex;gap:8px;">
         <button class="btn btn-primary" @onclick="DoCustomerLookup">Lookup</button>
-        <button class="btn" @onclick="() => _showCustomerLookup = false">Cancel</button>
+        <button class="btn" @onclick="CloseCustomerLookup">Cancel</button>
     </div>
-    @if (_lookupError != null)
+
+    @if (_lookupNotFound)
+    {
+        <div style="margin-top:14px;padding:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;">
+            <p style="margin:0 0 8px;font-size:13px;color:#a16207;font-weight:600;">
+                No customer matched — register a new one?
+            </p>
+            <label style="font-size:11px;color:#6b7280;">Customer name *</label>
+            <input class="input full" placeholder="Full name" @bind="_quickName" style="margin-bottom:6px;" />
+            <label style="font-size:11px;color:#6b7280;">Phone *</label>
+            <input class="input full" placeholder="03xx-xxxxxxx" @bind="_quickPhone" style="margin-bottom:10px;" />
+            <button class="btn btn-primary" disabled="@_quickAdding" @onclick="DoCustomerQuickAdd">
+                @(_quickAdding ? "Adding..." : "+ Add & attach")
+            </button>
+        </div>
+    }
+    else if (_lookupError != null)
     {
         <div style="margin-top:10px;color:#b91c1c;font-size:13px;">@_lookupError</div>
     }
@@ -799,6 +819,10 @@
     bool   _showCustomerLookup;
     string _lookupQuery = "";
     string? _lookupError;
+    bool   _lookupNotFound;
+    string _quickName = "";
+    string _quickPhone = "";
+    bool   _quickAdding;
 
     // Held sales
     bool _showHeldDrawer;
@@ -1110,6 +1134,7 @@
     async Task DoCustomerLookup()
     {
         _lookupError = null;
+        _lookupNotFound = false;
         if (string.IsNullOrWhiteSpace(_lookupQuery))
         {
             _lookupError = "Enter a phone or CNIC.";
@@ -1136,7 +1161,11 @@
             using var doc2 = JsonDocument.Parse(json);
             if (!doc2.RootElement.TryGetProperty("data", out d) || d.ValueKind != JsonValueKind.Object)
             {
-                _lookupError = "No customer matched.";
+                // Surface the quick-add panel with the lookup value pre-filled in the phone field
+                // (most likely a phone, since CNIC paths are rarely typed at the till).
+                _lookupNotFound = true;
+                _quickName  = "";
+                _quickPhone = _lookupQuery.Trim();
                 return;
             }
         }
@@ -1156,7 +1185,58 @@
 
         _showCustomerLookup = false;
         _lookupQuery = "";
+        _lookupNotFound = false;
         Toast.Show($"Attached: {_customer.FullName}");
+    }
+
+    async Task DoCustomerQuickAdd()
+    {
+        if (string.IsNullOrWhiteSpace(_quickName) || string.IsNullOrWhiteSpace(_quickPhone))
+        {
+            Toast.Show("Name and phone are required.");
+            return;
+        }
+
+        _quickAdding = true;
+        try
+        {
+            var body = new { name = _quickName.Trim(), phone = _quickPhone.Trim() };
+            var resp = await Http.PostAsJsonAsync("api/sales/customer-quick-add", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Add failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _customer = new CustomerLookupDto
+            {
+                Id                = d.GetProperty("id").GetGuid(),
+                FullName          = d.GetProperty("fullName").GetString() ?? "",
+                Email             = d.TryGetProperty("email", out var e) ? e.GetString() : null,
+                Phone             = d.TryGetProperty("phone", out var p) ? p.GetString() : null,
+                StoreCredit       = 0m,
+                LoyaltyPoints     = 0,
+                LoyaltyPointValue = 1m
+            };
+
+            CloseCustomerLookup();
+            Toast.Show($"Attached: {_customer.FullName}");
+        }
+        finally { _quickAdding = false; }
+    }
+
+    void CloseCustomerLookup()
+    {
+        _showCustomerLookup = false;
+        _lookupQuery   = "";
+        _lookupError   = null;
+        _lookupNotFound = false;
+        _quickName     = "";
+        _quickPhone    = "";
     }
 
     void DetachCustomer()

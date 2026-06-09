@@ -123,6 +123,56 @@ public class SalesController : ControllerBase
     }
 
     // ============================================================
+    //  POST /api/sales/customer-quick-add
+    // ============================================================
+    /// <summary>
+    /// Lightweight customer creation from the POS — just name + phone (no auth account).
+    /// Used when a lookup misses and the cashier wants to register the walk-in
+    /// customer right at the till without leaving the sale flow. Returns the same shape
+    /// as customer-lookup so the POS can attach it immediately.
+    /// </summary>
+    [HttpPost("customer-quick-add")]
+    public async Task<IActionResult> CustomerQuickAdd([FromBody] QuickCustomerRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Phone))
+            return BadRequest(ApiResponse<object>.Fail("Name and phone are required."));
+
+        var phone = request.Phone.Trim();
+        var existing = await _context.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+        if (existing != null)
+            return Conflict(ApiResponse<object>.Fail("A customer with this phone already exists."));
+
+        // Split "Ali Khan" → "Ali" / "Khan"; single-word names go to FirstName.
+        var name = request.Name.Trim();
+        var parts = name.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var firstName = parts[0];
+        var lastName  = parts.Length > 1 ? parts[1] : "";
+
+        // Walk-in customers have no User account — UserId = Guid.Empty.
+        var customer = new Customer(Guid.Empty, firstName, lastName, email: null, phone: phone);
+        if (!string.IsNullOrWhiteSpace(request.Cnic)) customer.SetCnic(request.Cnic.Trim());
+
+        _context.Customers.Add(customer);
+        await _context.SaveChangesAsync();
+
+        var tenantId = RequireTenantId();
+        var settings = await _loyalty.GetSettingsAsync(tenantId);
+
+        return Ok(new ApiResponse<object>(true, "Customer added.", new
+        {
+            customer.Id,
+            customer.FullName,
+            customer.Email,
+            customer.Phone,
+            customer.Cnic,
+            Group              = customer.Group.ToString(),
+            StoreCredit        = 0m,
+            LoyaltyPoints      = 0,
+            LoyaltyRupeesValue = 0m * settings.PointValueRupees
+        }));
+    }
+
+    // ============================================================
     //  Held sales (parked carts)
     // ============================================================
 
@@ -284,7 +334,14 @@ public class SalesController : ControllerBase
         ?? throw new UnauthorizedAccessException("Tenant context missing.");
 }
 
-// ----- DTOs for hold-sale endpoint ----------------------------------
+// ----- DTOs ----------------------------------
+
+public class QuickCustomerRequest
+{
+    public string Name  { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string? Cnic { get; set; }
+}
 
 public class HoldSaleRequest
 {
