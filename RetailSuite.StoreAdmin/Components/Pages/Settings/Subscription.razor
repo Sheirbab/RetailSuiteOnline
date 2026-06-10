@@ -1,0 +1,496 @@
+@page "/settings/subscription"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<style>
+    .sub-grid    { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .sub-stat    { padding:14px; background:#f9fafb; border-radius:8px; }
+    .sub-stat .lbl { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; }
+    .sub-stat .val { font-size:18px; font-weight:700; color:#0d3b66; margin-top:2px; }
+    .status-pill { display:inline-block; font-size:11px; padding:2px 10px; border-radius:12px; font-weight:600; }
+    .plan-card   { border:2px solid #e5e7eb; border-radius:10px; padding:14px; cursor:pointer; }
+    .plan-card.selected { border-color:#1d4ed8; background:#eff6ff; }
+</style>
+
+<h3 style="margin-bottom:8px;">Subscription</h3>
+<p style="color:#6b7280;font-size:13px;margin-bottom:20px;">
+    Your current plan, billing schedule, and payment method on file.
+</p>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_sub == null)
+{
+    <div class="card" style="color:#b91c1c;">No active subscription.</div>
+}
+else
+{
+    <!-- ============================ Plan summary ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+            <div>
+                <h4 style="margin:0;">@_sub.PlanName</h4>
+                <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+                    @_sub.BillingCycle billing · Rs @_sub.LastPrice.ToString("N2") per @(_sub.BillingCycle == "Yearly" ? "year" : "month")
+                </p>
+            </div>
+            <span class="status-pill" style="background:@StatusBg(_sub.Status);color:@StatusFg(_sub.Status);">
+                @_sub.Status
+            </span>
+        </div>
+
+        <div class="sub-grid">
+            <div class="sub-stat">
+                <div class="lbl">Started on</div>
+                <div class="val">@_sub.StartDate.ToLocalTime().ToString("dd MMM yyyy")</div>
+            </div>
+            <div class="sub-stat">
+                <div class="lbl">@(_sub.CancelAtPeriodEnd ? "Cancels on" : "Renews on")</div>
+                <div class="val">@_sub.NextBillingAt.ToLocalTime().ToString("dd MMM yyyy")</div>
+            </div>
+        </div>
+
+        @if (_sub.TrialEndsAt.HasValue && _sub.TrialEndsAt > DateTime.UtcNow)
+        {
+            <div style="margin-top:14px;padding:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:13px;color:#a16207;">
+                ⚡ Free trial — ends @_sub.TrialEndsAt.Value.ToLocalTime().ToString("dd MMM yyyy")
+            </div>
+        }
+
+        <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="btn btn-primary" @onclick="OpenChangePlan">Change plan</button>
+            @if (_sub.CancelAtPeriodEnd)
+            {
+                <button class="btn" @onclick="ResumeSubscription">Undo cancellation</button>
+            }
+            else
+            {
+                <button class="btn btn-danger" @onclick="CancelSubscription">Cancel subscription</button>
+            }
+        </div>
+    </div>
+
+    <!-- ============================ Payment method ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+            <div>
+                <h4 style="margin:0;">Payment method</h4>
+                <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+                    @if (_sub.AutoPayEnabled)
+                    {
+                        <span>💳 Auto-pay — we'll charge your card each cycle.</span>
+                    }
+                    else if (!string.IsNullOrEmpty(_sub.PaymentMethodType))
+                    {
+                        <span>📥 Manual — we'll email an invoice; you pay via @_sub.PaymentMethodType.</span>
+                    }
+                    else
+                    {
+                        <span>No payment method on file.</span>
+                    }
+                </p>
+            </div>
+            <button class="btn btn-primary" @onclick="OpenPaymentMethod">
+                @(string.IsNullOrEmpty(_sub.PaymentMethodType) ? "+ Add" : "Change")
+            </button>
+        </div>
+
+        @if (_sub.AutoPayEnabled && !string.IsNullOrEmpty(_sub.CardLast4))
+        {
+            <div style="padding:14px;background:linear-gradient(135deg,#0d3b66,#1d4ed8);color:#fff;border-radius:10px;max-width:340px;">
+                <div style="font-size:12px;letter-spacing:.1em;opacity:.8;">@(_sub.CardBrand?.ToUpperInvariant())</div>
+                <div style="font-family:monospace;font-size:18px;letter-spacing:4px;margin:8px 0;">
+                    •••• •••• •••• @_sub.CardLast4
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;">
+                    <span>@(_sub.CardHolderName ?? "Cardholder")</span>
+                    <span>Exp @_sub.CardExpMonth?.ToString("D2")/@(_sub.CardExpYear?.ToString().Substring(2))</span>
+                </div>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_sub.PaymentMethodType) && !_sub.AutoPayEnabled)
+        {
+            <div style="display:inline-flex;align-items:center;gap:10px;padding:12px 16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
+                <span style="font-size:24px;">@MethodIcon(_sub.PaymentMethodType)</span>
+                <div>
+                    <strong>@_sub.PaymentMethodType</strong>
+                    <div style="font-size:11px;color:#6b7280;">Manual payment</div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<!-- ============================ Change-plan modal ============================ -->
+<Modal Visible="@_showChangePlan" OnClose="() => _showChangePlan = false">
+    <h3 style="margin-bottom:14px;">Change plan</h3>
+
+    <div style="display:flex;gap:6px;margin-bottom:12px;">
+        <button class="btn @( _newCycle == "Monthly" ? "btn-primary" : "")"
+                style="padding:5px 12px;font-size:12px;"
+                @onclick='@(() => _newCycle = "Monthly")'>Monthly</button>
+        <button class="btn @( _newCycle == "Yearly" ? "btn-primary" : "")"
+                style="padding:5px 12px;font-size:12px;"
+                @onclick='@(() => _newCycle = "Yearly")'>Yearly</button>
+    </div>
+
+    @if (_plans != null)
+    {
+        <div style="display:flex;flex-direction:column;gap:8px;">
+            @foreach (var p in _plans)
+            {
+                var price = _newCycle == "Yearly" ? p.YearlyPrice : p.MonthlyPrice;
+                <div class="plan-card @(_newPlanCode == p.Code ? "selected" : "")"
+                     @onclick="() => _newPlanCode = p.Code">
+                    <div style="display:flex;justify-content:space-between;">
+                        <div>
+                            <strong>@p.Name</strong>
+                            @if (_sub != null && p.Code == _sub.PlanCode)
+                            { <span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:2px 6px;border-radius:3px;margin-left:6px;">CURRENT</span> }
+                        </div>
+                        <strong>@(price == 0 ? "Free" : $"Rs {price:N0}")</strong>
+                    </div>
+                    <div style="font-size:12px;color:#6b7280;margin-top:4px;">@p.Description</div>
+                </div>
+            }
+        </div>
+    }
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn" @onclick="() => _showChangePlan = false">Cancel</button>
+        <button class="btn btn-primary" disabled="@_changing" @onclick="DoChangePlan">
+            @(_changing ? "Switching..." : "Confirm change")
+        </button>
+    </div>
+</Modal>
+
+<!-- ============================ Payment-method modal ============================ -->
+<Modal Visible="@_showPayment" OnClose="() => _showPayment = false">
+    <h3 style="margin-bottom:14px;">Payment method</h3>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <button class="btn @( _payMode == "auto" ? "btn-primary" : "")"
+                style="flex:1;padding:10px;font-size:13px;"
+                @onclick='@(() => _payMode = "auto")'>💳 Auto-pay (Card)</button>
+        <button class="btn @( _payMode == "manual" ? "btn-primary" : "")"
+                style="flex:1;padding:10px;font-size:13px;"
+                @onclick='@(() => _payMode = "manual")'>📥 Manual</button>
+    </div>
+
+    @if (_payMode == "auto")
+    {
+        <label style="font-size:12px;color:#6b7280;">Cardholder name *</label>
+        <input class="input full" @bind="_card.HolderName" placeholder="Name on card" style="margin-bottom:8px;" />
+
+        <label style="font-size:12px;color:#6b7280;">Card number *</label>
+        <input class="input full" @bind="_card.Number" placeholder="4242 4242 4242 4242"
+               maxlength="19" style="margin-bottom:8px;font-family:monospace;letter-spacing:1px;" />
+
+        <div style="display:flex;gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">Exp month *</label>
+                <select class="input full" @bind="_card.ExpMonth">
+                    <option value="0">MM</option>
+                    @for (var m = 1; m <= 12; m++) { <option value="@m">@m.ToString("D2")</option> }
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:#6b7280;">Exp year *</label>
+                <select class="input full" @bind="_card.ExpYear">
+                    <option value="0">YYYY</option>
+                    @for (var y = DateTime.UtcNow.Year; y <= DateTime.UtcNow.Year + 12; y++)
+                    { <option value="@y">@y</option> }
+                </select>
+            </div>
+            <div style="width:110px;">
+                <label style="font-size:12px;color:#6b7280;">CVV *</label>
+                <input class="input full" type="password" @bind="_card.Cvv" maxlength="4" />
+            </div>
+        </div>
+    }
+    else
+    {
+        @foreach (var m in ManualMethods)
+        {
+            <label style="display:flex;align-items:center;gap:10px;padding:10px;
+                          border:2px solid @(_manualMethod == m.Code ? "#1d4ed8" : "#e5e7eb");
+                          border-radius:8px;margin-bottom:6px;cursor:pointer;
+                          background:@(_manualMethod == m.Code ? "#eff6ff" : "transparent");">
+                <input type="radio" name="payMethod"
+                       checked="@(_manualMethod == m.Code)"
+                       @onchange="() => _manualMethod = m.Code" />
+                <span style="font-size:18px;">@m.Icon</span>
+                <div style="flex:1;">
+                    <strong>@m.Name</strong>
+                    <div style="font-size:11px;color:#6b7280;">@m.Hint</div>
+                </div>
+            </label>
+        }
+    }
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn" @onclick="() => _showPayment = false">Cancel</button>
+        <button class="btn btn-primary" disabled="@_savingPayment" @onclick="SavePaymentMethod">
+            @(_savingPayment ? "Saving..." : "Save")
+        </button>
+    </div>
+</Modal>
+
+@code {
+    bool _loading = true;
+    SubscriptionDto? _sub;
+    List<PlanRow>? _plans;
+
+    // Change plan modal state
+    bool   _showChangePlan;
+    bool   _changing;
+    string _newPlanCode = "";
+    string _newCycle    = "Monthly";
+
+    // Payment method modal state
+    bool   _showPayment;
+    bool   _savingPayment;
+    string _payMode = "auto";
+    string _manualMethod = "JazzCash";
+    CardForm _card = new();
+
+    static readonly ManualMethodOption[] ManualMethods = new[]
+    {
+        new ManualMethodOption("JazzCash",     "JazzCash",      "📱", "Pay via JazzCash mobile wallet"),
+        new ManualMethodOption("EasyPaisa",    "EasyPaisa",     "📱", "Pay via EasyPaisa mobile wallet"),
+        new ManualMethodOption("BankTransfer", "Bank Transfer", "🏦", "Pay via direct bank transfer (IBFT)"),
+        new ManualMethodOption("Cash",         "Cash",          "💵", "Pay in cash at our office")
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadSubscription();
+            await LoadPlans();
+        }
+    }
+
+    async Task LoadSubscription()
+    {
+        _loading = true; StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/subscriptions/me");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _sub = new SubscriptionDto
+            {
+                PlanCode          = d.GetProperty("planCode").GetString() ?? "",
+                PlanName          = d.GetProperty("planName").GetString() ?? "",
+                BillingCycle      = d.GetProperty("billingCycle").GetString() ?? "",
+                Status            = d.GetProperty("status").GetString() ?? "",
+                StartDate         = d.GetProperty("startDate").GetDateTime(),
+                EndDate           = d.GetProperty("endDate").GetDateTime(),
+                NextBillingAt     = d.GetProperty("nextBillingAt").GetDateTime(),
+                TrialEndsAt       = d.TryGetProperty("trialEndsAt", out var te) && te.ValueKind == JsonValueKind.String ? te.GetDateTime() : (DateTime?)null,
+                CancelAtPeriodEnd = d.GetProperty("cancelAtPeriodEnd").GetBoolean(),
+                LastPrice         = d.GetProperty("lastPrice").GetDecimal(),
+                Currency          = d.GetProperty("currency").GetString() ?? "PKR",
+                PaymentMethodType = d.TryGetProperty("paymentMethodType", out var pm) && pm.ValueKind == JsonValueKind.String ? pm.GetString() : null,
+                AutoPayEnabled    = d.GetProperty("autoPayEnabled").GetBoolean(),
+                CardBrand         = d.TryGetProperty("cardBrand", out var cb) && cb.ValueKind == JsonValueKind.String ? cb.GetString() : null,
+                CardLast4         = d.TryGetProperty("cardLast4", out var cl) && cl.ValueKind == JsonValueKind.String ? cl.GetString() : null,
+                CardExpMonth      = d.TryGetProperty("cardExpMonth", out var em) && em.ValueKind == JsonValueKind.Number ? em.GetInt32() : (int?)null,
+                CardExpYear       = d.TryGetProperty("cardExpYear",  out var ey) && ey.ValueKind == JsonValueKind.Number ? ey.GetInt32() : (int?)null,
+                CardHolderName    = d.TryGetProperty("cardHolderName", out var hn) && hn.ValueKind == JsonValueKind.String ? hn.GetString() : null
+            };
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    async Task LoadPlans()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/subscriptions/plans");
+            using var doc = JsonDocument.Parse(json);
+            _plans = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _plans.Add(new PlanRow
+                    {
+                        Code         = e.GetProperty("code").GetString() ?? "",
+                        Name         = e.GetProperty("name").GetString() ?? "",
+                        Description  = e.TryGetProperty("description", out var ds) ? (ds.GetString() ?? "") : "",
+                        MonthlyPrice = e.GetProperty("monthlyPrice").GetDecimal(),
+                        YearlyPrice  = e.GetProperty("yearlyPrice").GetDecimal()
+                    });
+                }
+            }
+        }
+        catch { _plans = new(); }
+    }
+
+    void OpenChangePlan()
+    {
+        _newPlanCode = _sub?.PlanCode ?? "";
+        _newCycle    = _sub?.BillingCycle ?? "Monthly";
+        _showChangePlan = true;
+    }
+
+    async Task DoChangePlan()
+    {
+        if (string.IsNullOrWhiteSpace(_newPlanCode)) { Toast.Show("Pick a plan."); return; }
+
+        _changing = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/subscriptions/change-plan",
+                new { planCode = _newPlanCode, billingCycle = _newCycle });
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Change failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show("Plan updated.");
+            _showChangePlan = false;
+            await LoadSubscription();
+        }
+        finally { _changing = false; }
+    }
+
+    async Task CancelSubscription()
+    {
+        var resp = await Http.PostAsync("api/subscriptions/cancel", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Cancellation scheduled at end of period."); await LoadSubscription(); }
+        else Toast.Show("Cancel failed.");
+    }
+
+    async Task ResumeSubscription()
+    {
+        var resp = await Http.PostAsync("api/subscriptions/resume", null);
+        if (resp.IsSuccessStatusCode) { Toast.Show("Subscription resumed."); await LoadSubscription(); }
+        else Toast.Show("Resume failed.");
+    }
+
+    void OpenPaymentMethod()
+    {
+        _payMode = (_sub != null && _sub.AutoPayEnabled) ? "auto" : (string.IsNullOrEmpty(_sub?.PaymentMethodType) ? "auto" : "manual");
+        _manualMethod = !string.IsNullOrEmpty(_sub?.PaymentMethodType) && !_sub.AutoPayEnabled ? _sub.PaymentMethodType! : "JazzCash";
+        _card = new CardForm();
+        _showPayment = true;
+    }
+
+    async Task SavePaymentMethod()
+    {
+        if (_payMode == "auto")
+        {
+            if (string.IsNullOrWhiteSpace(_card.HolderName)
+                || string.IsNullOrWhiteSpace(_card.Number)
+                || _card.ExpMonth == 0 || _card.ExpYear == 0
+                || string.IsNullOrWhiteSpace(_card.Cvv))
+            {
+                Toast.Show("Fill in all card details."); return;
+            }
+        }
+
+        _savingPayment = true;
+        try
+        {
+            var body = _payMode == "auto"
+                ? (object)new
+                  {
+                      type       = "Card",
+                      cardNumber = _card.Number,
+                      holderName = _card.HolderName,
+                      expMonth   = _card.ExpMonth,
+                      expYear    = _card.ExpYear,
+                      cvv        = _card.Cvv
+                  }
+                : new { type = _manualMethod };
+
+            var resp = await Http.PatchAsJsonAsync("api/subscriptions/payment-method", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show("Payment method updated.");
+            _showPayment = false;
+            await LoadSubscription();
+        }
+        finally { _savingPayment = false; }
+    }
+
+    static string StatusBg(string s) => s switch
+    {
+        "Active"      => "#dcfce7",
+        "Trialing"    => "#fef3c7",
+        "PastDue"     => "#fee2e2",
+        "GracePeriod" => "#fef3c7",
+        "Cancelled"   => "#f3f4f6",
+        _ => "#f3f4f6"
+    };
+    static string StatusFg(string s) => s switch
+    {
+        "Active"      => "#15803d",
+        "Trialing"    => "#a16207",
+        "PastDue"     => "#b91c1c",
+        "GracePeriod" => "#a16207",
+        "Cancelled"   => "#374151",
+        _ => "#374151"
+    };
+
+    static string MethodIcon(string? code) => code switch
+    {
+        "JazzCash"     => "📱",
+        "EasyPaisa"    => "📱",
+        "BankTransfer" => "🏦",
+        "Cash"         => "💵",
+        _ => "💳"
+    };
+
+    class SubscriptionDto
+    {
+        public string   PlanCode { get; set; } = "";
+        public string   PlanName { get; set; } = "";
+        public string   BillingCycle { get; set; } = "";
+        public string   Status { get; set; } = "";
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public DateTime NextBillingAt { get; set; }
+        public DateTime? TrialEndsAt { get; set; }
+        public bool     CancelAtPeriodEnd { get; set; }
+        public decimal  LastPrice { get; set; }
+        public string   Currency { get; set; } = "PKR";
+        public string?  PaymentMethodType { get; set; }
+        public bool     AutoPayEnabled { get; set; }
+        public string?  CardBrand { get; set; }
+        public string?  CardLast4 { get; set; }
+        public int?     CardExpMonth { get; set; }
+        public int?     CardExpYear { get; set; }
+        public string?  CardHolderName { get; set; }
+    }
+
+    class PlanRow
+    {
+        public string  Code { get; set; } = "";
+        public string  Name { get; set; } = "";
+        public string  Description { get; set; } = "";
+        public decimal MonthlyPrice { get; set; }
+        public decimal YearlyPrice { get; set; }
+    }
+
+    class CardForm
+    {
+        public string? HolderName { get; set; }
+        public string? Number     { get; set; }
+        public int     ExpMonth   { get; set; }
+        public int     ExpYear    { get; set; }
+        public string? Cvv        { get; set; }
+    }
+
+    record ManualMethodOption(string Code, string Name, string Icon, string Hint);
+}

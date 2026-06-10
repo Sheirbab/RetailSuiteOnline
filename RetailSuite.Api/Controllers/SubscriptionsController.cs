@@ -115,6 +115,75 @@ public class SubscriptionsController : ControllerBase
         return Ok(ApiResponse<object>.Ok(new { Message = "Subscription resumed." }));
     }
 
+    // -------------------------------------------------------------
+    // PATCH /api/subscriptions/payment-method  — admin
+    // Update card on file or switch between auto-pay and manual.
+    // -------------------------------------------------------------
+    [HttpPatch("payment-method")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> UpdatePaymentMethod([FromBody] UpdatePaymentMethodRequest request)
+    {
+        var tenantId = _tenantContext.TenantId
+            ?? throw new UnauthorizedAccessException("Tenant context missing.");
+
+        var sub = await _subs.GetActiveAsync(tenantId);
+        if (sub == null)
+            return NotFound(ApiResponse<object>.Fail("No active subscription."));
+
+        var t = (request.Type ?? "").Trim();
+        if (t.Equals("Card", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(request.CardNumber)
+                || request.ExpMonth is null or 0
+                || request.ExpYear is null or 0)
+                return BadRequest(ApiResponse<object>.Fail("CardNumber, ExpMonth and ExpYear are required for card payment."));
+
+            var (brand, last4) = ExtractCardDisplay(request.CardNumber!);
+            if (last4 == null)
+                return BadRequest(ApiResponse<object>.Fail("Card number doesn't look right."));
+
+            sub.SetCardPaymentMethod(
+                cardBrand:         brand ?? "Card",
+                cardLast4:         last4,
+                expMonth:          request.ExpMonth!.Value,
+                expYear:           request.ExpYear!.Value,
+                holderName:        request.HolderName,
+                gatewayCustomerId: request.GatewayToken);
+        }
+        else if (!string.IsNullOrWhiteSpace(t))
+        {
+            sub.SetManualPaymentMethod(t);
+        }
+        else
+        {
+            sub.ClearPaymentMethod();
+        }
+
+        await _db.SaveChangesAsync();
+
+        var planName = await _db.SubscriptionPlans
+            .Where(p => p.Id == sub.PlanId)
+            .Select(p => p.Name)
+            .FirstAsync();
+
+        return Ok(ApiResponse<object>.Ok(sub.ToResponse(planName)));
+    }
+
+    private static (string? Brand, string? Last4) ExtractCardDisplay(string cardNumber)
+    {
+        var pan = new string(cardNumber.Where(char.IsDigit).ToArray());
+        if (pan.Length < 12) return (null, null);
+        var last4 = pan[^4..];
+        var brand = pan switch
+        {
+            { Length: >= 1 } when pan.StartsWith("4") => "Visa",
+            { Length: >= 2 } when pan.StartsWith("5") || pan.StartsWith("2") => "Mastercard",
+            { Length: >= 2 } when pan.StartsWith("34") || pan.StartsWith("37") => "Amex",
+            _ => "Card"
+        };
+        return (brand, last4);
+    }
+
     // ============================================================
     // SuperAdmin plan management
     // ============================================================

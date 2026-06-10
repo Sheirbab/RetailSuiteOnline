@@ -37,7 +37,15 @@ public record CurrentSubscriptionResponse(
     DateTime NextBillingAt,
     bool    CancelAtPeriodEnd,
     decimal LastPrice,
-    string  Currency);
+    string  Currency,
+    // Payment-method snapshot
+    string?  PaymentMethodType,
+    bool     AutoPayEnabled,
+    string?  CardBrand,
+    string?  CardLast4,
+    int?     CardExpMonth,
+    int?     CardExpYear,
+    string?  CardHolderName);
 
 // ----- Write DTOs -------------------------------------------------------
 
@@ -45,6 +53,18 @@ public class ChangePlanRequest
 {
     public string PlanCode { get; set; } = string.Empty;
     public string BillingCycle { get; set; } = "Monthly";   // "Monthly" | "Yearly"
+}
+
+public class UpdatePaymentMethodRequest
+{
+    /// <summary>"Card" for auto-pay or one of "JazzCash" / "EasyPaisa" / "BankTransfer" / "Cash" for manual.</summary>
+    public string  Type        { get; set; } = "";
+    public string? CardNumber  { get; set; }
+    public string? HolderName  { get; set; }
+    public int?    ExpMonth    { get; set; }
+    public int?    ExpYear     { get; set; }
+    public string? Cvv         { get; set; }
+    public string? GatewayToken { get; set; }
 }
 
 public class CreatePlanRequest
@@ -107,5 +127,7 @@ public static class SubscriptionMappers
         s.Id, s.PlanCode, planName,
         s.BillingCycle.ToString(), s.Status.ToString(),
         s.StartDate, s.EndDate, s.TrialEndsAt, s.NextBillingAt,
-        s.CancelAtPeriodEnd, s.LastPrice, s.Currency);
+        s.CancelAtPeriodEnd, s.LastPrice, s.Currency,
+        s.PaymentMethodType, s.AutoPayEnabled,
+        s.CardBrand, s.CardLast4, s.CardExpMonth, s.CardExpYear, s.CardHolderName);
 }
