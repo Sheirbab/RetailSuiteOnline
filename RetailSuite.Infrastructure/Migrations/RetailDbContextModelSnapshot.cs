@@ -1065,6 +1065,9 @@ namespace RetailSuite.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AutoPayEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("AutoRenew")
                         .HasColumnType("bit");
 
@@ -1077,6 +1080,24 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("CardBrand")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("CardExpMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CardExpYear")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CardHolderName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("CardLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1088,6 +1109,10 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("GatewayCustomerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -1096,6 +1121,10 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.Property<DateTime>("NextBillingAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("PaymentMethodType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("PlanCode")
                         .IsRequired()

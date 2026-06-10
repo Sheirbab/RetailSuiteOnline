@@ -122,6 +122,40 @@ public class AuthController : ControllerBase
 
             await _subs.CreateInitialSubscriptionAsync(tenant.Id, planCode, billingCycle);
 
+            // 5b. Record the customer's chosen payment method on the new subscription.
+            //     "Card" = auto-pay (store last4/brand snapshot for charges next cycle).
+            //     "JazzCash" / "EasyPaisa" / "BankTransfer" / "Cash" = manual pay
+            //     (customer pays each invoice themselves; we just record the preferred channel).
+            if (request.PaymentMethod != null)
+            {
+                var sub = await _subs.GetActiveAsync(tenant.Id);
+                if (sub != null)
+                {
+                    var t = (request.PaymentMethod.Type ?? "").Trim();
+                    if (t.Equals("Card", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var (brand, last4) = ExtractCardDisplay(request.PaymentMethod);
+                        if (last4 != null && request.PaymentMethod.ExpMonth > 0 && request.PaymentMethod.ExpYear > 0)
+                        {
+                            sub.SetCardPaymentMethod(
+                                cardBrand:         brand ?? "Card",
+                                cardLast4:         last4,
+                                expMonth:          request.PaymentMethod.ExpMonth,
+                                expYear:           request.PaymentMethod.ExpYear,
+                                holderName:        request.PaymentMethod.HolderName,
+                                gatewayCustomerId: request.PaymentMethod.GatewayToken);
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(t))
+                    {
+                        // Manual pay path — JazzCash / EasyPaisa / BankTransfer / Cash.
+                        sub.SetManualPaymentMethod(t);
+                    }
+
+                    await _Db.SaveChangesAsync();
+                }
+            }
+
             await transaction.CommitAsync();
 
             // 6. Fire verification email — best-effort, outside the transaction.
@@ -328,6 +362,30 @@ public class AuthController : ControllerBase
 
         var token = GenerateJwt(user);
         return Ok(new ApiResponse<string>(true, "Login successful.", token));
+    }
+
+    /// <summary>
+    /// Extract the display-safe card details from a SignupPaymentMethod.
+    /// In dev we derive from the raw PAN. In production replace this with
+    /// "ask the gateway for its tokenised card metadata" — never inspect raw PANs server-side.
+    /// </summary>
+    private static (string? Brand, string? Last4) ExtractCardDisplay(
+        RetailSuite.Infrastructure.Modules.Identity.Dtos.SignupPaymentMethod pm)
+    {
+        var pan = (pm.CardNumber ?? "").Where(char.IsDigit).Aggregate("", (a, c) => a + c);
+        if (pan.Length < 4) return (null, null);
+
+        var last4 = pan[^4..];
+        var brand = pan switch
+        {
+            { Length: >= 1 } when pan.StartsWith("4")      => "Visa",
+            { Length: >= 2 } when pan.StartsWith("5")
+                              || pan.StartsWith("2")        => "Mastercard",
+            { Length: >= 2 } when pan.StartsWith("34")
+                              || pan.StartsWith("37")       => "Amex",
+            _ => "Card"
+        };
+        return (brand, last4);
     }
 
     private string GenerateJwt(User user)

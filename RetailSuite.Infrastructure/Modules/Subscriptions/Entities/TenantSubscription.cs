@@ -45,6 +45,38 @@ public class TenantSubscription : TenantEntity
 
     public string Currency { get; private set; } = "PKR";
 
+    // ---- Payment method (for auto-renewal billing) ---------------------
+    // We never store the raw PAN — only the masked last4 + brand for display,
+    // expiry for warnings, and an opaque gateway customer id for charges.
+
+    /// <summary>"Card", "BankTransfer", "None". Null = not configured yet.</summary>
+    public string? PaymentMethodType { get; private set; }
+
+    /// <summary>Last four digits of the card — display only.</summary>
+    public string? CardLast4 { get; private set; }
+
+    /// <summary>"Visa", "Mastercard", "Amex", etc. — display only.</summary>
+    public string? CardBrand { get; private set; }
+
+    /// <summary>Card expiry month (1-12).</summary>
+    public int? CardExpMonth { get; private set; }
+
+    /// <summary>Card expiry year — 4-digit (e.g. 2028).</summary>
+    public int? CardExpYear { get; private set; }
+
+    /// <summary>Opaque token from the payment gateway (Stripe customer id, etc.). Used for auto-charges.</summary>
+    public string? GatewayCustomerId { get; private set; }
+
+    /// <summary>Cardholder name as printed on the card. Display only.</summary>
+    public string? CardHolderName { get; private set; }
+
+    /// <summary>
+    /// True for card-on-file (we charge automatically each cycle); false for manual
+    /// methods (JazzCash/EasyPaisa/BankTransfer/Cash) where the customer pays each invoice.
+    /// Renewal flow branches on this flag.
+    /// </summary>
+    public bool AutoPayEnabled { get; private set; }
+
     private TenantSubscription() { }
 
     public TenantSubscription(
@@ -91,6 +123,76 @@ public class TenantSubscription : TenantEntity
 
     public int DaysRemainingInPeriod =>
         (int)Math.Max(0, Math.Ceiling((EndDate - DateTime.UtcNow).TotalDays));
+
+    // ---- Payment method --------------------------------------------------
+
+    /// <summary>
+    /// Record a card on file for auto-renewal. Caller must have validated the card
+    /// against the gateway and pass the gateway-issued opaque token plus the safe
+    /// display fields. The full PAN is NEVER passed in / stored here.
+    /// </summary>
+    public void SetCardPaymentMethod(
+        string cardBrand,
+        string cardLast4,
+        int expMonth,
+        int expYear,
+        string? holderName,
+        string? gatewayCustomerId)
+    {
+        if (string.IsNullOrWhiteSpace(cardLast4) || cardLast4.Length != 4)
+            throw new ArgumentException("CardLast4 must be exactly 4 digits.", nameof(cardLast4));
+        if (expMonth < 1 || expMonth > 12)
+            throw new ArgumentException("ExpMonth must be 1–12.", nameof(expMonth));
+        if (expYear < DateTime.UtcNow.Year)
+            throw new ArgumentException("ExpYear is in the past.", nameof(expYear));
+
+        PaymentMethodType  = "Card";
+        CardBrand          = cardBrand;
+        CardLast4          = cardLast4;
+        CardExpMonth       = expMonth;
+        CardExpYear        = expYear;
+        CardHolderName     = string.IsNullOrWhiteSpace(holderName) ? null : holderName.Trim();
+        GatewayCustomerId  = string.IsNullOrWhiteSpace(gatewayCustomerId) ? null : gatewayCustomerId;
+        AutoPayEnabled     = true;
+    }
+
+    /// <summary>
+    /// Record a manual payment method for renewal — JazzCash, EasyPaisa, BankTransfer, Cash.
+    /// Tenant pays each invoice themselves; we don't store payment credentials and don't auto-charge.
+    /// </summary>
+    public void SetManualPaymentMethod(string methodType)
+    {
+        if (string.IsNullOrWhiteSpace(methodType))
+            throw new ArgumentException("Manual payment method type is required.", nameof(methodType));
+
+        var allowed = new[] { "JazzCash", "EasyPaisa", "BankTransfer", "Cash" };
+        var t = methodType.Trim();
+        if (!allowed.Contains(t, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException(
+                $"Unsupported manual payment method '{t}'. Allowed: {string.Join(", ", allowed)}.");
+
+        // Clear any prior card-on-file — manual pay is mutually exclusive.
+        PaymentMethodType  = t;
+        CardBrand          = null;
+        CardLast4          = null;
+        CardExpMonth       = null;
+        CardExpYear        = null;
+        CardHolderName     = null;
+        GatewayCustomerId  = null;
+        AutoPayEnabled     = false;
+    }
+
+    public void ClearPaymentMethod()
+    {
+        PaymentMethodType = null;
+        CardBrand         = null;
+        CardLast4         = null;
+        CardExpMonth      = null;
+        CardExpYear       = null;
+        CardHolderName    = null;
+        GatewayCustomerId = null;
+        AutoPayEnabled    = false;
+    }
 
     // ---- Lifecycle transitions ----------------------------------------
 

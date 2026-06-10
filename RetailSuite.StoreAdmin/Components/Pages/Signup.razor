@@ -1,0 +1,446 @@
+@page "/signup"
+@layout LoginLayout
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject AuthService Auth
+@inject ToastService Toast
+@using System.Text.Json
+@using RetailSuite.StoreAdmin.Shared
+
+<style>
+    .signup-shell { max-width:720px; margin:30px auto; padding:0 16px; }
+    .signup-card  { background:#fff; padding:24px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:16px; }
+    .signup-step  { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+    .step-num     { display:inline-flex; align-items:center; justify-content:center;
+                    width:28px; height:28px; border-radius:50%; background:#1d4ed8; color:#fff;
+                    font-weight:700; font-size:14px; }
+    .step-num.done { background:#15803d; }
+    .step-title   { font-size:16px; font-weight:600; color:#111827; margin:0; }
+
+    .plan-grid    { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+    .plan-card    { border:2px solid #e5e7eb; border-radius:10px; padding:14px; cursor:pointer; transition:.15s; }
+    .plan-card:hover { border-color:#1d4ed8; }
+    .plan-card.selected { border-color:#1d4ed8; background:#eff6ff; }
+    .plan-card .name  { font-weight:700; color:#0d3b66; }
+    .plan-card .price { font-size:22px; font-weight:700; color:#111827; margin:6px 0; }
+    .plan-card .desc  { font-size:12px; color:#6b7280; line-height:1.35; }
+    .plan-card .free-badge { display:inline-block; background:#dcfce7; color:#15803d;
+                             font-size:10px; padding:2px 6px; border-radius:4px; margin-left:4px; }
+</style>
+
+<div class="signup-shell">
+
+    @if (_done)
+    {
+        <div class="signup-card" style="text-align:center;padding:40px;">
+            <div style="font-size:48px;margin-bottom:14px;">✅</div>
+            <h2 style="margin:0 0 8px;">Welcome to RetailSuite!</h2>
+            <p style="color:#6b7280;margin:0 0 16px;">
+                We sent a verification email to <strong>@_email</strong>.
+                Check your inbox to activate the account.
+            </p>
+            <a class="btn btn-primary" href="/login">Go to sign-in</a>
+        </div>
+    }
+    else
+    {
+        <div style="text-align:center;margin-bottom:24px;">
+            <h2 style="margin:0;color:#0d3b66;">Create your RetailSuite account</h2>
+            <p style="color:#6b7280;font-size:14px;margin:6px 0 0;">
+                One-stop POS, online store, accounting and customer management for your retail business.
+            </p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;
+                        padding:12px 14px;margin-bottom:14px;color:#b91c1c;font-size:14px;">
+                @_error
+            </div>
+        }
+
+        <!-- ============================ Step 1: business + admin ============================ -->
+        <div class="signup-card">
+            <div class="signup-step">
+                <span class="step-num">1</span>
+                <h3 class="step-title">Your business</h3>
+            </div>
+
+            <label style="font-size:12px;color:#6b7280;">Business name *</label>
+            <input class="input full" placeholder="Ahmed Mart" @bind="_tenantName" style="margin-bottom:10px;" />
+
+            <div style="display:flex;gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px;color:#6b7280;">Subdomain *</label>
+                    <input class="input full" placeholder="ahmed-mart" @bind="_subdomain"
+                           style="text-transform:lowercase;" />
+                    <p style="font-size:11px;color:#9ca3af;margin:2px 0 0;">
+                        Your store URL: <strong>@(string.IsNullOrEmpty(_subdomain) ? "yourname" : _subdomain).retailsuite.pk</strong>
+                    </p>
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px;color:#6b7280;">Country</label>
+                    <select class="input full" @bind="_countryCode">
+                        <option value="PK">Pakistan</option>
+                        <option value="AE">UAE</option>
+                        <option value="SA">Saudi Arabia</option>
+                        <option value="BD">Bangladesh</option>
+                        <option value="IN">India</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px;color:#6b7280;">Admin email *</label>
+                    <input class="input full" type="email" placeholder="you@business.com" @bind="_email" />
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px;color:#6b7280;">Password * (min 8 chars)</label>
+                    <input class="input full" type="password" placeholder="••••••••" @bind="_password" />
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================ Step 2: pick a plan ============================ -->
+        <div class="signup-card">
+            <div class="signup-step">
+                <span class="step-num">2</span>
+                <h3 class="step-title">Choose a plan</h3>
+            </div>
+
+            @if (_plans == null)
+            {
+                <div class="spinner"></div>
+            }
+            else if (!_plans.Any())
+            {
+                <p style="color:#9ca3af;">No plans available right now — contact support.</p>
+            }
+            else
+            {
+                <!-- Billing cycle toggle -->
+                <div style="display:flex;gap:6px;margin-bottom:12px;">
+                    <button class="btn @(_billingCycle == "Monthly" ? "btn-primary" : "")"
+                            style="padding:6px 14px;font-size:13px;"
+                            @onclick="@(() => _billingCycle = "Monthly")">Monthly</button>
+                    <button class="btn @(_billingCycle == "Yearly" ? "btn-primary" : "")"
+                            style="padding:6px 14px;font-size:13px;"
+                            @onclick="@(() => _billingCycle = "Yearly")">
+                        Yearly <span style="font-size:10px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:3px;margin-left:3px;">SAVE</span>
+                    </button>
+                </div>
+
+                <div class="plan-grid">
+                    @foreach (var p in _plans)
+                    {
+                        var price = _billingCycle == "Yearly" ? p.YearlyPrice : p.MonthlyPrice;
+                        <div class="plan-card @(_planCode == p.Code ? "selected" : "")"
+                             @onclick="() => SelectPlan(p)">
+                            <div class="name">@p.Name @(price == 0 ? new MarkupString("<span class='free-badge'>FREE</span>") : (MarkupString)"")</div>
+                            <div class="price">
+                                @(price == 0 ? "Free" : $"Rs {price:N0}")
+                                @if (price > 0)
+                                {
+                                    <span style="font-size:12px;color:#6b7280;font-weight:400;">/ @(_billingCycle == "Yearly" ? "yr" : "mo")</span>
+                                }
+                            </div>
+                            <div class="desc">@p.Description</div>
+                            @if (p.TrialDays > 0)
+                            {
+                                <p style="font-size:11px;color:#a16207;margin:6px 0 0;">⚡ @p.TrialDays-day free trial</p>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- ============================ Step 3: payment method ============================ -->
+        @if (SelectedIsPaid)
+        {
+            <div class="signup-card">
+                <div class="signup-step">
+                    <span class="step-num">3</span>
+                    <h3 class="step-title">How would you like to pay?</h3>
+                </div>
+
+                <!-- Auto vs manual pay -->
+                <div style="display:flex;gap:8px;margin-bottom:14px;">
+                    <button class="btn @( _payMode == "auto" ? "btn-primary" : "")"
+                            style="flex:1;padding:10px;font-size:13px;"
+                            @onclick='@(() => _payMode = "auto")'>
+                        💳 Auto-pay (Card)
+                    </button>
+                    <button class="btn @( _payMode == "manual" ? "btn-primary" : "")"
+                            style="flex:1;padding:10px;font-size:13px;"
+                            @onclick='@(() => _payMode = "manual")'>
+                        📥 Manual (pay each invoice)
+                    </button>
+                </div>
+
+                @if (_payMode == "auto")
+                {
+                    <p style="color:#6b7280;font-size:13px;margin:0 0 12px;">
+                        We'll charge this card automatically at the end of each
+                        @(_billingCycle == "Yearly" ? "year" : "month")
+                        @(SelectedTrialDays > 0 ? $", starting after your {SelectedTrialDays}-day trial" : "").
+                        Cancel any time from Settings.
+                    </p>
+
+                    <label style="font-size:12px;color:#6b7280;">Cardholder name *</label>
+                    <input class="input full" placeholder="Name on card" @bind="_card.HolderName" style="margin-bottom:8px;" />
+
+                    <label style="font-size:12px;color:#6b7280;">Card number *</label>
+                    <input class="input full" placeholder="4242 4242 4242 4242" @bind="_card.Number"
+                           inputmode="numeric" maxlength="19" style="margin-bottom:8px;font-family:monospace;letter-spacing:1px;" />
+
+                    <div style="display:flex;gap:10px;">
+                        <div style="flex:1;">
+                            <label style="font-size:12px;color:#6b7280;">Expiry month *</label>
+                            <select class="input full" @bind="_card.ExpMonth">
+                                <option value="0">MM</option>
+                                @for (var m = 1; m <= 12; m++)
+                                { <option value="@m">@m.ToString("D2")</option> }
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:12px;color:#6b7280;">Expiry year *</label>
+                            <select class="input full" @bind="_card.ExpYear">
+                                <option value="0">YYYY</option>
+                                @for (var y = DateTime.UtcNow.Year; y <= DateTime.UtcNow.Year + 12; y++)
+                                { <option value="@y">@y</option> }
+                            </select>
+                        </div>
+                        <div style="width:120px;">
+                            <label style="font-size:12px;color:#6b7280;">CVV *</label>
+                            <input class="input full" type="password" placeholder="123" @bind="_card.Cvv"
+                                   maxlength="4" />
+                        </div>
+                    </div>
+
+                    <p style="font-size:11px;color:#9ca3af;margin-top:8px;">
+                        🔒 Test cards: <code>4242 4242 4242 4242</code> (Visa) ·
+                        <code>5555 5555 5555 4444</code> (Mastercard)
+                    </p>
+                }
+                else
+                {
+                    <p style="color:#6b7280;font-size:13px;margin:0 0 12px;">
+                        We'll email an invoice at the end of each
+                        @(_billingCycle == "Yearly" ? "year" : "month")
+                        with payment instructions. Your subscription pauses if an invoice is unpaid past the grace period.
+                    </p>
+
+                    @foreach (var m in ManualMethods)
+                    {
+                        <label style="display:flex;align-items:center;gap:10px;padding:10px;
+                                      border:2px solid @(_manualMethod == m.Code ? "#1d4ed8" : "#e5e7eb");
+                                      border-radius:8px;margin-bottom:6px;cursor:pointer;
+                                      background:@(_manualMethod == m.Code ? "#eff6ff" : "transparent");">
+                            <input type="radio" name="manualpay"
+                                   checked="@(_manualMethod == m.Code)"
+                                   @onchange="() => _manualMethod = m.Code" />
+                            <span style="font-size:18px;">@m.Icon</span>
+                            <div style="flex:1;">
+                                <strong>@m.Name</strong>
+                                <div style="font-size:12px;color:#6b7280;">@m.Hint</div>
+                            </div>
+                        </label>
+                    }
+                }
+            </div>
+        }
+
+        <!-- ============================ Step 4: submit ============================ -->
+        <div class="signup-card" style="text-align:center;">
+            <button class="btn btn-primary full" style="font-size:15px;padding:14px;"
+                    disabled="@_submitting"
+                    @onclick="Submit">
+                @(_submitting ? "Creating your account..." : "Create account")
+            </button>
+            <p style="font-size:11px;color:#9ca3af;margin:10px 0 0;">
+                By signing up you agree to our terms of service and privacy policy.
+            </p>
+            <p style="font-size:13px;color:#6b7280;margin:14px 0 0;">
+                Already have an account? <a href="/login" style="color:#1d4ed8;font-weight:600;">Sign in</a>
+            </p>
+        </div>
+    }
+</div>
+
+@code {
+    // ---- Form state -----------------------------------------------
+    string _tenantName  = "";
+    string _subdomain   = "";
+    string _countryCode = "PK";
+    string _email       = "";
+    string _password    = "";
+
+    string _planCode     = "FREE";
+    string _billingCycle = "Monthly";
+    int    SelectedTrialDays => _plans?.FirstOrDefault(p => p.Code == _planCode)?.TrialDays ?? 0;
+    bool   SelectedIsPaid    => _plans?.FirstOrDefault(p => p.Code == _planCode)
+                                     ?.PriceFor(_billingCycle) > 0;
+
+    CardForm _card = new();
+
+    // "auto" = card-on-file, "manual" = pay each invoice via JC/EP/Bank/Cash
+    string _payMode = "auto";
+    string _manualMethod = "JazzCash";
+
+    static readonly ManualMethodOption[] ManualMethods = new[]
+    {
+        new ManualMethodOption("JazzCash",     "JazzCash",      "📱", "Pay via JazzCash mobile wallet"),
+        new ManualMethodOption("EasyPaisa",    "EasyPaisa",     "📱", "Pay via EasyPaisa mobile wallet"),
+        new ManualMethodOption("BankTransfer", "Bank Transfer", "🏦", "Pay via direct bank transfer (IBFT)"),
+        new ManualMethodOption("Cash",         "Cash",          "💵", "Pay in cash at our office")
+    };
+
+    List<PlanRow>? _plans;
+    bool   _submitting;
+    bool   _done;
+    string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadPlans();
+    }
+
+    async Task LoadPlans()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/subscriptions/plans");
+            using var doc = JsonDocument.Parse(json);
+            _plans = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _plans.Add(new PlanRow
+                    {
+                        Code         = e.GetProperty("code").GetString() ?? "",
+                        Name         = e.GetProperty("name").GetString() ?? "",
+                        Description  = e.TryGetProperty("description", out var ds) ? (ds.GetString() ?? "") : "",
+                        MonthlyPrice = e.GetProperty("monthlyPrice").GetDecimal(),
+                        YearlyPrice  = e.GetProperty("yearlyPrice").GetDecimal(),
+                        TrialDays    = e.TryGetProperty("trialDays", out var td) ? td.GetInt32() : 0
+                    });
+                }
+            }
+            // Default selection: the cheapest free plan, or first paid if none free.
+            var def = _plans.OrderBy(p => p.MonthlyPrice).FirstOrDefault();
+            if (def != null) _planCode = def.Code;
+            StateHasChanged();
+        }
+        catch
+        {
+            _plans = new();
+            _error = "Could not load plans — please refresh.";
+        }
+    }
+
+    void SelectPlan(PlanRow p) => _planCode = p.Code;
+
+    async Task Submit()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_tenantName)) { _error = "Business name is required."; return; }
+        if (string.IsNullOrWhiteSpace(_subdomain))  { _error = "Subdomain is required.";    return; }
+        if (string.IsNullOrWhiteSpace(_email))      { _error = "Admin email is required.";  return; }
+        if (_password.Length < 8)                   { _error = "Password must be at least 8 characters."; return; }
+
+        if (SelectedIsPaid && _payMode == "auto")
+        {
+            if (string.IsNullOrWhiteSpace(_card.HolderName)
+                || string.IsNullOrWhiteSpace(_card.Number)
+                || _card.ExpMonth == 0 || _card.ExpYear == 0
+                || string.IsNullOrWhiteSpace(_card.Cvv))
+            {
+                _error = "Please fill in all card details for auto-pay.";
+                return;
+            }
+            var digits = new string((_card.Number ?? "").Where(char.IsDigit).ToArray());
+            if (digits.Length < 12) { _error = "Card number doesn't look right."; return; }
+        }
+        else if (SelectedIsPaid && _payMode == "manual" && string.IsNullOrWhiteSpace(_manualMethod))
+        {
+            _error = "Pick a manual payment method.";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            object? paymentMethod = null;
+            if (SelectedIsPaid)
+            {
+                paymentMethod = _payMode == "auto"
+                    ? (object)new
+                      {
+                          type       = "Card",
+                          cardNumber = _card.Number,
+                          holderName = _card.HolderName,
+                          expMonth   = _card.ExpMonth,
+                          expYear    = _card.ExpYear,
+                          cvv        = _card.Cvv
+                      }
+                    : new { type = _manualMethod };
+            }
+
+            var body = new
+            {
+                tenantName    = _tenantName,
+                subdomain     = _subdomain.Trim().ToLowerInvariant(),
+                email         = _email.Trim().ToLowerInvariant(),
+                password      = _password,
+                countryCode   = _countryCode,
+                planCode      = _planCode,
+                billingCycle  = _billingCycle,
+                paymentMethod = paymentMethod
+            };
+
+            var resp = await Http.PostAsJsonAsync("api/auth/signup", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                _error = $"Sign-up failed: {msg}";
+                return;
+            }
+            _done = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    class CardForm
+    {
+        public string? HolderName { get; set; }
+        public string? Number     { get; set; }
+        public int     ExpMonth   { get; set; }
+        public int     ExpYear    { get; set; }
+        public string? Cvv        { get; set; }
+    }
+
+    class PlanRow
+    {
+        public string  Code         { get; set; } = "";
+        public string  Name         { get; set; } = "";
+        public string  Description  { get; set; } = "";
+        public decimal MonthlyPrice { get; set; }
+        public decimal YearlyPrice  { get; set; }
+        public int     TrialDays    { get; set; }
+
+        public decimal PriceFor(string cycle) => cycle == "Yearly" ? YearlyPrice : MonthlyPrice;
+    }
+
+    record ManualMethodOption(string Code, string Name, string Icon, string Hint);
+}

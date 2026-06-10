@@ -694,6 +694,11 @@ public class RetailDbContext : DbContext
             b.Property(s => s.PlanCode).IsRequired().HasMaxLength(50);
             b.Property(s => s.Currency).IsRequired().HasMaxLength(3);
             b.Property(s => s.LastPrice).HasColumnType("decimal(18,2)");
+            b.Property(s => s.PaymentMethodType).HasMaxLength(20);
+            b.Property(s => s.CardBrand).HasMaxLength(30);
+            b.Property(s => s.CardLast4).HasMaxLength(4);
+            b.Property(s => s.CardHolderName).HasMaxLength(150);
+            b.Property(s => s.GatewayCustomerId).HasMaxLength(100);
 
             b.HasOne<SubscriptionPlan>()
                 .WithMany()
