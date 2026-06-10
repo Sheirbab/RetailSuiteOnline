@@ -409,18 +409,45 @@ public class ShopController : ControllerBase
         if (order == null)
             return NotFound(ApiResponse<object>.Fail("No order matched that combination."));
 
+        // Find any active payment intent (Pending, not expired) so the page can re-show the QR.
+        var activeIntent = await _db.OrderPaymentIntents
+            .Where(i => i.OrderId == order.Id && i.Status == PaymentIntentStatus.Pending)
+            .OrderByDescending(i => i.CreatedAt)
+            .Select(i => new
+            {
+                i.Id,
+                i.Provider,
+                i.AmountDue,
+                i.ExpiresAt,
+                i.QrPayload
+            })
+            .FirstOrDefaultAsync();
+
         return Ok(ApiResponse<object>.Ok(new
         {
+            Id = order.Id,
             order.OrderNumber,
+            order.InvoiceNumber,
             Status            = order.Status.ToString(),
             FulfillmentStatus = order.FulfillmentStatus,
             order.TotalAmount,
+            order.PaidAmount,
+            Outstanding       = order.OutstandingAmount,
+            IsFullyPaid       = order.IsFullyPaid,
             order.ShippingAmount,
             order.ShippingMethodCode,
             order.PaymentMethodCode,
             order.GuestName,
             order.CreatedAt,
-            Items = order.Items.Select(i => new { i.SKU, i.Quantity, i.UnitPrice, LineTotal = i.LineTotal })
+            Items = order.Items.Select(i => new { i.SKU, i.Quantity, i.UnitPrice, LineTotal = i.LineTotal }),
+            PendingPayment = activeIntent == null ? null : new
+            {
+                IntentId   = activeIntent.Id,
+                activeIntent.Provider,
+                activeIntent.AmountDue,
+                activeIntent.ExpiresAt,
+                QrImageUrl = $"/api/payments/qr/{activeIntent.Id}.png"
+            }
         }));
     }
 }

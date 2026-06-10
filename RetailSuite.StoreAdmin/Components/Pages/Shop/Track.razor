@@ -2,8 +2,34 @@
 @layout CustomerLayout
 @inject HttpClient Http
 @using System.Text.Json
+@implements IDisposable
 
-<div style="max-width:560px;margin:0 auto;">
+<style>
+    .tk-shell    { max-width:620px; margin:0 auto; }
+    .tk-row      { display:flex; justify-content:space-between; align-items:center; }
+    .pill        { display:inline-block; font-size:11px; padding:3px 10px; border-radius:6px; font-weight:600; }
+    .timeline    { display:flex; gap:0; margin:18px 0; }
+    .tl-step     { flex:1; text-align:center; position:relative; }
+    .tl-dot      { width:28px; height:28px; border-radius:50%; background:#e5e7eb; color:#9ca3af;
+                   display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;
+                   z-index:1; position:relative; }
+    .tl-dot.done    { background:#16a34a; color:#fff; }
+    .tl-dot.current { background:#1d4ed8; color:#fff; }
+    .tl-step:not(:last-child)::after {
+        content:""; position:absolute; top:14px; left:calc(50% + 14px); right:calc(-50% + 14px);
+        height:2px; background:#e5e7eb; z-index:0;
+    }
+    .tl-step.done:not(:last-child)::after { background:#16a34a; }
+    .tl-label   { font-size:11px; color:#6b7280; margin-top:6px; }
+
+    .pay-card    { background:linear-gradient(135deg,#fef3c7 0%, #fde68a 100%);
+                   border:1px solid #fcd34d; border-radius:10px; padding:16px;
+                   margin-bottom:14px; text-align:center; }
+    .pay-card.paid { background:linear-gradient(135deg,#dcfce7 0%, #bbf7d0 100%);
+                     border-color:#86efac; }
+</style>
+
+<div class="tk-shell">
     <h2 style="margin-bottom:20px;">Track your order</h2>
 
     <div class="card" style="margin-bottom:16px;">
@@ -25,42 +51,117 @@
 
     @if (_result != null)
     {
-        <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <!-- ============================ Header ============================ -->
+        <div class="card" style="margin-bottom:14px;">
+            <div class="tk-row" style="margin-bottom:12px;">
                 <div>
-                    <strong style="font-family:monospace;">@_result.OrderNumber</strong>
-                    <div style="font-size:12px;color:#6b7785;">Placed @_result.CreatedAt.ToString("dd MMM yyyy HH:mm")</div>
+                    <strong style="font-family:monospace;font-size:15px;">@_result.OrderNumber</strong>
+                    <div style="font-size:12px;color:#6b7785;">
+                        Placed @_result.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                    </div>
                 </div>
-                @RenderFulfillmentBadge(_result.FulfillmentStatus)
+                <span class="pill" style="background:@FulfillmentBg(_result.FulfillmentStatus);color:@FulfillmentFg(_result.FulfillmentStatus);">
+                    @_result.FulfillmentStatus
+                </span>
             </div>
 
-            <hr style="margin:6px 0 12px;" />
+            <!-- Timeline -->
+            <div class="timeline">
+                @{
+                    var steps = new[] { "Placed", "Confirmed", "Shipped", "Delivered" };
+                    var currentIdx = StepIndex(_result.FulfillmentStatus, _result.Status);
+                }
+                @for (var i = 0; i < steps.Length; i++)
+                {
+                    var cls = i < currentIdx ? "done" : (i == currentIdx ? "current" : "");
+                    var stepCls = i < currentIdx ? "done" : "";
+                    <div class="tl-step @stepCls">
+                        <span class="tl-dot @cls">@(i < currentIdx ? "✓" : (i + 1).ToString())</span>
+                        <div class="tl-label">@steps[i]</div>
+                    </div>
+                }
+            </div>
+        </div>
 
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:13px;margin-bottom:12px;">
+        <!-- ============================ Payment status ============================ -->
+        @if (_result.IsFullyPaid)
+        {
+            <div class="pay-card paid">
+                <div style="font-size:24px;">✅</div>
+                <strong style="color:#15803d;">Payment received</strong>
+                <div style="font-size:12px;color:#15803d;margin-top:4px;">
+                    Rs @_result.PaidAmount.ToString("N2") paid via @(_result.PaymentMethodCode ?? "—")
+                </div>
+            </div>
+        }
+        else if (_result.PendingPayment != null && _result.PaymentStatus != "Paid")
+        {
+            <div class="pay-card">
+                <strong style="color:#a16207;">Awaiting payment via @_result.PendingPayment.Provider</strong>
+                <div style="font-size:22px;font-weight:700;color:#0d3b66;margin:8px 0;">
+                    Rs @_result.PendingPayment.AmountDue.ToString("N2")
+                </div>
+                <img src="@_result.PendingPayment.QrImageUrl"
+                     alt="Payment QR"
+                     style="width:220px;height:220px;border:1px solid #fcd34d;border-radius:8px;background:#fff;" />
+                <p style="font-size:11px;color:#a16207;margin:8px 0 0;">
+                    Scan with your @_result.PendingPayment.Provider app. Page refreshes automatically.
+                </p>
+                <button class="btn" style="margin-top:10px;font-size:11px;background:#fee2e2;color:#b91c1c;"
+                        @onclick="DevSimulatePaid">
+                    🛠 DEV: Simulate paid
+                </button>
+            </div>
+        }
+        else if (_result.PaymentMethodCode == "COD")
+        {
+            <div class="pay-card">
+                <strong style="color:#a16207;">💵 Cash on Delivery</strong>
+                <div style="font-size:12px;color:#a16207;margin-top:4px;">
+                    Pay Rs @_result.Outstanding.ToString("N2") to the courier when your order arrives.
+                </div>
+            </div>
+        }
+
+        <!-- ============================ Recipient / shipping ============================ -->
+        <div class="card" style="margin-bottom:14px;">
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:13px;">
                 <div><span style="color:#6b7785;">Recipient</span><br/><strong>@_result.GuestName</strong></div>
-                <div><span style="color:#6b7785;">Payment</span><br/><strong>@_result.PaymentMethodCode</strong></div>
+                <div><span style="color:#6b7785;">Payment method</span><br/><strong>@_result.PaymentMethodCode</strong></div>
                 <div><span style="color:#6b7785;">Shipping</span><br/><strong>@_result.ShippingMethodCode</strong></div>
-                <div><span style="color:#6b7785;">Status</span><br/><strong>@_result.Status</strong></div>
+                <div><span style="color:#6b7785;">Order status</span><br/><strong>@_result.Status</strong></div>
             </div>
+        </div>
 
-            <h4 style="margin:12px 0 6px;font-size:14px;">Items</h4>
+        <!-- ============================ Items + totals ============================ -->
+        <div class="card">
+            <h4 style="margin:0 0 8px;">Items</h4>
             @foreach (var item in _result.Items)
             {
-                <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;">
+                <div class="tk-row" style="font-size:13px;padding:3px 0;">
                     <span>@item.SKU × @item.Quantity</span>
                     <span>Rs @item.LineTotal.ToString("N2")</span>
                 </div>
             }
-
             <hr style="margin:8px 0;" />
-            <div style="display:flex;justify-content:space-between;font-size:13px;">
+            <div class="tk-row" style="font-size:13px;">
                 <span>Shipping</span>
                 <span>@(_result.ShippingAmount == 0 ? "Free" : $"Rs {_result.ShippingAmount:N2}")</span>
             </div>
-            <div style="display:flex;justify-content:space-between;font-weight:700;font-size:16px;">
+            <div class="tk-row" style="font-weight:700;font-size:16px;">
                 <span>Total</span>
                 <span>Rs @_result.TotalAmount.ToString("N2")</span>
             </div>
+            @if (!string.IsNullOrEmpty(_result.InvoiceNumber))
+            {
+                <hr style="margin:10px 0;" />
+                <div class="tk-row">
+                    <span style="font-size:13px;color:#6b7785;">Invoice</span>
+                    <a href="@($"/invoice/{_result.OrderId}")" target="_blank" style="font-size:13px;font-weight:600;">
+                        📄 @_result.InvoiceNumber
+                    </a>
+                </div>
+            }
         </div>
     }
 </div>
@@ -72,10 +173,14 @@
     string? _error;
     TrackResult? _result;
 
+    // Polling for pending payment status
+    System.Threading.Timer? _poller;
+
     async Task DoTrack()
     {
         _error  = null;
         _result = null;
+        DisposePoller();
         if (string.IsNullOrWhiteSpace(_orderNumber) || string.IsNullOrWhiteSpace(_phone))
         {
             _error = "Order number and phone are required.";
@@ -87,42 +192,12 @@
 
         try
         {
-            var url = $"api/shop/orders/{Uri.EscapeDataString(_orderNumber.Trim())}?phone={Uri.EscapeDataString(_phone.Trim())}";
-            var resp = await Http.GetAsync(url);
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                _error = "We couldn't find an order matching that combination.";
-                return;
-            }
-            if (!resp.IsSuccessStatusCode)
-            {
-                _error = "Lookup failed. Please try again.";
-                return;
-            }
+            await FetchOrderAsync();
 
-            var json = await resp.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            var d = doc.RootElement.GetProperty("data");
-
-            _result = new TrackResult
-            {
-                OrderNumber       = d.GetProperty("orderNumber").GetString() ?? "",
-                Status            = d.GetProperty("status").GetString() ?? "",
-                FulfillmentStatus = d.GetProperty("fulfillmentStatus").GetString() ?? "",
-                TotalAmount       = d.GetProperty("totalAmount").GetDecimal(),
-                ShippingAmount    = d.GetProperty("shippingAmount").GetDecimal(),
-                ShippingMethodCode = d.TryGetProperty("shippingMethodCode", out var sm) ? sm.GetString() : null,
-                PaymentMethodCode  = d.TryGetProperty("paymentMethodCode",  out var pm) ? pm.GetString() : null,
-                GuestName          = d.TryGetProperty("guestName", out var gn) ? gn.GetString() : null,
-                CreatedAt          = d.GetProperty("createdAt").GetDateTime(),
-                Items = d.GetProperty("items").EnumerateArray().Select(it => new TrackItem
-                {
-                    SKU       = it.GetProperty("sKU").GetString() ?? "",
-                    Quantity  = it.GetProperty("quantity").GetInt32(),
-                    UnitPrice = it.GetProperty("unitPrice").GetDecimal(),
-                    LineTotal = it.GetProperty("lineTotal").GetDecimal()
-                }).ToList()
-            };
+            // If there's a pending payment intent, start polling its status so the
+            // "Awaiting payment" card flips to ✅ when the gateway webhook lands.
+            if (_result?.PendingPayment != null)
+                StartPolling(_result.PendingPayment.IntentId);
         }
         catch (Exception ex)
         {
@@ -135,31 +210,151 @@
         }
     }
 
-    static RenderFragment RenderFulfillmentBadge(string status) => builder =>
+    async Task FetchOrderAsync()
     {
-        var (bg, fg) = status switch
+        var url = $"api/shop/orders/{Uri.EscapeDataString(_orderNumber.Trim())}?phone={Uri.EscapeDataString(_phone.Trim())}";
+        var resp = await Http.GetAsync(url);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            "Shipped"   => ("#dbeafe", "#1d4ed8"),
-            "Delivered" => ("#dcfce7", "#15803d"),
-            "Cancelled" => ("#fee2e2", "#b91c1c"),
-            _           => ("#fef3c7", "#a16207")  // Pending
+            _error = "We couldn't find an order matching that combination.";
+            return;
+        }
+        if (!resp.IsSuccessStatusCode)
+        {
+            _error = "Lookup failed. Please try again.";
+            return;
+        }
+
+        var json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var d = doc.RootElement.GetProperty("data");
+
+        var result = new TrackResult
+        {
+            OrderNumber       = d.GetProperty("orderNumber").GetString() ?? "",
+            InvoiceNumber     = d.TryGetProperty("invoiceNumber", out var inv) && inv.ValueKind == JsonValueKind.String ? inv.GetString() : null,
+            Status            = d.GetProperty("status").GetString() ?? "",
+            FulfillmentStatus = d.GetProperty("fulfillmentStatus").GetString() ?? "",
+            TotalAmount       = d.GetProperty("totalAmount").GetDecimal(),
+            PaidAmount        = d.GetProperty("paidAmount").GetDecimal(),
+            Outstanding       = d.GetProperty("outstanding").GetDecimal(),
+            IsFullyPaid       = d.GetProperty("isFullyPaid").GetBoolean(),
+            ShippingAmount    = d.GetProperty("shippingAmount").GetDecimal(),
+            ShippingMethodCode = d.TryGetProperty("shippingMethodCode", out var sm) ? sm.GetString() : null,
+            PaymentMethodCode  = d.TryGetProperty("paymentMethodCode",  out var pm) ? pm.GetString() : null,
+            GuestName          = d.TryGetProperty("guestName", out var gn) ? gn.GetString() : null,
+            CreatedAt          = d.GetProperty("createdAt").GetDateTime(),
+            Items = d.GetProperty("items").EnumerateArray().Select(it => new TrackItem
+            {
+                SKU       = it.GetProperty("sKU").GetString() ?? "",
+                Quantity  = it.GetProperty("quantity").GetInt32(),
+                UnitPrice = it.GetProperty("unitPrice").GetDecimal(),
+                LineTotal = it.GetProperty("lineTotal").GetDecimal()
+            }).ToList()
         };
-        builder.AddMarkupContent(0,
-            $"<span style=\"background:{bg};color:{fg};font-size:12px;padding:4px 10px;border-radius:6px;font-weight:600;\">{status}</span>");
+
+        if (d.TryGetProperty("pendingPayment", out var pp) && pp.ValueKind == JsonValueKind.Object)
+        {
+            result.PendingPayment = new PendingPaymentDto
+            {
+                IntentId    = pp.GetProperty("intentId").GetGuid(),
+                Provider    = pp.GetProperty("provider").GetString() ?? "",
+                AmountDue   = pp.GetProperty("amountDue").GetDecimal(),
+                QrImageUrl  = pp.GetProperty("qrImageUrl").GetString() ?? "",
+                ExpiresAt   = pp.GetProperty("expiresAt").GetDateTime()
+            };
+        }
+
+        // We need the OrderId to link to /invoice/{id} — pull it from the response.
+        // The track endpoint doesn't expose Id directly; load it via the intent id alternative,
+        // or extend the endpoint. For now: hide the invoice link if we don't have it.
+        if (d.TryGetProperty("id", out var idEl)) result.OrderId = idEl.GetGuid();
+
+        _result = result;
+    }
+
+    void StartPolling(Guid intentId)
+    {
+        DisposePoller();
+        _poller = new System.Threading.Timer(async _ =>
+        {
+            try
+            {
+                var json = await Http.GetStringAsync($"api/payments/intent/{intentId}/status");
+                using var doc = JsonDocument.Parse(json);
+                var status = doc.RootElement.GetProperty("data").GetProperty("status").GetString() ?? "Pending";
+                if (_result != null) _result.PaymentStatus = status;
+                if (status is "Paid" or "Failed" or "Expired")
+                {
+                    DisposePoller();
+                    // Reload the order to pick up the new IsFullyPaid / status.
+                    await InvokeAsync(FetchOrderAsync);
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+            catch { /* keep trying */ }
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    async Task DevSimulatePaid()
+    {
+        if (_result?.PendingPayment == null) return;
+        try
+        {
+            await Http.PostAsync($"api/payments/intent/{_result.PendingPayment.IntentId}/simulate-paid", null);
+            // Poller picks up the change within ~3s.
+        }
+        catch { }
+    }
+
+    void DisposePoller() { _poller?.Dispose(); _poller = null; }
+    public void Dispose() => DisposePoller();
+
+    // ----- styling helpers ----------------------------------------------
+
+    static int StepIndex(string fulfilment, string status)
+    {
+        if (status == "Cancelled" || fulfilment == "Cancelled") return -1;
+        if (fulfilment == "Delivered") return 4;
+        if (fulfilment == "Shipped")   return 3;
+        if (status == "Confirmed" || status == "Completed") return 2;
+        return 1; // Placed
+    }
+
+    static string FulfillmentBg(string status) => status switch
+    {
+        "Shipped"   => "#dbeafe",
+        "Delivered" => "#dcfce7",
+        "Cancelled" => "#fee2e2",
+        _           => "#fef3c7"
+    };
+    static string FulfillmentFg(string status) => status switch
+    {
+        "Shipped"   => "#1d4ed8",
+        "Delivered" => "#15803d",
+        "Cancelled" => "#b91c1c",
+        _           => "#a16207"
     };
 
     class TrackResult
     {
+        public Guid     OrderId { get; set; }
         public string   OrderNumber { get; set; } = "";
+        public string?  InvoiceNumber { get; set; }
         public string   Status { get; set; } = "";
         public string   FulfillmentStatus { get; set; } = "";
         public decimal  TotalAmount { get; set; }
+        public decimal  PaidAmount { get; set; }
+        public decimal  Outstanding { get; set; }
+        public bool     IsFullyPaid { get; set; }
         public decimal  ShippingAmount { get; set; }
         public string?  ShippingMethodCode { get; set; }
         public string?  PaymentMethodCode { get; set; }
         public string?  GuestName { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<TrackItem> Items { get; set; } = new();
+        public PendingPaymentDto? PendingPayment { get; set; }
+        public string? PaymentStatus { get; set; }
     }
 
     class TrackItem
@@ -168,5 +363,14 @@
         public int     Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal LineTotal { get; set; }
+    }
+
+    class PendingPaymentDto
+    {
+        public Guid     IntentId { get; set; }
+        public string   Provider { get; set; } = "";
+        public decimal  AmountDue { get; set; }
+        public string   QrImageUrl { get; set; } = "";
+        public DateTime ExpiresAt { get; set; }
     }
 }
