@@ -10,6 +10,7 @@ using RetailSuite.Infrastructure.Modules.Payments.Entities;
 using RetailSuite.Infrastructure.Modules.Payments.Services;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
@@ -248,8 +249,13 @@ public class ShopController : ControllerBase
         {
             // ---- 1. Build order header
             var orderNumber = $"WEB-{DateTime.UtcNow.Ticks}";
-            // Guest orders have no real CustomerId — pass Guid.Empty.
-            var customerId  = request.CustomerId ?? Guid.Empty;
+            // Guest orders have no real CustomerId — fall back to the tenant's
+            // auto-seeded Walk-in Customer row so the Order FK is satisfied.
+            var hasRealCustomer = request.CustomerId.HasValue
+                                && request.CustomerId.Value != Guid.Empty;
+            var customerId  = hasRealCustomer
+                ? request.CustomerId!.Value
+                : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId);
             var order = new Order(orderNumber, customerId);
             order.SetChannel("Online");
             order.SetGuestContact(request.GuestName.Trim(), request.GuestPhone.Trim(), request.GuestEmail?.Trim());
@@ -298,10 +304,16 @@ public class ShopController : ControllerBase
 
             // ---- 5. Accounting — book inventory issue (COGS) only.
             //         Revenue + cash get booked when payment is recorded later.
-            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-            var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
-            var arAccount        = await _db.Accounts.FirstAsync(a => a.Code == "1200");
-            var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+            // Self-heal: ensure baseline Chart of Accounts exists. Idempotent.
+            await TenantDefaultsSeeder.SeedAsync(_db, tenantId);
+
+            var inventoryAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1100");
+            var cogsAccount      = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5000");
+            var arAccount        = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1200");
+            var revenueAccount   = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "4000");
+            if (inventoryAccount == null || cogsAccount == null || arAccount == null || revenueAccount == null)
+                throw new BusinessRuleException(
+                    "Chart of Accounts is incomplete for this tenant (1100 / 5000 / 1200 / 4000).");
 
             // Receivable booking for COD: DR AR (we're owed money) / CR Revenue.
             //                              DR COGS / CR Inventory.

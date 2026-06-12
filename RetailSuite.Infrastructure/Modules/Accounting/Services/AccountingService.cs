@@ -1,4 +1,5 @@
-﻿using RetailSuite.Infrastructure;
+﻿using Microsoft.Extensions.Logging;
+using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Accounting.Entities;
 
 namespace RetailSuite.Modules.Accounting.Services;
@@ -20,11 +21,15 @@ public class AccountingService
         if (!lines.Any())
             throw new Exception("Journal entry must have lines.");
 
-        var totalDebit = lines.Sum(x => x.debit);
-        var totalCredit = lines.Sum(x => x.credit);
+        // Round each side to 2 decimal places (matches the DB column precision)
+        // before comparing so tiny in-memory drift doesn't fail the check.
+        var totalDebit = Math.Round(lines.Sum(x => x.debit), 2, MidpointRounding.AwayFromZero);
+        var totalCredit = Math.Round(lines.Sum(x => x.credit), 2, MidpointRounding.AwayFromZero);
 
         if (totalDebit != totalCredit)
-            throw new Exception("Journal entry not balanced.");
+            throw new Exception(
+                $"Journal entry '{description}' not balanced. " +
+                $"Debits = {totalDebit:N2}, Credits = {totalCredit:N2}, Diff = {(totalDebit - totalCredit):N2}.");
 
         var entry = new JournalEntry(referenceId, description);
 

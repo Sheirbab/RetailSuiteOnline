@@ -14,7 +14,6 @@ using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Infrastructure.Modules.Tenant;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
-using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Shared;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -90,20 +89,9 @@ public class AuthController : ControllerBase
             _Db.Users.Add(user);
             await _Db.SaveChangesAsync();
 
-            // 3. Seed Chart of Accounts (unchanged).
-            var accounts = new List<Account>
-            {
-                new Account("1000", "Cash",                  AccountType.Asset)     { TenantId = tenant.Id },
-                new Account("1100", "Inventory",             AccountType.Asset)     { TenantId = tenant.Id },
-                new Account("1200", "Accounts Receivable",   AccountType.Asset)     { TenantId = tenant.Id },
-                new Account("2000", "Tax Payable",           AccountType.Liability) { TenantId = tenant.Id },
-                new Account("4000", "Revenue",               AccountType.Revenue)   { TenantId = tenant.Id },
-                new Account("5000", "Cost of Goods Sold",    AccountType.Expense)   { TenantId = tenant.Id },
-            };
-            _Db.Accounts.AddRange(accounts);
-            await _Db.SaveChangesAsync();
-
-            // 3b. Seed per-tenant defaults (shipping methods so the storefront works out of the box).
+            // 3. Seed per-tenant defaults (Chart of Accounts, shipping methods,
+            //    empty tax settings, default Main Branch location). Each block
+            //    inside is idempotent — safe to re-run on existing tenants.
             await TenantDefaultsSeeder.SeedAsync(_Db, tenant.Id);
 
             // 4. Issue verification token (must be done inside the txn so we can roll back on failure).

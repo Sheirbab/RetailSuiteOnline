@@ -6,6 +6,7 @@ using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Infrastructure.Email;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Modules.Accounting.Services;
 using RetailSuite.Modules.Orders.Entities;
@@ -43,170 +44,196 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             ICurrentUserContext currentUser,
             IInvoiceStampingService invoices)
         {
-            _db                = db;
+            _db = db;
             _accountingService = accountingService;
-            _emailService      = emailService;
-            _storeCredit       = storeCredit;
-            _loyalty           = loyalty;
-            _currentUser       = currentUser;
-            _invoices          = invoices;
+            _emailService = emailService;
+            _storeCredit = storeCredit;
+            _loyalty = loyalty;
+            _currentUser = currentUser;
+            _invoices = invoices;
         }
 
         public async Task<Guid> ProcessPosSaleAsync(CreatePosSaleRequest request)
         {
-            if (request.Items == null || request.Items.Count == 0)
-                throw new BusinessRuleException("Cart is empty.");
-
-            var tenantId   = _currentUser.TenantId;
-            var cashierId  = _currentUser.UserId;
-            var customerId = request.CustomerId ?? Guid.Empty;
-
-            // Resolve the selling location once for this sale.
-            var sellingLocationId = await ResolveSellingLocationAsync(tenantId, request.LocationId);
-
-            using var transaction = await _db.Database.BeginTransactionAsync();
-
-            // 1. Order header
-            var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
-            var order = new Order(orderNumber, customerId);
-            order.SetCashier(cashierId);
-
-            decimal totalCogs = 0;
-
-            // 2. Cart lines — decrement stock at the selling location, write inventory ledger, add to order
-            foreach (var lineReq in request.Items)
+            try
             {
-                var variant = await _db.ProductVariants
-                    .FirstAsync(v => v.Id == lineReq.ProductVariantId);
+                if (request.Items == null || request.Items.Count == 0)
+                    throw new BusinessRuleException("Cart is empty.");
 
-                var inventoryItem = await _db.InventoryItems
-                    .FirstOrDefaultAsync(i => i.ProductVariantId == variant.Id
-                                           && i.LocationId == sellingLocationId);
+                var tenantId  = _currentUser.TenantId;
+                var cashierId = _currentUser.UserId;
 
-                if (inventoryItem == null || inventoryItem.CurrentStock < lineReq.Quantity)
+                // Has the cashier attached a real customer? If not, fall back to the
+                // tenant's auto-seeded Walk-in Customer row so the Order FK is always valid.
+                // The "is walk-in" flag gates loyalty earn / store-credit redemption below —
+                // we don't want walk-ins to accumulate loyalty.
+                var explicitCustomerId = request.CustomerId;
+                var hasRealCustomer    = explicitCustomerId.HasValue
+                                      && explicitCustomerId.Value != Guid.Empty;
+
+                var customerId = hasRealCustomer
+                    ? explicitCustomerId!.Value
+                    : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId);
+
+                // Resolve the selling location once for this sale.
+                var sellingLocationId = await ResolveSellingLocationAsync(tenantId, request.LocationId);
+
+                using var transaction = await _db.Database.BeginTransactionAsync();
+
+                // 1. Order header
+                var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
+                var order = new Order(orderNumber, customerId);
+                order.SetCashier(cashierId);
+
+                decimal totalCogs = 0;
+
+                // 2. Cart lines — decrement stock at the selling location, write inventory ledger, add to order
+                foreach (var lineReq in request.Items)
                 {
-                    var have = inventoryItem?.CurrentStock ?? 0;
-                    throw new BusinessRuleException(
-                        $"Insufficient stock at this branch for {variant.SKU} — have {have}, need {lineReq.Quantity}.");
+                    var variant = await _db.ProductVariants
+                        .FirstAsync(v => v.Id == lineReq.ProductVariantId);
+
+                    var inventoryItem = await _db.InventoryItems
+                        .FirstOrDefaultAsync(i => i.ProductVariantId == variant.Id
+                                               && i.LocationId == sellingLocationId);
+
+                    if (inventoryItem == null || inventoryItem.CurrentStock < lineReq.Quantity)
+                    {
+                        var have = inventoryItem?.CurrentStock ?? 0;
+                        throw new BusinessRuleException(
+                            $"Insufficient stock at this branch for {variant.SKU} — have {have}, need {lineReq.Quantity}.");
+                    }
+
+                    var costAmount = inventoryItem.IssueStock(lineReq.Quantity);
+                    variant.AverageCost = inventoryItem.AverageCost;
+                    totalCogs += costAmount;
+
+                    // Defer the StockQuantity rollup recompute until after all lines are processed.
+
+                    var orderItem = new OrderItem(
+                        orderId: order.Id,
+                        productVariantId: variant.Id,
+                        sku: variant.SKU,
+                        unitPrice: variant.Price,
+                        quantity: lineReq.Quantity,
+                        taxRate: variant.TaxRate,
+                        lineDiscountAmount: Math.Max(0, lineReq.LineDiscountAmount));
+
+                    order.AddItem(orderItem);
+
+                    _db.InventoryTransactions.Add(new InventoryTransaction(
+                        inventoryItem.Id,
+                        variant.Id,
+                        inventoryItem.LocationId,
+                        -lineReq.Quantity,
+                        InventoryTransactionType.Sale,
+                        order.Id.ToString(),
+                        "POS sale"));
                 }
 
-                var costAmount = inventoryItem.IssueStock(lineReq.Quantity);
-                variant.AverageCost = inventoryItem.AverageCost;
-                totalCogs += costAmount;
+                // 2b. Recompute the rollup denormalised onto ProductVariant.StockQuantity
+                //     across all locations for every variant touched in this sale.
+                var touchedVariantIds = request.Items.Select(i => i.ProductVariantId).Distinct().ToList();
+                foreach (var vid in touchedVariantIds)
+                {
+                    var variantToUpdate = await _db.ProductVariants.FirstAsync(v => v.Id == vid);
+                    variantToUpdate.StockQuantity = await _db.InventoryItems
+                        .Where(i => i.ProductVariantId == vid)
+                        .SumAsync(i => (int?)i.CurrentStock) ?? 0;
+                }
 
-                // Defer the StockQuantity rollup recompute until after all lines are processed.
+                // 3. Order-level discount (after lines accumulated)
+                if (request.OrderDiscountAmount > 0)
+                    order.ApplyOrderDiscount(request.OrderDiscountAmount);
 
-                var orderItem = new OrderItem(
-                    orderId:            order.Id,
-                    productVariantId:   variant.Id,
-                    sku:                variant.SKU,
-                    unitPrice:          variant.Price,
-                    quantity:           lineReq.Quantity,
-                    taxRate:            variant.TaxRate,
-                    lineDiscountAmount: Math.Max(0, lineReq.LineDiscountAmount));
+                // 4. Redemptions — validate ledger balances first
+                if (request.StoreCreditRedeem > 0)
+                {
+                    if (!hasRealCustomer)
+                        throw new BusinessRuleException("Cannot redeem store credit on a walk-in sale.");
 
-                order.AddItem(orderItem);
+                    // Records a NEGATIVE ledger entry; throws if insufficient.
+                    await _storeCredit.RedeemAsync(
+                        tenantId, customerId, request.StoreCreditRedeem,
+                        order.Id, cashierId, $"POS sale {orderNumber}");
 
-                _db.InventoryTransactions.Add(new InventoryTransaction(
-                    inventoryItem.Id,
-                    variant.Id,
-                    inventoryItem.LocationId,
-                    -lineReq.Quantity,
-                    InventoryTransactionType.Sale,
-                    order.Id.ToString(),
-                    "POS sale"));
-            }
+                    order.ApplyStoreCreditRedemption(request.StoreCreditRedeem);
+                }
 
-            // 2b. Recompute the rollup denormalised onto ProductVariant.StockQuantity
-            //     across all locations for every variant touched in this sale.
-            var touchedVariantIds = request.Items.Select(i => i.ProductVariantId).Distinct().ToList();
-            foreach (var vid in touchedVariantIds)
-            {
-                var variantToUpdate = await _db.ProductVariants.FirstAsync(v => v.Id == vid);
-                variantToUpdate.StockQuantity = await _db.InventoryItems
-                    .Where(i => i.ProductVariantId == vid)
-                    .SumAsync(i => (int?)i.CurrentStock) ?? 0;
-            }
+                if (request.LoyaltyPointsRedeem > 0)
+                {
+                    if (!hasRealCustomer)
+                        throw new BusinessRuleException("Cannot redeem points on a walk-in sale.");
 
-            // 3. Order-level discount (after lines accumulated)
-            if (request.OrderDiscountAmount > 0)
-                order.ApplyOrderDiscount(request.OrderDiscountAmount);
+                    var redemption = await _loyalty.RedeemAsync(
+                        tenantId, customerId, request.LoyaltyPointsRedeem,
+                        order.Id, order.TotalAmount);
 
-            // 4. Redemptions — validate ledger balances first
-            if (request.StoreCreditRedeem > 0)
-            {
-                if (customerId == Guid.Empty)
-                    throw new BusinessRuleException("Cannot redeem store credit on a walk-in sale.");
+                    order.ApplyLoyaltyRedemption(redemption.PointsRedeemed, redemption.RupeesValue);
+                }
 
-                // Records a NEGATIVE ledger entry; throws if insufficient.
-                await _storeCredit.RedeemAsync(
-                    tenantId, customerId, request.StoreCreditRedeem,
-                    order.Id, cashierId, $"POS sale {orderNumber}");
+                // 5. Validate cash collected covers the remaining amount due
+                var amountDue = order.AmountDueAfterRedemptions;
+                if (request.PaidAmount < amountDue)
+                    throw new BusinessRuleException(
+                        $"Insufficient cash: due {amountDue:N2}, received {request.PaidAmount:N2}.");
 
-                order.ApplyStoreCreditRedemption(request.StoreCreditRedeem);
-            }
+                // 6. Finalise — confirm + complete + stamp FBR-compliant invoice + register payment + earn loyalty
+                order.Confirm();
+                order.Complete();
+                await _invoices.StampAsync(order);
 
-            if (request.LoyaltyPointsRedeem > 0)
-            {
-                if (customerId == Guid.Empty)
-                    throw new BusinessRuleException("Cannot redeem points on a walk-in sale.");
+                if (amountDue > 0)
+                    order.RegisterPayment(amountDue);
 
-                var redemption = await _loyalty.RedeemAsync(
-                    tenantId, customerId, request.LoyaltyPointsRedeem,
-                    order.Id, order.TotalAmount);
+                _db.Orders.Add(order);
 
-                order.ApplyLoyaltyRedemption(redemption.PointsRedeemed, redemption.RupeesValue);
-            }
+                // The Payment row records what the cashier collected (= amountDue, the cash portion).
+                // Fully qualified to disambiguate from the RetailSuite.Infrastructure.Modules.Payment namespace.
+                if (amountDue > 0)
+                {
+                    _db.Payments.Add(new RetailSuite.Modules.Accounting.Entities.Payment(order.Id, amountDue, "Cash"));
+                }
 
-            // 5. Validate cash collected covers the remaining amount due
-            var amountDue = order.AmountDueAfterRedemptions;
-            if (request.PaidAmount < amountDue)
-                throw new BusinessRuleException(
-                    $"Insufficient cash: due {amountDue:N2}, received {request.PaidAmount:N2}.");
+                // 7. Loyalty earn on the gross sale value (excluding redemptions — earn on cash they spent)
+                if (hasRealCustomer)
+                {
+                    await _loyalty.EarnOnOrderAsync(tenantId, customerId, order.Id, order.TotalAmount);
+                }
 
-            // 6. Finalise — confirm + complete + stamp FBR-compliant invoice + register payment + earn loyalty
-            order.Confirm();
-            order.Complete();
-            await _invoices.StampAsync(order);
+                // 8. Accounting: book what cash actually moved.
+                //    Revenue = amountDue (= cash collected). The redemption portion is tracked
+                //    in StoreCreditTransactions + LoyaltyTransactions ledgers but is treated as
+                //    a discount for GL purposes to keep the journal balanced without introducing
+                //    a Customer Credit Liability account.
+                if (amountDue > 0)
+                {
+                    // Self-heal: ensure baseline Chart of Accounts (and other defaults) exists
+                    // for this tenant. Idempotent — only adds missing rows.
+                    await TenantDefaultsSeeder.SeedAsync(_db, tenantId);
 
-            if (amountDue > 0)
-                order.RegisterPayment(amountDue);
+                    var cashAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1000");
+                    var revenueAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "4000");
+                    var inventoryAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1100");
+                    var cogsAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5000");
 
-            _db.Orders.Add(order);
+                    if (cashAccount == null || revenueAccount == null
+                        || inventoryAccount == null || cogsAccount == null)
+                    {
+                        throw new BusinessRuleException(
+                            "Chart of Accounts is incomplete for this tenant (missing 1000 Cash / "
+                            + "4000 Revenue / 1100 Inventory / 5000 COGS). Visit the admin / accounts page "
+                            + "or re-run the tenant seeder to fix this.");
+                    }
 
-            // The Payment row records what the cashier collected (= amountDue, the cash portion).
-            // Fully qualified to disambiguate from the RetailSuite.Infrastructure.Modules.Payment namespace.
-            if (amountDue > 0)
-            {
-                _db.Payments.Add(new RetailSuite.Modules.Accounting.Entities.Payment(order.Id, amountDue, "Cash"));
-            }
+                    // Recompute proportional tax on the cash portion only.
+                    var taxRatio = order.TotalAmount > 0
+                        ? Math.Min(1m, amountDue / order.TotalAmount)
+                        : 0m;
+                    var cashTax = order.TaxAmount * taxRatio;
+                    var cashRevenue = amountDue - cashTax;
 
-            // 7. Loyalty earn on the gross sale value (excluding redemptions — earn on cash they spent)
-            if (customerId != Guid.Empty)
-            {
-                await _loyalty.EarnOnOrderAsync(tenantId, customerId, order.Id, order.TotalAmount);
-            }
-
-            // 8. Accounting: book what cash actually moved.
-            //    Revenue = amountDue (= cash collected). The redemption portion is tracked
-            //    in StoreCreditTransactions + LoyaltyTransactions ledgers but is treated as
-            //    a discount for GL purposes to keep the journal balanced without introducing
-            //    a Customer Credit Liability account.
-            if (amountDue > 0)
-            {
-                var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-                var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
-                var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-                var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
-
-                // Recompute proportional tax on the cash portion only.
-                var taxRatio = order.TotalAmount > 0
-                    ? Math.Min(1m, amountDue / order.TotalAmount)
-                    : 0m;
-                var cashTax = order.TaxAmount * taxRatio;
-                var cashRevenue = amountDue - cashTax;
-
-                var journalLines = new List<(Guid, decimal, decimal)>
+                    var journalLines = new List<(Guid, decimal, decimal)>
                 {
                     (cashAccount.Id,      amountDue, 0),
                     (revenueAccount.Id,   0, cashRevenue),
@@ -214,41 +241,44 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                     (inventoryAccount.Id, 0, totalCogs)
                 };
 
-                if (cashTax > 0)
-                {
-                    var taxAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2000");
-                    if (taxAccount != null)
+                    if (cashTax > 0)
+                    {
+                        var taxAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2000");
+                        if (taxAccount == null)
+                            throw new BusinessRuleException(
+                                "Tax was charged on this sale but the '2000 Tax Payable' account "
+                                + "does not exist for this tenant. Re-seed the chart of accounts.");
                         journalLines.Add((taxAccount.Id, 0, cashTax));
+                    }
+
+                    await _accountingService.CreateJournalEntryAsync(
+                        order.Id.ToString(),
+                        $"POS Sale {order.OrderNumber}",
+                        journalLines);
                 }
 
-                await _accountingService.CreateJournalEntryAsync(
-                    order.Id.ToString(),
-                    $"POS Sale {order.OrderNumber}",
-                    journalLines);
-            }
+                // 9. Clean up resumed held sale, if any
+                if (request.ResumedFromHeldSaleId.HasValue)
+                {
+                    var held = await _db.HeldSales
+                        .FirstOrDefaultAsync(h => h.Id == request.ResumedFromHeldSaleId.Value);
+                    if (held != null) _db.HeldSales.Remove(held);
+                }
 
-            // 9. Clean up resumed held sale, if any
-            if (request.ResumedFromHeldSaleId.HasValue)
-            {
-                var held = await _db.HeldSales
-                    .FirstOrDefaultAsync(h => h.Id == request.ResumedFromHeldSaleId.Value);
-                if (held != null) _db.HeldSales.Remove(held);
-            }
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+                // 10. Email receipt if customer email known (best-effort, outside the txn)
+                string? receiptEmail = null;
+                if (hasRealCustomer)
+                {
+                    var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+                    receiptEmail = customer?.Email;
+                }
 
-            // 10. Email receipt if customer email known (best-effort, outside the txn)
-            string? receiptEmail = null;
-            if (customerId != Guid.Empty)
-            {
-                var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
-                receiptEmail = customer?.Email;
-            }
-
-            if (!string.IsNullOrWhiteSpace(receiptEmail))
-            {
-                var body = $@"
+                if (!string.IsNullOrWhiteSpace(receiptEmail))
+                {
+                    var body = $@"
 <h2>Receipt — {order.OrderNumber}</h2>
 <p>Thank you for your purchase!</p>
 <p><strong>Items total:</strong> Rs {(order.TotalAmount + order.OrderDiscountAmount):N2}</p>
@@ -259,10 +289,17 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
 @if(order.StoreCreditRedeemed > 0)<p><strong>Store credit used:</strong> Rs {order.StoreCreditRedeemed:N2}</p>
 @if(order.LoyaltyRedeemedRupees > 0)<p><strong>Loyalty redeemed:</strong> Rs {order.LoyaltyRedeemedRupees:N2} ({order.LoyaltyPointsRedeemed} pts)</p>
 <p><strong>Date:</strong> {DateTime.UtcNow:dd MMM yyyy HH:mm} UTC</p>";
-                await _emailService.SendAsync(receiptEmail, $"Receipt: {order.OrderNumber}", body);
-            }
+                    await _emailService.SendAsync(receiptEmail, $"Receipt: {order.OrderNumber}", body);
+                }
 
-            return order.Id;
+                return order.Id;
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                throw;
+            }
         }
 
         /// <summary>

@@ -6,7 +6,6 @@ using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
-using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Shared;
 
 namespace RetailSuite.Api.Controllers;
@@ -113,20 +112,8 @@ public class TenantsController : ControllerBase
             _db.Users.Add(adminUser);
             await _db.SaveChangesAsync();
 
-            // 3. Seed Chart of Accounts
-            var accounts = new List<Account>
-            {
-                new("1000", "Cash",                AccountType.Asset)     { TenantId = tenant.Id },
-                new("1100", "Inventory",           AccountType.Asset)     { TenantId = tenant.Id },
-                new("1200", "Accounts Receivable", AccountType.Asset)     { TenantId = tenant.Id },
-                new("2000", "Tax Payable",         AccountType.Liability) { TenantId = tenant.Id },
-                new("4000", "Revenue",             AccountType.Revenue)   { TenantId = tenant.Id },
-                new("5000", "Cost of Goods Sold",  AccountType.Expense)   { TenantId = tenant.Id },
-            };
-            _db.Accounts.AddRange(accounts);
-            await _db.SaveChangesAsync();
-
-            // 4. Seed per-tenant defaults (shipping methods so storefront works out of the box).
+            // 3. Seed per-tenant defaults (Chart of Accounts, shipping methods,
+            //    empty tax settings, default Main Branch location).
             await TenantDefaultsSeeder.SeedAsync(_db, tenant.Id);
 
             await tx.CommitAsync();
