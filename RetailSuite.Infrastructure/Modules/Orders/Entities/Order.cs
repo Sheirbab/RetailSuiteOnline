@@ -100,9 +100,15 @@ public class Order : TenantEntity
 
     public Order(string orderNumber, Guid customerId)
     {
+        if (customerId == Guid.Empty)
+            throw new ArgumentException(
+                "CustomerId is required. For walk-in sales, pass the tenant's Walk-in Customer id "
+                + "(use TenantDefaultsSeeder.GetWalkInCustomerIdAsync).",
+                nameof(customerId));
+
         OrderNumber = orderNumber;
-        CustomerId = customerId;
-        Status = OrderStatus.Draft;
+        CustomerId  = customerId;
+        Status      = OrderStatus.Draft;
     }
     public void AddItem(OrderItem item)
     {

@@ -524,6 +524,8 @@ public class RetailDbContext : DbContext
             b.HasIndex(o => new { o.TenantId, o.GuestPhone });
             b.HasIndex(o => new { o.TenantId, o.Channel, o.FulfillmentStatus });
 
+            // Every Order has a Customer — walk-in sales use the tenant's
+            // auto-seeded "Walk-in Customer" row instead of a null FK.
             b.HasOne(o => o.Customer)
                     .WithMany()
                     .HasForeignKey(o => o.CustomerId)
