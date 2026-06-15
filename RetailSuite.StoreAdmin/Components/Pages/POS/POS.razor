@@ -1,7 +1,10 @@
 @page "/pos"
+@layout PosLayout
 @inject HttpClient Http
 @inject ToastService Toast
 @inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject AuthService Auth
 @using System.Text.Json
 @implements IDisposable
 
@@ -41,6 +44,20 @@
     .pos-main { display:flex; gap:16px; align-items:flex-start; flex:1; }
     .pos-left  { flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
     .pos-right { width:440px; flex-shrink:0; }
+
+    /* Tablet — narrower cart pane */
+    @@media (max-width: 1100px) {
+        .pos-right { width:380px; }
+    }
+
+    /* Mobile — stack cart below products, full-width */
+    @@media (max-width: 820px) {
+        .pos-main  { flex-direction:column; }
+        .pos-right { width:100%; }
+        .pos-topbar { padding:10px 12px; }
+        .pos-topbar h3 { font-size:18px; }
+        .pos-tile-grid { grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); max-height:none; }
+    }
 
     /* ============================== Search + filters ============================== */
     .pos-search-row {
@@ -268,7 +285,7 @@
     .pos-keypad-grid button:active { transform:scale(.96); }
     .pos-keypad-grid .back { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
     .pos-keypad-grid .back:hover { background:#fee2e2; }
-    .pos-keypad-grid .clear { background:#f3f4f6; color:#374151; font-size:13px; grid-column:span 2; }
+    .pos-keypad-grid .clear { background:#f3f4f6; color:#374151; font-size:13px; }
     .pos-keypad-grid .clear:hover { background:#e5e7eb; }
 </style>
 
@@ -316,6 +333,15 @@
         </button>
         <button class="icon-btn" @onclick="() => _showReturnLookup = true">↩ Return</button>
         <button class="icon-btn" @onclick="() => _showCashCountModal = true">📊 EOD</button>
+
+        <!-- Separator dot so admin / logout sit visually apart from the sale-flow actions -->
+        <span style="opacity:.4;font-size:18px;">·</span>
+
+        <a class="icon-btn" href="/" title="Back to admin">⬅ Admin</a>
+        <button class="icon-btn" @onclick="LogoutAsync" title="Sign out"
+                style="background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.35);">
+            ⎋ Logout
+        </button>
     </div>
 
     <!-- ============================== MAIN AREA ============================== -->
@@ -475,6 +501,13 @@
                             <span>Subtotal</span>
                             <strong>Rs @ItemsSubtotal.ToString("N2")</strong>
                         </div>
+                        @if (TaxTotal > 0)
+                        {
+                            <div class="row" style="color:#6b7785;">
+                                <span>Sales tax</span>
+                                <strong>Rs @TaxTotal.ToString("N2")</strong>
+                            </div>
+                        }
                         <div class="row discount-row">
                             <span>Order discount −</span>
                             <input type="number" min="0" step="1" @bind="_orderDiscount" />
@@ -508,10 +541,40 @@
 
                         @if (_paidAmount > 0 && _paidAmount >= AmountDue)
                         {
+                            var change = _paidAmount - AmountDue;
                             <div class="pos-change">
                                 <span>Change</span>
-                                <strong>Rs @((_paidAmount - AmountDue).ToString("N2"))</strong>
+                                <strong>Rs @(change.ToString("N2"))</strong>
                             </div>
+
+                            @* When there's change AND a real customer is attached,
+                               ask whether the change was returned in cash or kept as credit. *@
+                            @if (change > 0 && _customer != null)
+                            {
+                                <div style="margin-top:8px;padding:8px 10px;background:#f3f4f6;border-radius:6px;font-size:12px;">
+                                    <div style="color:#374151;font-weight:600;margin-bottom:6px;">
+                                        How was the Rs @change.ToString("N2") change handled?
+                                    </div>
+                                    <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+                                        <input type="radio" name="changeMode"
+                                               checked="@(!_creditChangeAsCredit)"
+                                               @onchange="() => _creditChangeAsCredit = false" />
+                                        <span>💵 Returned in cash to customer</span>
+                                    </label>
+                                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                        <input type="radio" name="changeMode"
+                                               checked="@_creditChangeAsCredit"
+                                               @onchange="() => _creditChangeAsCredit = true" />
+                                        <span>💳 Save as store credit (balance owed to customer)</span>
+                                    </label>
+                                </div>
+                            }
+                            else if (change > 0 && _customer == null)
+                            {
+                                <div style="margin-top:6px;font-size:11px;color:#6b7280;">
+                                    Attach a customer to save change as store credit.
+                                </div>
+                            }
                         }
                         else if (_paidAmount > 0)
                         {
@@ -596,7 +659,7 @@
                                 <div style="display:flex;justify-content:space-between;font-size:12px;">
                                     <span>Tax</span><span>Rs @_lastReceipt.Tax.ToString("N2")</span>
                                 </div>
-                            }
+                            } 
                             <hr />
                             <div style="display:flex;justify-content:space-between;font-weight:700;">
                                 <span>Total</span><span>Rs @_lastReceipt.Total.ToString("N2")</span>
@@ -808,6 +871,7 @@
     string           _search   = string.Empty;
     Guid?            _selectedCategoryId;
     decimal          _paidAmount;
+    bool             _creditChangeAsCredit;  // cashier kept the change as store credit
     decimal          _orderDiscount;
     decimal          _storeCreditRedeem;
     int              _loyaltyRedeem;
@@ -890,15 +954,23 @@
 
     decimal ItemsSubtotal => _cart.Sum(c => c.LineNet);
 
+    /// <summary>Sales tax per line — server-side Order.TotalAmount includes this, so the till must too.</summary>
+    decimal TaxTotal => _cart.Sum(c => c.LineNet * c.TaxRate);
+
     decimal LoyaltyRupees =>
         _customer == null ? 0m : (decimal)_loyaltyRedeem * _customer.LoyaltyPointValue;
 
+    /// <summary>
+    /// What the cashier needs to collect in cash. Formula mirrors the server's
+    /// <c>Order.AmountDueAfterRedemptions</c>:
+    ///   (sum of LineNet + per-line tax) − order-discount − store-credit − loyalty-rupees
+    /// </summary>
     decimal AmountDue
     {
         get
         {
-            var subtotal = ItemsSubtotal;
-            var afterOrderDiscount = Math.Max(0, subtotal - _orderDiscount);
+            var subtotalWithTax    = ItemsSubtotal + TaxTotal;
+            var afterOrderDiscount = Math.Max(0, subtotalWithTax - _orderDiscount);
             var afterCredit        = Math.Max(0, afterOrderDiscount - _storeCreditRedeem);
             var afterLoyalty       = Math.Max(0, afterCredit - LoyaltyRupees);
             return afterLoyalty;
@@ -1118,6 +1190,7 @@
         _storeCreditRedeem = 0;
         _loyaltyRedeem = 0;
         _paidAmount = 0;
+        _creditChangeAsCredit = false;
         _resumedFromId = null;
     }
 
@@ -1445,6 +1518,7 @@
             loyaltyPointsRedeem   = _loyaltyRedeem,
             resumedFromHeldSaleId = _resumedFromId,
             locationId            = _locationId,
+            creditChangeAsStoreCredit = _creditChangeAsCredit,
             items = _cart.Select(c => new
             {
                 productVariantId   = c.VariantId,
@@ -1519,6 +1593,12 @@
     {
         await LoadHeldSales();
         _showHeldDrawer = true;
+    }
+
+    async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login", replace: true);
     }
 
     // -------------------------------------------------------------------

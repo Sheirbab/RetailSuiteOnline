@@ -6,6 +6,67 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<style>
+    .pd-shell        { display:grid; grid-template-columns: 1fr 1fr; gap:36px; max-width:1000px; }
+    .pd-gallery      { position:relative; }
+    .pd-main-img     { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:14px;
+                       border:1px solid #e5e7eb; background:#fff;
+                       box-shadow:0 4px 14px rgba(99,102,241,.08); }
+    .pd-main-empty   { width:100%; aspect-ratio:1/1; border-radius:14px; border:1px solid #e5e7eb;
+                       background:linear-gradient(135deg,#fafafd,#eef2ff);
+                       display:flex;align-items:center;justify-content:center;font-size:80px;color:#cbd5e1; }
+    .pd-arrow        { position:absolute; top:50%; transform:translateY(-50%);
+                       background:rgba(255,255,255,.92); border:1px solid #e5e7eb; border-radius:50%;
+                       width:42px; height:42px; cursor:pointer; font-size:18px; font-weight:700;
+                       box-shadow:0 4px 10px rgba(0,0,0,.12); transition:.15s;
+                       display:flex; align-items:center; justify-content:center; }
+    .pd-arrow:hover  { background:#fff; transform:translateY(-50%) scale(1.05); }
+    .pd-arrow.left   { left:10px; }
+    .pd-arrow.right  { right:10px; }
+    .pd-arrow:disabled { opacity:.35; cursor:not-allowed; }
+
+    .pd-thumbs       { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    .pd-thumb        { width:64px; height:64px; border-radius:8px; border:2px solid transparent;
+                       cursor:pointer; object-fit:cover; transition:.15s; background:#fff; }
+    .pd-thumb:hover  { border-color:#c7d2fe; }
+    .pd-thumb.active { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+
+    .pd-info         { padding:4px 0; }
+    .pd-name         { font-size:26px; font-weight:700; color:#0d3b66; margin:0 0 8px; line-height:1.2; }
+    .pd-desc         { color:#6b7280; margin:0 0 18px; line-height:1.55; }
+    .pd-price        { font-size:30px; font-weight:800; color:#6366f1; margin:0 0 18px; }
+
+    .pd-attr-block   { margin-bottom:16px; }
+    .pd-attr-label   { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+                       color:#6b7280; font-weight:600; margin-bottom:6px; }
+    .pd-attr-options { display:flex; flex-wrap:wrap; gap:8px; }
+    .pd-attr-chip    { padding:8px 16px; border:2px solid #e5e7eb; background:#fff;
+                       border-radius:8px; font-size:14px; font-weight:500; cursor:pointer;
+                       transition:.15s; color:#374151; }
+    .pd-attr-chip:hover { border-color:#a5b4fc; }
+    .pd-attr-chip.selected {
+        background:linear-gradient(135deg,#6366f1,#7c3aed); color:#fff; border-color:transparent;
+        box-shadow:0 2px 8px rgba(99,102,241,.32);
+    }
+    .pd-attr-chip.disabled {
+        opacity:.4; cursor:not-allowed; text-decoration:line-through;
+    }
+
+    .pd-stock-line   { font-size:13px; margin-bottom:14px; }
+    .pd-stock-ok     { color:#16a34a; }
+    .pd-stock-low    { color:#d97706; }
+    .pd-stock-out    { color:#dc2626; font-weight:600; }
+
+    .pd-qty-row      { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+    .pd-qty-input    { width:80px; text-align:center; font-weight:700; }
+
+    @@media (max-width: 768px) {
+        .pd-shell    { grid-template-columns: 1fr; gap:20px; }
+        .pd-name     { font-size:22px; }
+        .pd-price    { font-size:24px; }
+    }
+</style>
+
 @if (_loading)
 {
     <div class="spinner"></div>
@@ -16,49 +77,118 @@ else if (_product == null)
 }
 else
 {
-    <div style="display:flex;gap:32px;flex-wrap:wrap;max-width:800px;">
-        <div style="flex:0 0 260px;">
-            @if (!string.IsNullOrEmpty(_product.ImageUrl))
+    <div class="pd-shell">
+
+        <!-- ============================ Gallery ============================ -->
+        <div class="pd-gallery">
+            @if (_displayImages.Any())
             {
-                <img src="@_product.ImageUrl" alt="@_product.Name"
-                     style="width:100%;border-radius:8px;border:1px solid #e5e7eb;" />
+                <img class="pd-main-img" src="@_displayImages[_currentImageIdx]" alt="@_product.Name" />
+
+                @if (_displayImages.Count > 1)
+                {
+                    <button class="pd-arrow left"  @onclick="PrevImage" disabled="@(_currentImageIdx == 0)">‹</button>
+                    <button class="pd-arrow right" @onclick="NextImage" disabled="@(_currentImageIdx == _displayImages.Count - 1)">›</button>
+
+                    <div class="pd-thumbs">
+                        @for (var i = 0; i < _displayImages.Count; i++)
+                        {
+                            var idx = i;
+                            <img class="pd-thumb @(idx == _currentImageIdx ? "active" : "")"
+                                 src="@_displayImages[idx]" alt=""
+                                 @onclick="() => _currentImageIdx = idx" />
+                        }
+                    </div>
+                }
             }
             else
             {
-                <div style="width:100%;height:200px;background:#f3f4f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:48px;">📦</div>
+                <div class="pd-main-empty">📦</div>
             }
         </div>
-        <div style="flex:1;min-width:220px;">
-            <h2 style="margin-bottom:8px;">@_product.Name</h2>
+
+        <!-- ============================ Info ============================ -->
+        <div class="pd-info">
+            <h2 class="pd-name">@_product.Name</h2>
+
             @if (!string.IsNullOrEmpty(_product.Description))
             {
-                <p style="color:#6b7280;margin-bottom:16px;">@_product.Description</p>
+                <p class="pd-desc">@_product.Description</p>
             }
 
-            @if (_product.Variants.Count > 1)
+            @if (_selected != null)
             {
-                <div style="margin-bottom:12px;">
-                    <label style="font-weight:600;">Select variant:</label>
-                    <select class="input" style="width:200px;margin-top:4px;" @bind="_selectedVariantId">
+                <div class="pd-price">Rs @_selected.Price.ToString("N2")</div>
+            }
+
+            <!-- Attribute groups (radio-chip style) -->
+            @foreach (var group in _attributeGroups)
+            {
+                <div class="pd-attr-block">
+                    <div class="pd-attr-label">@group.Name</div>
+                    <div class="pd-attr-options">
+                        @foreach (var value in group.Values)
+                        {
+                            var isSelected = _selectedAttrs.TryGetValue(group.Name, out var v) && v == value;
+                            var stillAvailable = IsAttributeValueAvailable(group.Name, value);
+                            <button type="button"
+                                    class="pd-attr-chip @(isSelected ? "selected" : "") @(stillAvailable ? "" : "disabled")"
+                                    disabled="@(!stillAvailable)"
+                                    @onclick="() => SelectAttribute(group.Name, value)">
+                                @value
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Variant fallback (no attributes) -->
+            @if (!_attributeGroups.Any() && _product.Variants.Count > 1)
+            {
+                <div class="pd-attr-block">
+                    <div class="pd-attr-label">Variant</div>
+                    <div class="pd-attr-options">
                         @foreach (var v in _product.Variants)
                         {
-                            <option value="@v.Id">@v.SKU — Rs @v.Price.ToString("N2")</option>
+                            <button type="button"
+                                    class="pd-attr-chip @(_selectedVariantId == v.Id ? "selected" : "")"
+                                    @onclick="() => _selectedVariantId = v.Id">
+                                @v.SKU
+                            </button>
                         }
-                    </select>
+                    </div>
                 </div>
             }
 
             @if (_selected != null)
             {
-                <div style="font-size:24px;font-weight:700;margin-bottom:16px;">Rs @_selected.Price.ToString("N2")</div>
+                <div class="pd-stock-line">
+                    @if (_selected.StockQuantity <= 0)
+                    {
+                        <span class="pd-stock-out">✕ Out of stock</span>
+                    }
+                    else if (_selected.StockQuantity <= 5)
+                    {
+                        <span class="pd-stock-low">⚠ Only @_selected.StockQuantity left</span>
+                    }
+                    else
+                    {
+                        <span class="pd-stock-ok">✓ In stock (@_selected.StockQuantity available)</span>
+                    }
+                </div>
             }
 
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;">
-                <input type="number" class="input" style="width:80px;" @bind="_qty" min="1" />
-                <button class="btn btn-primary" @onclick="AddToCart">Add to Cart</button>
+            <div class="pd-qty-row">
+                <label style="font-size:13px;color:#6b7280;">Qty</label>
+                <input type="number" class="input pd-qty-input" @bind="_qty" min="1" />
+                <button class="btn btn-primary" style="padding:10px 22px;font-size:14px;"
+                        disabled="@(_selected == null || _selected.StockQuantity <= 0)"
+                        @onclick="AddToCart">
+                    🛒 Add to cart
+                </button>
             </div>
 
-            <a href="/shop" style="color:#6b7280;font-size:14px;">← Continue shopping</a>
+            <a href="/shop" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
         </div>
     </div>
 }
@@ -68,13 +198,19 @@ else
 
     bool              _loading = true;
     ProductDetailDto? _product;
-    Guid         _selectedVariantId;
-    int          _qty = 1;
+    Guid              _selectedVariantId;
+    int               _qty = 1;
+
+    // Gallery state
+    List<string> _displayImages = new();
+    int          _currentImageIdx;
+
+    // Attribute selection: attribute name → value
+    Dictionary<string, string> _selectedAttrs = new();
+    List<AttributeGroup>       _attributeGroups = new();
 
     VariantDetail? _selected => _product?.Variants.FirstOrDefault(v => v.Id == _selectedVariantId);
 
-    // Use OnAfterRenderAsync so CustomerLayout.Auth.InitializeAsync() has already
-    // run and the HttpClient has a Bearer token before we call the API.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -85,36 +221,81 @@ else
     {
         try
         {
-            var json = await Http.GetStringAsync($"api/products/{Id}");
+            var json = await Http.GetStringAsync($"api/shop/products/{Id}");
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var data = root.TryGetProperty("data", out var d) ? d : root;
+            var d = doc.RootElement.GetProperty("data");
 
             _product = new ProductDetailDto
             {
-                Id          = data.TryGetProperty("id",          out var id)  ? id.GetGuid()    : Guid.Empty,
-                Name        = data.TryGetProperty("name",        out var nm)  ? nm.GetString()! : "—",
-                Description = data.TryGetProperty("description", out var desc)? desc.GetString(): null,
-                ImageUrl    = data.TryGetProperty("imageUrl",    out var img) ? img.GetString() : null,
-                Variants    = new()
+                Id          = d.GetProperty("id").GetGuid(),
+                Name        = d.GetProperty("name").GetString() ?? "—",
+                Description = d.TryGetProperty("description", out var desc) ? desc.GetString() : null,
+                ImageUrl    = d.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String ? img.GetString() : null,
+                Variants    = new(),
+                Images      = new()
             };
 
-            if (data.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
+            if (d.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
             {
                 foreach (var v in vars.EnumerateArray())
                 {
-                    _product.Variants.Add(new VariantDetail
+                    var variant = new VariantDetail
                     {
-                        Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
-                        SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
-                        Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
+                        Id            = v.GetProperty("id").GetGuid(),
+                        SKU           = v.GetProperty("sku").GetString() ?? "—",
+                        Price         = v.GetProperty("price").GetDecimal(),
+                        StockQuantity = v.TryGetProperty("stockQuantity", out var sq) ? sq.GetInt32() : 0,
+                        Attributes    = new()
+                    };
+                    if (v.TryGetProperty("attributes", out var attrs) && attrs.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var a in attrs.EnumerateArray())
+                        {
+                            variant.Attributes[a.GetProperty("attributeName").GetString() ?? ""] =
+                                a.GetProperty("value").GetString() ?? "";
+                        }
+                    }
+                    _product.Variants.Add(variant);
+                }
+            }
+
+            if (d.TryGetProperty("images", out var imgs) && imgs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var i in imgs.EnumerateArray())
+                {
+                    _product.Images.Add(new ImageDto
+                    {
+                        Url       = i.GetProperty("url").GetString() ?? "",
+                        IsPrimary = i.TryGetProperty("isPrimary", out var ip) && ip.GetBoolean()
                     });
                 }
             }
 
+            // Build the gallery list — prefer ProductImages, fall back to the legacy ImageUrl.
+            _displayImages = _product.Images.Any()
+                ? _product.Images.OrderByDescending(i => i.IsPrimary).Select(i => i.Url).ToList()
+                : (!string.IsNullOrEmpty(_product.ImageUrl)
+                    ? new List<string> { _product.ImageUrl }
+                    : new List<string>());
+
+            // Build the attribute groups (e.g., Size → [S,M,L], Color → [Red,Blue]).
+            _attributeGroups = _product.Variants
+                .SelectMany(v => v.Attributes)
+                .GroupBy(kv => kv.Key)
+                .Select(g => new AttributeGroup
+                {
+                    Name   = g.Key,
+                    Values = g.Select(kv => kv.Value).Distinct().ToList()
+                })
+                .ToList();
+
+            // Default selection: first variant; pre-fill its attribute selections.
             if (_product.Variants.Any())
+            {
                 _selectedVariantId = _product.Variants[0].Id;
+                foreach (var (name, val) in _product.Variants[0].Attributes)
+                    _selectedAttrs[name] = val;
+            }
         }
         catch (Exception ex)
         {
@@ -122,6 +303,45 @@ else
         }
         _loading = false;
         StateHasChanged();
+    }
+
+    void PrevImage()
+    {
+        if (_currentImageIdx > 0) _currentImageIdx--;
+    }
+
+    void NextImage()
+    {
+        if (_currentImageIdx < _displayImages.Count - 1) _currentImageIdx++;
+    }
+
+    /// <summary>
+    /// Selects an attribute value, then resolves the matching variant (if exactly one
+    /// matches all currently selected attributes).
+    /// </summary>
+    void SelectAttribute(string attrName, string value)
+    {
+        _selectedAttrs[attrName] = value;
+
+        // Find the variant whose attributes match every currently selected key/value.
+        var match = _product?.Variants.FirstOrDefault(v =>
+            _selectedAttrs.All(sel =>
+                v.Attributes.TryGetValue(sel.Key, out var av) && av == sel.Value));
+
+        if (match != null) _selectedVariantId = match.Id;
+    }
+
+    /// <summary>
+    /// True when at least one variant with the OTHER currently-selected attribute values
+    /// also has this (attrName, value). Lets us grey out unreachable combinations.
+    /// </summary>
+    bool IsAttributeValueAvailable(string attrName, string value)
+    {
+        if (_product == null) return false;
+        return _product.Variants.Any(v =>
+            v.Attributes.TryGetValue(attrName, out var av) && av == value &&
+            _selectedAttrs.Where(sel => sel.Key != attrName).All(sel =>
+                v.Attributes.TryGetValue(sel.Key, out var avo) && avo == sel.Value));
     }
 
     void AddToCart()
@@ -135,7 +355,7 @@ else
             ProductId   = _product.Id,
             ProductName = _product.Name,
             SKU         = _selected.SKU,
-            ImageUrl    = _product.ImageUrl,
+            ImageUrl    = _displayImages.FirstOrDefault() ?? _product.ImageUrl,
             UnitPrice   = _selected.Price,
             Quantity    = _qty
         });
@@ -144,17 +364,32 @@ else
 
     class ProductDetailDto
     {
-        public Guid   Id          { get; set; }
-        public string Name        { get; set; } = string.Empty;
+        public Guid    Id { get; set; }
+        public string  Name { get; set; } = string.Empty;
         public string? Description { get; set; }
-        public string? ImageUrl   { get; set; }
+        public string? ImageUrl { get; set; }
         public List<VariantDetail> Variants { get; set; } = new();
+        public List<ImageDto>      Images   { get; set; } = new();
     }
 
     class VariantDetail
     {
-        public Guid    Id    { get; set; }
-        public string  SKU   { get; set; } = string.Empty;
+        public Guid    Id { get; set; }
+        public string  SKU { get; set; } = string.Empty;
         public decimal Price { get; set; }
+        public int     StockQuantity { get; set; }
+        public Dictionary<string, string> Attributes { get; set; } = new();
+    }
+
+    class ImageDto
+    {
+        public string Url { get; set; } = "";
+        public bool   IsPrimary { get; set; }
+    }
+
+    class AttributeGroup
+    {
+        public string       Name   { get; set; } = "";
+        public List<string> Values { get; set; } = new();
     }
 }

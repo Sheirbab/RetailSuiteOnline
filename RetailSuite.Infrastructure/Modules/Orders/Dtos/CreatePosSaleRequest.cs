@@ -29,6 +29,15 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Dtos
         /// If omitted, SaleService falls back to the tenant's default location.
         /// </summary>
         public Guid? LocationId { get; set; }
+
+        /// <summary>
+        /// When the cashier collected more cash than the amount due (positive change):
+        ///   false → cashier returned the change to the customer (default).
+        ///   true  → cashier kept the change; it's posted to the customer's store-credit
+        ///           ledger so the balance is owed-back-to-customer. Requires an attached
+        ///           real customer; ignored on walk-in sales.
+        /// </summary>
+        public bool CreditChangeAsStoreCredit { get; set; }
     }
 
     /// <summary>Single line in a POS cart, with optional per-line discount.</summary>

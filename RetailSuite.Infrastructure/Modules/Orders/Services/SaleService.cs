@@ -201,6 +201,28 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                     await _loyalty.EarnOnOrderAsync(tenantId, customerId, order.Id, order.TotalAmount);
                 }
 
+                // 7b. Change-as-store-credit. If the cashier collected more than due AND
+                //     opted to keep the change as customer credit (instead of returning cash),
+                //     post a positive StoreCreditTransaction so the customer is owed that
+                //     amount on their ledger. Walk-in sales can never use this path.
+                var changeAmount = Math.Max(0m, request.PaidAmount - amountDue);
+                if (request.CreditChangeAsStoreCredit && hasRealCustomer && changeAmount > 0)
+                {
+                    await _storeCredit.IssueAsync(
+                        tenantId:        tenantId,
+                        customerId:      customerId,
+                        amount:          changeAmount,
+                        reason:          StoreCreditReason.ChangeAsCredit,
+                        note:            $"Change kept as credit on sale {order.OrderNumber}",
+                        orderId:         order.Id,
+                        createdByUserId: cashierId);
+                }
+                else if (request.CreditChangeAsStoreCredit && !hasRealCustomer && changeAmount > 0)
+                {
+                    throw new BusinessRuleException(
+                        "Cannot save change as store credit on a walk-in sale — attach a customer first.");
+                }
+
                 // 8. Accounting: book what cash actually moved.
                 //    Revenue = amountDue (= cash collected). The redemption portion is tracked
                 //    in StoreCreditTransactions + LoyaltyTransactions ledgers but is treated as

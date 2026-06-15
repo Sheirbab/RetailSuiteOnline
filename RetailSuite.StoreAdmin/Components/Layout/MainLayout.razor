@@ -24,8 +24,11 @@ else
 {
     <div class="layout">
 
+        <!-- Mobile sidebar backdrop -->
+        <div class="sidebar-backdrop @( _sidebarOpen ? "open" : "")" @onclick="() => _sidebarOpen = false"></div>
+
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar @( _sidebarOpen ? "open" : "")" @onclick="OnSidebarClick">
             <h2>RetailSuite</h2>
 
             @if (Auth.IsSuperAdmin)
@@ -69,13 +72,17 @@ else
 
             <!-- Header -->
             <div class="header">
+                <button class="header-burger" @onclick="() => _sidebarOpen = !_sidebarOpen" title="Menu">
+                    ☰
+                </button>
+
                 @if (Auth.IsSuperAdmin)
                 {
-                    <span style="font-weight:600;color:#d97706;">⭐ Super Admin Portal</span>
+                    <span style="font-weight:600;color:#d97706;flex:1;">⭐ Super Admin Portal</span>
                 }
                 else
                 {
-                    <span style="font-weight:500;color:#374151;">Admin Panel</span>
+                    <span style="font-weight:500;color:#374151;flex:1;">Admin Panel</span>
                 }
 
                 <button class="btn btn-danger" @onclick="LogoutAsync">
@@ -99,6 +106,19 @@ else
 
 @code {
     private bool _checked;
+    private bool _sidebarOpen;  // mobile drawer state
+
+    /// <summary>
+    /// On mobile, tapping a NavLink inside the open sidebar should close the drawer.
+    /// We can't easily intercept individual NavLink clicks, so the easiest is to close
+    /// whenever any click bubbles up from the sidebar — except the sidebar itself is
+    /// only "open" on mobile, so on desktop this is a no-op.
+    /// </summary>
+    private void OnSidebarClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        // Best-effort: close on click for the mobile-open state.
+        if (_sidebarOpen) _sidebarOpen = false;
+    }
 
     protected override void OnInitialized()
     {

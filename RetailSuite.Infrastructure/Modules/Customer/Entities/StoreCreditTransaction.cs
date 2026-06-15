@@ -72,5 +72,8 @@ public enum StoreCreditReason
     Adjustment           = 3,
 
     /// <summary>Credit voided / expired (rare).</summary>
-    Voided               = 4
+    Voided               = 4,
+
+    /// <summary>Overpayment kept as customer credit instead of returned as cash change.</summary>
+    ChangeAsCredit       = 5
 }

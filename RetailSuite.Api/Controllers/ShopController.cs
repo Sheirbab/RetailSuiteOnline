@@ -163,7 +163,19 @@ public class ShopController : ControllerBase
                     .Where(v => v.IsActive)
                     .Select(v => new
                     {
-                        v.Id, v.SKU, v.Price, v.StockQuantity, v.Barcode, v.TaxRate
+                        v.Id, v.SKU, v.Price, v.StockQuantity, v.Barcode, v.TaxRate,
+                        // Each variant's (attribute → value) pairs — e.g. Size=M, Color=Red.
+                        Attributes = _db.VariantAttributeValues
+                            .Where(va => va.ProductVariantId == v.Id)
+                            .Join(_db.ProductAttributeValues,
+                                  va => va.ProductAttributeValueId,
+                                  pav => pav.Id,
+                                  (va, pav) => new { pav.AttributeId, pav.Value })
+                            .Join(_db.ProductAttributes,
+                                  x => x.AttributeId,
+                                  a => a.Id,
+                                  (x, a) => new { AttributeName = a.Name, x.Value })
+                            .ToList()
                     }).ToList(),
                 Images = _db.ProductImages
                     .Where(i => i.ProductId == p.Id)

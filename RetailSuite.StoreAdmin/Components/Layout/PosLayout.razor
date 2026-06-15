@@ -1,0 +1,76 @@
+@inherits LayoutComponentBase
+
+@inject AuthService Auth
+@inject NavigationManager Nav
+@implements IDisposable
+
+@*
+    Full-screen POS layout — no admin sidebar, no admin header. Used by
+    /pos so the cashier gets the entire viewport. A small floating bar in
+    the top-right keeps the way back to the admin panel + logout reachable.
+*@
+
+<Toast />
+
+@if (!_checked)
+{
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f7f7fb;">
+        <div class="spinner"></div>
+    </div>
+}
+else if (!Auth.IsAuthenticated)
+{
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f7f7fb;">
+        <p style="color:#9ca3af;">Redirecting to login...</p>
+    </div>
+}
+else
+{
+    <div class="pos-fullscreen">
+        @Body
+    </div>
+}
+
+<style>
+    /* Layout container — fills viewport, no chrome.
+       The POS page owns its own header (topbar with Exit + Logout buttons). */
+    .pos-fullscreen {
+        min-height: 100vh;
+        background: #f7f7fb;
+        padding: 14px 18px 18px;
+    }
+
+    @@media (max-width: 600px) {
+        .pos-fullscreen { padding: 10px 10px 14px; }
+    }
+</style>
+
+@code {
+    private bool _checked;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.InitializeAsync();
+        _checked = true;
+        if (!Auth.IsAuthenticated)
+            Nav.NavigateTo("/login", replace: true);
+        StateHasChanged();
+    }
+
+    async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= StateHasChanged;
+    }
+}
