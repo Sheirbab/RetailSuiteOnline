@@ -13,7 +13,7 @@ builder.Services.AddSingleton<CartService>();
 builder.Services.AddScoped(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
-    var apiBaseUrl = configuration["Api:BaseUrl"] ?? "https://localhost:59777/";
+    var apiBaseUrl = configuration["Api:BaseUrl"] ?? "https://localhost:7001/";
 
     return new HttpClient
     {

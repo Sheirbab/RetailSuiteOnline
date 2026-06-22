@@ -1,0 +1,269 @@
+@page "/settings/users/{Id:guid}"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<a class="btn" style="font-size:12px;padding:3px 10px;margin-bottom:8px;" href="/settings/users">← All users</a>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_user == null)
+{
+    <div class="card" style="color:#b91c1c;">User not found.</div>
+}
+else
+{
+    <h3 style="margin:0 0 14px;">@(string.IsNullOrEmpty(_user.FullName) ? _user.Email : _user.FullName)</h3>
+
+    <!-- ============================ Identity ============================ -->
+    <div class="card" style="margin-bottom:14px;">
+        <h4 style="margin-top:0;">Identity</h4>
+
+        <label style="font-size:12px;color:#6b7280;">Full name</label>
+        <input class="input full" @bind="_user.FullName" style="margin-bottom:8px;" />
+
+        <label style="font-size:12px;color:#6b7280;">Email</label>
+        <input class="input full" value="@_user.Email" disabled style="margin-bottom:8px;background:#f3f4f6;" />
+
+        <label style="font-size:12px;color:#6b7280;">Role</label>
+        <select class="input full" @bind="_user.Role" style="margin-bottom:10px;">
+            <option value="Staff">Staff</option>
+            <option value="Admin">Admin (full access)</option>
+        </select>
+
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <input type="checkbox" @bind="_user.IsActive" />
+            <span>Active (can sign in)</span>
+        </label>
+
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" disabled="@_savingIdentity" @onclick="SaveIdentity">
+                @(_savingIdentity ? "Saving..." : "Save changes")
+            </button>
+            <button class="btn" disabled="@_resetting" @onclick="ResetPassword">
+                🔑 Reset password
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_resetTempPassword))
+        {
+            <div style="margin-top:10px;padding:10px;background:#dcfce7;border:1px solid #86efac;border-radius:6px;font-size:13px;">
+                <strong style="color:#15803d;">New temporary password:</strong>
+                <span style="font-family:monospace;margin-left:6px;">@_resetTempPassword</span>
+                <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+                    Share with the user. They'll be asked to change it on next login.
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- ============================ Permissions ============================ -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h4 style="margin:0;">Screen permissions</h4>
+            <div style="display:flex;gap:6px;">
+                <button class="btn" style="font-size:12px;padding:4px 10px;" @onclick="SelectAll">Select all</button>
+                <button class="btn" style="font-size:12px;padding:4px 10px;" @onclick="SelectNone">Clear</button>
+            </div>
+        </div>
+        <p style="margin:0 0 14px;color:#6b7280;font-size:13px;">
+            Tick the screens this user is allowed to access. Admins implicitly have everything.
+        </p>
+
+        @if (_user.Role == "Admin")
+        {
+            <div style="padding:14px;background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;color:#1d4ed8;font-size:13px;margin-bottom:14px;">
+                ℹ️ Admins have access to everything regardless of these checkboxes.
+            </div>
+        }
+
+        @if (_catalog != null)
+        {
+            @foreach (var group in _catalog)
+            {
+                <div style="margin-bottom:14px;">
+                    <p style="margin:0 0 6px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">
+                        @group.Title
+                    </p>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px,1fr));gap:8px;">
+                        @foreach (var p in group.Entries)
+                        {
+                            var isSel = _selected.Contains(p.Code);
+                            <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+                                          border:1px solid @(isSel ? "#6366f1" : "#e5e7eb");
+                                          background:@(isSel ? "#eef2ff" : "#fff");
+                                          border-radius:8px;cursor:pointer;font-size:13px;">
+                                <input type="checkbox" checked="@isSel"
+                                       @onchange="e => Toggle(p.Code, (bool)e.Value!)" />
+                                <div>
+                                    <div>@p.Label</div>
+                                    <div style="font-family:monospace;color:#9ca3af;font-size:10px;">@p.Code</div>
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+        }
+
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+            <button class="btn btn-primary" disabled="@_savingPerms" @onclick="SavePermissions">
+                @(_savingPerms ? "Saving..." : "Save permissions")
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    bool _loading = true;
+    bool _savingIdentity, _savingPerms, _resetting;
+    string? _resetTempPassword;
+    UserDto? _user;
+    HashSet<string> _selected = new();
+    List<PermGroup>? _catalog;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadCatalog();
+            await LoadUser();
+        }
+    }
+
+    async Task LoadCatalog()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/permissions/catalog");
+            using var doc = JsonDocument.Parse(json);
+            _catalog = new();
+            foreach (var g in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                var entries = new List<PermEntry>();
+                foreach (var e in g.GetProperty("entries").EnumerateArray())
+                {
+                    entries.Add(new PermEntry
+                    {
+                        Code  = e.GetProperty("code").GetString() ?? "",
+                        Label = e.GetProperty("label").GetString() ?? ""
+                    });
+                }
+                _catalog.Add(new PermGroup
+                {
+                    Title   = g.GetProperty("title").GetString() ?? "",
+                    Entries = entries
+                });
+            }
+        }
+        catch { _catalog = new(); }
+    }
+
+    async Task LoadUser()
+    {
+        _loading = true; StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync($"api/users/{Id}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _user = new UserDto
+            {
+                Id        = d.GetProperty("id").GetGuid(),
+                Email     = d.GetProperty("email").GetString() ?? "",
+                FullName  = d.TryGetProperty("fullName", out var fn) && fn.ValueKind == JsonValueKind.String ? fn.GetString() : null,
+                Role      = d.GetProperty("role").GetString() ?? "Staff",
+                IsActive  = d.GetProperty("isActive").GetBoolean()
+            };
+            _selected = new();
+            if (d.TryGetProperty("permissions", out var perms) && perms.ValueKind == JsonValueKind.Array)
+                foreach (var p in perms.EnumerateArray()) _selected.Add(p.GetString() ?? "");
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    void Toggle(string code, bool on)
+    {
+        if (on) _selected.Add(code);
+        else    _selected.Remove(code);
+    }
+
+    void SelectAll()
+    {
+        if (_catalog == null) return;
+        foreach (var g in _catalog)
+            foreach (var e in g.Entries)
+                _selected.Add(e.Code);
+    }
+
+    void SelectNone() => _selected.Clear();
+
+    async Task SaveIdentity()
+    {
+        if (_user == null) return;
+        _savingIdentity = true;
+        try
+        {
+            var body = new { fullName = _user.FullName, role = _user.Role, isActive = _user.IsActive };
+            var resp = await Http.PatchAsJsonAsync($"api/users/{Id}", body);
+            if (resp.IsSuccessStatusCode) Toast.Show("Saved.");
+            else Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+        }
+        finally { _savingIdentity = false; }
+    }
+
+    async Task SavePermissions()
+    {
+        _savingPerms = true;
+        try
+        {
+            var body = new { codes = _selected.ToList() };
+            var resp = await Http.PutAsJsonAsync($"api/users/{Id}/permissions", body);
+            if (resp.IsSuccessStatusCode) Toast.Show("Permissions updated.");
+            else Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+        }
+        finally { _savingPerms = false; }
+    }
+
+    async Task ResetPassword()
+    {
+        _resetting = true; _resetTempPassword = null;
+        try
+        {
+            var resp = await Http.PostAsync($"api/users/{Id}/reset-password", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Reset failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            _resetTempPassword = doc.RootElement.GetProperty("data").GetProperty("tempPassword").GetString();
+        }
+        finally { _resetting = false; }
+    }
+
+    class UserDto
+    {
+        public Guid    Id { get; set; }
+        public string  Email { get; set; } = "";
+        public string? FullName { get; set; }
+        public string  Role { get; set; } = "Staff";
+        public bool    IsActive { get; set; }
+    }
+    class PermGroup
+    {
+        public string Title { get; set; } = "";
+        public List<PermEntry> Entries { get; set; } = new();
+    }
+    class PermEntry
+    {
+        public string Code  { get; set; } = "";
+        public string Label { get; set; } = "";
+    }
+}

@@ -165,6 +165,9 @@ try
     builder.Services.AddScoped<IVerificationTokenService, VerificationTokenService>();
     builder.Services.AddSingleton<IAuthorizationHandler, VerifiedEmailHandler>();
 
+    // Tenant user / staff management.
+    builder.Services.AddScoped<ITenantUserService, TenantUserService>();
+
     // ---------------------------------------------------------------
     // Subscriptions
     // ---------------------------------------------------------------

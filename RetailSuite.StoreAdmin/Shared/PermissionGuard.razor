@@ -1,0 +1,31 @@
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@*
+    Drop this near the top of any protected page:
+        <PermissionGuard Code="PRODUCTS" />
+
+    If the current user doesn't have the permission (and isn't an Admin),
+    the page redirects to the dashboard with a toast.
+
+    Admins always pass — Auth.Can already short-circuits for them.
+*@
+
+@code {
+    [Parameter, EditorRequired] public string Code { get; set; } = "";
+    [Parameter] public string RedirectTo { get; set; } = "/";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Wait until permissions have been loaded by AuthService.InitializeAsync
+        // (MainLayout calls it). If we got here directly via URL, give it a moment.
+        await Auth.InitializeAsync();
+
+        if (!Auth.Can(Code))
+        {
+            Nav.NavigateTo(RedirectTo, replace: true);
+        }
+    }
+}

@@ -1,5 +1,6 @@
 @page "/"
 @inject HttpClient Http
+@inject AuthService Auth
 @using System.Text.Json
 
 <h3 style="margin-bottom:24px;">Dashboard</h3>
@@ -12,34 +13,47 @@ else
 {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;">
 
-        <div class="card stat-card">
-            <div class="stat-label">Products</div>
-            <div class="stat-value">@_totalProducts</div>
-        </div>
+        @* Each stat card is hidden if the user can't view the underlying data. *@
+        @if (Auth.Can("PRODUCTS"))
+        {
+            <div class="card stat-card">
+                <div class="stat-label">Products</div>
+                <div class="stat-value">@_totalProducts</div>
+            </div>
+        }
 
-        <div class="card stat-card">
-            <div class="stat-label">Inventory Value</div>
-            <div class="stat-value">Rs @_inventoryValue.ToString("N0")</div>
-        </div>
+        @if (Auth.Can("INVENTORY_VIEW"))
+        {
+            <div class="card stat-card">
+                <div class="stat-label">Inventory Value</div>
+                <div class="stat-value">Rs @_inventoryValue.ToString("N0")</div>
+            </div>
+        }
 
-        <div class="card stat-card">
-            <div class="stat-label">Today's Sales</div>
-            <div class="stat-value">@_todaySales</div>
-            <div class="stat-sub">Rs @_todayRevenue.ToString("N0") revenue</div>
-        </div>
+        @if (Auth.Can("REPORTS") || Auth.Can("ORDERS_VIEW"))
+        {
+            <div class="card stat-card">
+                <div class="stat-label">Today's Sales</div>
+                <div class="stat-value">@_todaySales</div>
+                <div class="stat-sub">Rs @_todayRevenue.ToString("N0") revenue</div>
+            </div>
+        }
 
-        <div class="card stat-card @(_lowStockCount > 0 ? "stat-warning" : "")">
-            <div class="stat-label">Low Stock Alerts</div>
-            <div class="stat-value">@_lowStockCount</div>
-            @if (_lowStockCount > 0)
-            {
-                <div class="stat-sub"><a href="/inventory">View inventory →</a></div>
-            }
-        </div>
+        @if (Auth.Can("INVENTORY_VIEW"))
+        {
+            <div class="card stat-card @(_lowStockCount > 0 ? "stat-warning" : "")">
+                <div class="stat-label">Low Stock Alerts</div>
+                <div class="stat-value">@_lowStockCount</div>
+                @if (_lowStockCount > 0)
+                {
+                    <div class="stat-sub"><a href="/inventory">View inventory →</a></div>
+                }
+            </div>
+        }
 
     </div>
 
-    @if (_lowStockItems.Any())
+    @if (Auth.Can("INVENTORY_VIEW") && _lowStockItems.Any())
     {
         <div class="card" style="margin-bottom:24px;">
             <h4 style="margin-bottom:12px;">⚠️ Low Stock Items</h4>
@@ -66,12 +80,13 @@ else
         <div class="card" style="color:#b91c1c;margin-bottom:16px;">⚠️ @_error</div>
     }
 
+    @* Quick-action buttons — only show ones the user can actually access. *@
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        <a href="/pos"       class="btn btn-primary">Open POS Terminal</a>
-        <a href="/products"  class="btn">Manage Products</a>
-        <a href="/inventory" class="btn">Inventory</a>
-        <a href="/orders"    class="btn">Orders</a>
-        <a href="/customers" class="btn">Customers</a>
+        @if (Auth.Can("POS"))            { <a href="/pos"       class="btn btn-primary">Open POS Terminal</a> }
+        @if (Auth.Can("PRODUCTS"))       { <a href="/products"  class="btn">Manage Products</a> }
+        @if (Auth.Can("INVENTORY_VIEW")) { <a href="/inventory" class="btn">Inventory</a> }
+        @if (Auth.Can("ORDERS_VIEW"))    { <a href="/orders"    class="btn">Orders</a> }
+        @if (Auth.Can("CUSTOMERS"))      { <a href="/customers" class="btn">Customers</a> }
     </div>
 }
 
@@ -104,12 +119,13 @@ else
 
         try
         {
-            // Run all three API calls in parallel
-            var productsTask  = LoadProducts();
-            var inventoryTask = LoadInventoryStats();
-            var salesTask     = LoadTodaySales();
+            // Only request data for surfaces the user can actually see.
+            var tasks = new List<Task>();
+            if (Auth.Can("PRODUCTS"))       tasks.Add(LoadProducts());
+            if (Auth.Can("INVENTORY_VIEW")) tasks.Add(LoadInventoryStats());
+            if (Auth.Can("REPORTS") || Auth.Can("ORDERS_VIEW")) tasks.Add(LoadTodaySales());
 
-            await Task.WhenAll(productsTask, inventoryTask, salesTask);
+            if (tasks.Count > 0) await Task.WhenAll(tasks);
         }
         catch (Exception ex)
         {

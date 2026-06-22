@@ -46,6 +46,16 @@ public class AuthService
                        ?? string.Empty;
 
     public bool IsSuperAdmin => Role == "SuperAdmin";
+    public bool IsAdmin      => Role == "Admin" || IsSuperAdmin;
+
+    /// <summary>True when the server's login response flagged that the user must change password.</summary>
+    public bool MustChangePassword { get; private set; }
+
+    /// <summary>Permission codes loaded from /api/me — used to gate nav links and pages.</summary>
+    public HashSet<string> Permissions { get; private set; } = new();
+
+    /// <summary>True if the user has the given permission. Admins have everything implicitly.</summary>
+    public bool Can(string permissionCode) => IsAdmin || Permissions.Contains(permissionCode);
 
     public event Action? OnChange;
 
@@ -68,7 +78,8 @@ public class AuthService
             if (!string.IsNullOrEmpty(stored) && !IsTokenExpired(stored))
             {
                 ApplyToken(stored);
-                // Don't notify — caller will re-render after this returns
+                // Refresh permissions from the server so nav has fresh state on reload.
+                await LoadPermissionsAsync();
             }
             else if (!string.IsNullOrEmpty(stored))
             {
@@ -96,18 +107,73 @@ public class AuthService
                 new StringContent(body, Encoding.UTF8, "application/json"));
 
             var content = await response.Content.ReadAsStringAsync();
-            var result  = JsonSerializer.Deserialize<ApiWrapper<string>>(content, _jsonOpts);
+            using var doc = JsonDocument.Parse(content);
 
-            if (!response.IsSuccessStatusCode || result?.Data == null)
-                return (false, result?.Message ?? "Invalid credentials.");
+            if (!response.IsSuccessStatusCode)
+            {
+                var msg = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Invalid credentials.";
+                return (false, msg);
+            }
 
-            await PersistTokenAsync(result.Data);
+            // Server now returns either { data: "<token>" } (legacy shape) or
+            // { data: { token, mustChangePassword } } (new shape).
+            string? token = null;
+            var mustChange = false;
+            if (doc.RootElement.TryGetProperty("data", out var dataEl))
+            {
+                if (dataEl.ValueKind == JsonValueKind.String)
+                {
+                    token = dataEl.GetString();
+                }
+                else if (dataEl.ValueKind == JsonValueKind.Object)
+                {
+                    token = dataEl.TryGetProperty("token", out var t) ? t.GetString() : null;
+                    mustChange = dataEl.TryGetProperty("mustChangePassword", out var mc) && mc.GetBoolean();
+                }
+            }
+
+            if (string.IsNullOrEmpty(token))
+                return (false, "Login response missing token.");
+
+            MustChangePassword = mustChange;
+            await PersistTokenAsync(token);
+
+            // Fetch user's permission set so nav can render correctly right after login.
+            await LoadPermissionsAsync();
+
             return (true, null);
         }
         catch (Exception ex)
         {
             return (false, $"Connection error: {ex.Message}");
         }
+    }
+
+    /// <summary>Refresh the in-memory permission set from /api/me.</summary>
+    public async Task LoadPermissionsAsync()
+    {
+        if (!IsAuthenticated) return;
+        try
+        {
+            var resp = await _http.GetAsync("api/me");
+            if (!resp.IsSuccessStatusCode) return;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var d = doc.RootElement.GetProperty("data");
+
+            MustChangePassword = d.TryGetProperty("mustChangePassword", out var mc) && mc.GetBoolean();
+
+            Permissions = new();
+            if (d.TryGetProperty("permissions", out var perms) && perms.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in perms.EnumerateArray())
+                {
+                    var code = p.GetString();
+                    if (!string.IsNullOrEmpty(code)) Permissions.Add(code);
+                }
+            }
+            OnChange?.Invoke();
+        }
+        catch { /* network — leave permissions empty, user just sees minimal nav */ }
     }
 
     // -----------------------------------------------------------------------
@@ -117,6 +183,8 @@ public class AuthService
     public async Task LogoutAsync()
     {
         Token = null;
+        Permissions = new();
+        MustChangePassword = false;
         _http.DefaultRequestHeaders.Authorization = null;
 
         try

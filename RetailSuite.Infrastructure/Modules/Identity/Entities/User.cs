@@ -9,6 +9,19 @@ namespace RetailSuite.Infrastructure.Modules.Identity.Entities
         public string PasswordHash { get; private set; } = string.Empty;
         public UserRole Role { get; private set; }
 
+        /// <summary>Display name shown in user-management screens — "Ali Khan". Optional.</summary>
+        public string? FullName { get; private set; }
+
+        /// <summary>True if the user can sign in. Admin can disable users without deleting them.</summary>
+        public bool IsActive { get; private set; } = true;
+
+        /// <summary>
+        /// True when the password was set by an admin (not the user themselves).
+        /// First-login forces a password change so the temp password from the admin
+        /// can't be reused indefinitely.
+        /// </summary>
+        public bool MustChangePassword { get; private set; }
+
         /// <summary>True once the user has clicked the verification link emailed at signup.</summary>
         public bool IsEmailVerified { get; private set; }
 
@@ -32,6 +45,25 @@ namespace RetailSuite.Infrastructure.Modules.Identity.Entities
             if (IsEmailVerified) return;
             IsEmailVerified = true;
             EmailVerifiedAt = DateTime.UtcNow;
+        }
+
+        // ---- Mutators used by user-management endpoints --------------------
+
+        public void SetFullName(string? fullName) => FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim();
+        public void SetRole(UserRole role) => Role = role;
+        public void Activate()   => IsActive = true;
+        public void Deactivate() => IsActive = false;
+
+        /// <summary>Mark that the user is using a temp password and must change it on next login.</summary>
+        public void RequirePasswordChange() => MustChangePassword = true;
+
+        /// <summary>Replace the password hash. Clears the must-change-password flag.</summary>
+        public void SetPassword(string newPasswordHash)
+        {
+            if (string.IsNullOrWhiteSpace(newPasswordHash))
+                throw new ArgumentException("PasswordHash is required.", nameof(newPasswordHash));
+            PasswordHash       = newPasswordHash;
+            MustChangePassword = false;
         }
     }
 }

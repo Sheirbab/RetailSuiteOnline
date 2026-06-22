@@ -40,27 +40,40 @@ else
             else
             {
                 <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
-                <NavLink href="/pos">POS Terminal</NavLink>
-                <NavLink href="/products">Products</NavLink>
-                <NavLink href="/inventory">Inventory</NavLink>
-                <NavLink href="/inventory/transfers">Stock transfers</NavLink>
-                <NavLink href="/orders">Orders</NavLink>
-                <NavLink href="/customers">Customers</NavLink>
 
-                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Procurement</span>
-                <NavLink href="/suppliers">Suppliers</NavLink>
-                <NavLink href="/receiving-orders">Receiving orders</NavLink>
-                <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink>
-                <NavLink href="/supplier-returns">Supplier returns</NavLink>
+                @if (Auth.Can("POS"))             { <NavLink href="/pos">POS Terminal</NavLink> }
+                @if (Auth.Can("PRODUCTS"))        { <NavLink href="/products">Products</NavLink> }
+                @if (Auth.Can("INVENTORY_VIEW"))  { <NavLink href="/inventory">Inventory</NavLink> }
+                @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
+                @if (Auth.Can("ORDERS_VIEW"))     { <NavLink href="/orders">Orders</NavLink> }
+                @if (Auth.Can("CUSTOMERS"))       { <NavLink href="/customers">Customers</NavLink> }
 
-                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Labels</span>
-                <NavLink href="/barcodes/print">Print barcodes</NavLink>
+                @if (Auth.Can("SUPPLIERS") || Auth.Can("RECEIVING_ORDERS")
+                  || Auth.Can("BULK_RECEIVE") || Auth.Can("SUPPLIER_RETURNS"))
+                {
+                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Procurement</span>
+                    @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
+                    @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
+                    @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
+                    @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
+                }
 
-                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Settings</span>
-                <NavLink href="/locations">Locations</NavLink>
-                <NavLink href="/settings/shipping-methods">Shipping methods</NavLink>
-                <NavLink href="/settings/tax">Tax & FBR</NavLink>
-                <NavLink href="/settings/subscription">Subscription</NavLink>
+                @if (Auth.Can("BARCODES"))
+                {
+                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Labels</span>
+                    <NavLink href="/barcodes/print">Print barcodes</NavLink>
+                }
+
+                @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
+                  || Auth.Can("SUBSCRIPTION") || Auth.IsAdmin)
+                {
+                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Settings</span>
+                    @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
+                    @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
+                    @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax & FBR</NavLink> }
+                    @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
+                    @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users & permissions</NavLink> }
+                }
 
                 <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
                 <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>

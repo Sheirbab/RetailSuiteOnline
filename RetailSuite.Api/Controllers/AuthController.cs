@@ -348,8 +348,15 @@ public class AuthController : ControllerBase
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return Unauthorized(new ApiResponse<string>(false, "Invalid email or password.", null));
 
+        if (!user.IsActive)
+            return Unauthorized(new ApiResponse<string>(false, "This user is disabled. Contact your admin.", null));
+
         var token = GenerateJwt(user);
-        return Ok(new ApiResponse<string>(true, "Login successful.", token));
+        return Ok(new ApiResponse<object>(true, "Login successful.", new
+        {
+            Token              = token,
+            MustChangePassword = user.MustChangePassword
+        }));
     }
 
     /// <summary>

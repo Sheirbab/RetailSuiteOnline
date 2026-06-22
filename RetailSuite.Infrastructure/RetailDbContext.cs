@@ -75,6 +75,7 @@ public class RetailDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<TenantVerificationToken> TenantVerificationTokens => Set<TenantVerificationToken>();
 
     // -----------------------------
@@ -152,7 +153,23 @@ public class RetailDbContext : DbContext
             b.HasIndex(x => x.Email);
             b.Property(x => x.Email).IsRequired();
             b.Property(x => x.PasswordHash).IsRequired();
+            b.Property(x => x.FullName).HasMaxLength(150);
+            b.Property(x => x.IsActive).HasDefaultValue(true);
+            b.Property(x => x.MustChangePassword).HasDefaultValue(false);
             b.Property(x => x.IsEmailVerified).HasDefaultValue(false);
+        });
+
+        modelBuilder.Entity<UserPermission>(b =>
+        {
+            b.ToTable("UserPermissions");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).IsRequired().HasMaxLength(50);
+            b.HasIndex(x => new { x.UserId, x.Code }).IsUnique();
+
+            b.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<User>()

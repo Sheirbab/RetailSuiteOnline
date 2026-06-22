@@ -1,0 +1,219 @@
+@page "/settings/users"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+    <div>
+        <h3 style="margin:0;">Users & permissions</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Add staff users (cashier, inventory manager, etc.) and control which screens each user can access.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Add user</button>
+</div>
+
+@if (_loading)
+{
+    <div class="spinner"></div>
+}
+else if (_rows == null || !_rows.Any())
+{
+    <div class="card" style="text-align:center;color:#9ca3af;padding:30px;">
+        <p>No users yet. Click <strong>+ Add user</strong> to invite your first staff member.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in _rows)
+                {
+                    <tr>
+                        <td>
+                            <strong>@(string.IsNullOrEmpty(u.FullName) ? u.Email.Split('@')[0] : u.FullName)</strong>
+                            @if (u.MustChangePassword)
+                            {
+                                <span class="badge badge-amber" style="margin-left:6px;">Must change PW</span>
+                            }
+                        </td>
+                        <td style="font-family:monospace;font-size:12px;">@u.Email</td>
+                        <td>@u.Role</td>
+                        <td>
+                            @if (u.IsActive)
+                            { <span class="badge badge-green">Active</span> }
+                            else
+                            { <span class="badge badge-red">Disabled</span> }
+                        </td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/settings/users/{u.Id}")">Edit</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- ============================ Create modal ============================ -->
+<Modal Visible="@_showCreate" OnClose="() => _showCreate = false">
+    <h3 style="margin-bottom:12px;">Add user</h3>
+
+    @if (_createdResult != null)
+    {
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:12px;">
+            <p style="margin:0 0 8px;font-weight:600;color:#15803d;">✅ User created</p>
+            <p style="margin:0 0 6px;font-size:13px;color:#374151;">
+                Share these credentials with the user once. The temporary password is shown only this time.
+            </p>
+            <div style="font-family:monospace;background:#fff;padding:10px;border-radius:6px;font-size:13px;">
+                <div><strong>Email:</strong> @_createdResult.Email</div>
+                <div><strong>Temp password:</strong> @_createdResult.TempPassword</div>
+            </div>
+            <p style="margin:8px 0 0;font-size:11px;color:#6b7280;">
+                They'll be asked to change it on first sign-in.
+            </p>
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-primary" @onclick="CloseCreate">Done</button>
+        </div>
+    }
+    else
+    {
+        <label style="font-size:12px;color:#6b7280;">Full name</label>
+        <input class="input full" @bind="_newName" placeholder="Ali Khan" style="margin-bottom:8px;" />
+
+        <label style="font-size:12px;color:#6b7280;">Email *</label>
+        <input class="input full" @bind="_newEmail" type="email" placeholder="ali@yourstore.pk" style="margin-bottom:8px;" />
+
+        <label style="font-size:12px;color:#6b7280;">Role</label>
+        <select class="input full" @bind="_newRole" style="margin-bottom:12px;">
+            <option value="Staff">Staff (general)</option>
+            <option value="Admin">Admin (full access)</option>
+        </select>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="color:#b91c1c;font-size:13px;margin-bottom:8px;">@_error</div>
+        }
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" @onclick="() => _showCreate = false">Cancel</button>
+            <button class="btn btn-primary" disabled="@_creating" @onclick="DoCreate">
+                @(_creating ? "Creating..." : "Create user")
+            </button>
+        </div>
+    }
+</Modal>
+
+@code {
+    bool _loading = true;
+    List<UserRow>? _rows;
+    bool _showCreate, _creating;
+    string _newName = "", _newEmail = "", _newRole = "Staff";
+    string? _error;
+    CreatedResult? _createdResult;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        _loading = true; StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/users");
+            using var doc = JsonDocument.Parse(json);
+            _rows = new();
+            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in d.EnumerateArray())
+                {
+                    _rows.Add(new UserRow
+                    {
+                        Id                 = e.GetProperty("id").GetGuid(),
+                        Email              = e.GetProperty("email").GetString() ?? "",
+                        FullName           = e.TryGetProperty("fullName", out var fn) && fn.ValueKind == JsonValueKind.String ? fn.GetString() : null,
+                        Role               = e.GetProperty("role").GetString() ?? "",
+                        IsActive           = e.GetProperty("isActive").GetBoolean(),
+                        MustChangePassword = e.GetProperty("mustChangePassword").GetBoolean()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    void OpenCreate()
+    {
+        _newName = ""; _newEmail = ""; _newRole = "Staff";
+        _error = null; _createdResult = null;
+        _showCreate = true;
+    }
+
+    async Task DoCreate()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_newEmail)) { _error = "Email is required."; return; }
+
+        _creating = true;
+        try
+        {
+            var body = new { email = _newEmail, fullName = _newName, role = _newRole };
+            var resp = await Http.PostAsJsonAsync("api/users", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                _error = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Create failed.";
+                return;
+            }
+            using var ok = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var d = ok.RootElement.GetProperty("data");
+            _createdResult = new CreatedResult
+            {
+                Email        = d.GetProperty("email").GetString() ?? "",
+                TempPassword = d.GetProperty("tempPassword").GetString() ?? ""
+            };
+        }
+        finally { _creating = false; }
+    }
+
+    async Task CloseCreate()
+    {
+        _showCreate = false;
+        _createdResult = null;
+        await Load();
+    }
+
+    class UserRow
+    {
+        public Guid    Id { get; set; }
+        public string  Email { get; set; } = "";
+        public string? FullName { get; set; }
+        public string  Role { get; set; } = "";
+        public bool    IsActive { get; set; }
+        public bool    MustChangePassword { get; set; }
+    }
+
+    class CreatedResult
+    {
+        public string Email { get; set; } = "";
+        public string TempPassword { get; set; } = "";
+    }
+}

@@ -72,7 +72,10 @@
         _loading = false;
 
         if (success)
-            Nav.NavigateTo("/", replace: true);
+        {
+            // First-login users must change their temp password before reaching the dashboard.
+            Nav.NavigateTo(Auth.MustChangePassword ? "/change-password" : "/", replace: true);
+        }
         else
             _error = error;
     }
