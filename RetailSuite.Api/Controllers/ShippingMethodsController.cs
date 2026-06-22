@@ -5,6 +5,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -15,7 +17,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/shipping-methods")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.ShippingMethods)]
 public class ShippingMethodsController : ControllerBase
 {
     private readonly RetailDbContext _db;

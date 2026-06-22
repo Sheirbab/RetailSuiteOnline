@@ -165,6 +165,12 @@ try
     builder.Services.AddScoped<IVerificationTokenService, VerificationTokenService>();
     builder.Services.AddSingleton<IAuthorizationHandler, VerifiedEmailHandler>();
 
+    // Per-permission server-side enforcement (paired with the Permissions catalog
+    // and the UserPermission junction table). Use [RequirePermission("CODE")] on
+    // controllers or actions; admins bypass automatically.
+    builder.Services.AddSingleton<IAuthorizationPolicyProvider, RetailSuite.Api.Authorization.PermissionPolicyProvider>();
+    builder.Services.AddScoped<IAuthorizationHandler, RetailSuite.Api.Authorization.RequirePermissionHandler>();
+
     // Tenant user / staff management.
     builder.Services.AddScoped<ITenantUserService, TenantUserService>();
 

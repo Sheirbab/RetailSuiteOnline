@@ -5,12 +5,14 @@ using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Payment.Dtos;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
 [ApiController]
 [Route("api/payments")]
-[Authorize]
+[RequirePermission(Permissions.OrdersView)]
 public class PaymentsController : ControllerBase
 {
     private readonly PaymentService _paymentService;

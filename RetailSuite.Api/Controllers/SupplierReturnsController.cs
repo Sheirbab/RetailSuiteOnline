@@ -6,6 +6,8 @@ using RetailSuite.Infrastructure.Modules.Receiving.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Entities;
 using RetailSuite.Infrastructure.Modules.SupplierReturns.Services;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -16,7 +18,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/supplier-returns")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.SupplierReturns)]
 public class SupplierReturnsController : ControllerBase
 {
     private readonly RetailDbContext _db;

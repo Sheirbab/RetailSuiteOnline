@@ -5,6 +5,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Receiving.Dtos;
 using RetailSuite.Infrastructure.Modules.Receiving.Services;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -15,7 +17,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/receiving-orders")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.ReceivingOrders)]
 public class ReceivingOrdersController : ControllerBase
 {
     private readonly RetailDbContext _db;

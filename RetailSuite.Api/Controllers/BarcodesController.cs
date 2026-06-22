@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Barcodes.Services;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -16,7 +18,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/barcodes")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Barcodes)]
 public class BarcodesController : ControllerBase
 {
     private readonly RetailDbContext _db;

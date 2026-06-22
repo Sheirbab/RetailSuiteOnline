@@ -5,6 +5,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Transfers.Entities;
 using RetailSuite.Infrastructure.Modules.Transfers.Services;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -15,7 +17,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/inventory-transfers")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.InventoryTransfer)]
 public class InventoryTransfersController : ControllerBase
 {
     private readonly RetailDbContext _db;

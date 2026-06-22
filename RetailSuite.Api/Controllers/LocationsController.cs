@@ -5,6 +5,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Infrastructure.Modules.Locations.Services;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -14,7 +16,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/locations")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Locations)]
 public class LocationsController : ControllerBase
 {
     private readonly RetailDbContext _db;

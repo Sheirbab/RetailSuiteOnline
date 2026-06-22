@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Tax.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -13,7 +15,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/tax-settings")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.TaxSettings)]
 public class TaxSettingsController : ControllerBase
 {
     private readonly RetailDbContext _db;

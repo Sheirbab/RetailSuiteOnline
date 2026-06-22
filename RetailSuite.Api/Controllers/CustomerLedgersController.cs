@@ -6,6 +6,8 @@ using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -15,7 +17,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/customers/{customerId:guid}")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.StoreCredit)]
 public class CustomerLedgersController : ControllerBase
 {
     private readonly RetailDbContext _db;

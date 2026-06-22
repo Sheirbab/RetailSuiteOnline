@@ -5,6 +5,8 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Suppliers.Dtos;
 using RetailSuite.Infrastructure.Modules.Suppliers.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -13,7 +15,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/suppliers")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Suppliers)]
 public class SuppliersController : ControllerBase
 {
     private readonly RetailDbContext _db;

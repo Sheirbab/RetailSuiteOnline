@@ -4,12 +4,14 @@ using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
 [ApiController]
 [Route("api/reports")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Reports)]
 public class ReportsController : ControllerBase
 {
     private readonly RetailDbContext _db;

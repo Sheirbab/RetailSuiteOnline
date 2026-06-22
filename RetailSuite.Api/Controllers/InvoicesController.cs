@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -19,7 +21,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/invoices")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Reports)]
 public class InvoicesController : ControllerBase
 {
     private readonly RetailDbContext _db;

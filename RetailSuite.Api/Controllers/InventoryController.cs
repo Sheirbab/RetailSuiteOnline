@@ -5,10 +5,12 @@ using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Inventory.Dtos;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.InventoryView)]
 [ApiController]
 [Route("api/inventory")]
 public class InventoryController : ControllerBase

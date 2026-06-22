@@ -7,6 +7,8 @@ using RetailSuite.Infrastructure.Modules.Images.Dtos;
 using RetailSuite.Infrastructure.Modules.Images.Services;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
@@ -16,7 +18,7 @@ namespace RetailSuite.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/products/{productId:guid}/images")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Products)]
 public class ProductImagesController : ControllerBase
 {
     private readonly RetailDbContext _db;

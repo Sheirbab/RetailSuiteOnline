@@ -9,12 +9,14 @@ using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers
 {
     [ApiController]
     [Route("api/orders")]
-    [Authorize]
+    [RequirePermission(Permissions.OrdersView)]
     public class OrdersController : ControllerBase
     {
         private readonly OrderService _orderService;

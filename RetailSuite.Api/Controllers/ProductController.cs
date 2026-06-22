@@ -7,8 +7,10 @@ using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Shared;
 using RetailSuite.Infrastructure.Modules.Identity;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
+using RetailSuite.Api.Authorization;
 
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Products)]
 [ApiController]
 [Route("api/products")]
 public class ProductsController : ControllerBase

@@ -8,12 +8,14 @@ using RetailSuite.Infrastructure.Modules.Orders.Dtos;
 using RetailSuite.Infrastructure.Modules.Orders.Services;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
+using RetailSuite.Api.Authorization;
+using RetailSuite.Infrastructure.Modules.Identity.Entities;
 
 namespace RetailSuite.Api.Controllers;
 
 [ApiController]
 [Route("api/sales")]
-[Authorize(Policy = "StaffOrAdmin")]
+[RequirePermission(Permissions.Pos)]
 public class SalesController : ControllerBase
 {
     private readonly RetailDbContext _context;
