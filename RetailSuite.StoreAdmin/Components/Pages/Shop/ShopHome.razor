@@ -4,6 +4,7 @@
 @inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
+@inject ApiUrlService Api
 @using System.Text.Json
 
 <div style="display:flex;gap:20px;align-items:flex-start;">
@@ -58,7 +59,7 @@
                     <div class="product-card" @onclick="() => GoToProduct(p.Id)">
                         @if (!string.IsNullOrEmpty(p.ImageUrl))
                         {
-                            <img src="@p.ImageUrl" alt="@p.Name" class="product-img" />
+                            <img src="@Api.Absolute(p.ImageUrl)" alt="@p.Name" class="product-img" />
                         }
                         else
                         {

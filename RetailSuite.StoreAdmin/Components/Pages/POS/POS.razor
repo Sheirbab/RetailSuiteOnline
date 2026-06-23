@@ -5,6 +5,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject AuthService Auth
+@inject ApiUrlService Api
 @using System.Text.Json
 @implements IDisposable
 
@@ -432,7 +433,7 @@
                             <div class="pos-tile-img">
                                 @if (!string.IsNullOrEmpty(v.ImageUrl))
                                 {
-                                    <img src="@v.ImageUrl" alt="@v.ProductName" />
+                                    <img src="@Api.Absolute(v.ImageUrl)" alt="@v.ProductName" />
                                 }
                                 else
                                 {

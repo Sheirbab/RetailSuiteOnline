@@ -4,6 +4,7 @@
 @inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
+@inject ApiUrlService Api
 @using System.Text.Json
 
 <style>
@@ -83,7 +84,7 @@ else
         <div class="pd-gallery">
             @if (_displayImages.Any())
             {
-                <img class="pd-main-img" src="@_displayImages[_currentImageIdx]" alt="@_product.Name" />
+                <img class="pd-main-img" src="@Api.Absolute(_displayImages[_currentImageIdx])" alt="@_product.Name" />
 
                 @if (_displayImages.Count > 1)
                 {
@@ -95,7 +96,7 @@ else
                         {
                             var idx = i;
                             <img class="pd-thumb @(idx == _currentImageIdx ? "active" : "")"
-                                 src="@_displayImages[idx]" alt=""
+                                 src="@Api.Absolute(_displayImages[idx])" alt=""
                                  @onclick="() => _currentImageIdx = idx" />
                         }
                     </div>
