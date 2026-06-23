@@ -3,6 +3,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="PRODUCTS" />
+
 <h3 style="margin-bottom:20px;">Products</h3>
 
 <button class="btn btn-primary" @onclick="() => showModal = true">

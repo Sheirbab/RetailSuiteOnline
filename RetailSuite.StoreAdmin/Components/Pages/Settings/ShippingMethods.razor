@@ -3,6 +3,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="SHIPPING" />
+
 <h3 style="margin-bottom:8px;">Shipping methods</h3>
 <p style="color:#6b7280;margin-bottom:20px;font-size:14px;">
     Configure the delivery options customers see at storefront checkout. Methods marked inactive are hidden from the shop but stay on historical orders.

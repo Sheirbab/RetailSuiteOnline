@@ -8,6 +8,8 @@
 @using System.Text.Json
 @implements IDisposable
 
+<PermissionGuard Code="POS" />
+
 <style>
     /* ============================== POS Layout ============================== */
     .pos-shell { display:flex; flex-direction:column; gap:14px; min-height:calc(100vh - 120px); }

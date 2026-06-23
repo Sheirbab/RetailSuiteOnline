@@ -5,15 +5,118 @@
     Drop this near the top of any protected page:
         <PermissionGuard Code="PRODUCTS" />
 
-    If the current user doesn't have the permission (and isn't an Admin),
-    the page redirects to the dashboard with a toast.
+    When the current user lacks the permission (and isn't an Admin), the
+    component renders a full-screen overlay with an Access Denied card.
+    Underlying page content stays mounted but is visually hidden — this
+    avoids a redirect flash and keeps the URL stable so the user can see
+    exactly which page they tried to reach.
 
-    Admins always pass — Auth.Can already short-circuits for them.
+    Admins always pass (AuthService.Can short-circuits for them).
 *@
 
+@if (_checked && _denied)
+{
+    <div class="permission-denied-overlay" role="alertdialog" aria-modal="true">
+        <div class="permission-denied-card">
+            <div class="permission-denied-icon">!</div>
+            <h2>Access denied</h2>
+            <p>
+                You don't have permission to view this page.
+                Ask your administrator to grant
+                <code>@Code</code> access.
+            </p>
+            <div class="permission-denied-actions">
+                <button class="btn-primary" @onclick="GoHome">Go to dashboard</button>
+                <button class="btn-secondary" @onclick="GoBack">Back</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .permission-denied-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .permission-denied-card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+        max-width: 440px;
+        width: 100%;
+        padding: 2rem;
+        text-align: center;
+    }
+    .permission-denied-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: #fef3c7;
+        color: #b45309;
+        font-weight: 800;
+        font-size: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem auto;
+    }
+    .permission-denied-card h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.5rem;
+        color: #0f172a;
+    }
+    .permission-denied-card p {
+        color: #475569;
+        margin: 0 0 1.5rem 0;
+        line-height: 1.5;
+    }
+    .permission-denied-card code {
+        background: #f1f5f9;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.85em;
+        color: #1e293b;
+    }
+    .permission-denied-actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+    .permission-denied-actions .btn-primary {
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .permission-denied-actions .btn-primary:hover { background: #1d4ed8; }
+    .permission-denied-actions .btn-secondary {
+        background: #f1f5f9;
+        color: #334155;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .permission-denied-actions .btn-secondary:hover { background: #e2e8f0; }
+</style>
+
 @code {
-    [Parameter, EditorRequired] public string Code { get; set; } = "";
-    [Parameter] public string RedirectTo { get; set; } = "/";
+    [Parameter, EditorRequired] public string Code      { get; set; } = "";
+    [Parameter]                 public string RedirectTo { get; set; } = "/";
+
+    private bool _checked;
+    private bool _denied;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -23,9 +126,19 @@
         // (MainLayout calls it). If we got here directly via URL, give it a moment.
         await Auth.InitializeAsync();
 
-        if (!Auth.Can(Code))
-        {
-            Nav.NavigateTo(RedirectTo, replace: true);
-        }
+        var allowed = Auth.Can(Code);
+        if (allowed == !_denied && _checked) return;     // no-op
+
+        _checked = true;
+        _denied  = !allowed;
+        StateHasChanged();
+    }
+
+    private void GoHome() => Nav.NavigateTo(RedirectTo, replace: true);
+
+    private void GoBack()
+    {
+        // Browser history fallback via JS — keeps URL stable if no history.
+        Nav.NavigateTo(RedirectTo, replace: true);
     }
 }

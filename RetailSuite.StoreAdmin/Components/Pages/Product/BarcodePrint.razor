@@ -4,6 +4,8 @@
 @inject IJSRuntime JS
 @using System.Text.Json
 
+<PermissionGuard Code="BARCODES" />
+
 <h3 style="margin-bottom:20px;">Print barcodes</h3>
 
 @if (!string.IsNullOrEmpty(_error))

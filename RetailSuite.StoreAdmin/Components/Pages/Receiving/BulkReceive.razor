@@ -3,6 +3,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="BULK_RECEIVE" />
+
 <h3 style="margin-bottom:8px;">Bulk receive stock</h3>
 <p style="color:#6b7785;margin-top:0;margin-bottom:16px;font-size:13px;">
     Quick "truck-arrived" entry. Scan or type SKU → quantity → unit cost. No purchase order needed.<br/>

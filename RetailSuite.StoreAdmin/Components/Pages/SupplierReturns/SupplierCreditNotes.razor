@@ -4,6 +4,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="SUPPLIER_RETURNS" />
+
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
     <div>
         <a class="btn" style="font-size:12px;padding:3px 10px;margin-bottom:8px;"

@@ -4,6 +4,8 @@
 @inject NavigationManager Nav
 @using System.Text.Json
 
+<PermissionGuard Code="CUSTOMERS" />
+
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
     <h3 style="margin:0;">@(customer?.FullName ?? "Customer")</h3>
     <a class="btn" href="/customers">&larr; Back to customers</a>

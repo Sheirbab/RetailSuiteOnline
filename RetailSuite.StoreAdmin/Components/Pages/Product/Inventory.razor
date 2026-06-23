@@ -3,6 +3,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="INVENTORY_VIEW" />
+
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
     <h3 style="margin:0;">Inventory</h3>
     <div style="display:flex;align-items:center;gap:8px;">

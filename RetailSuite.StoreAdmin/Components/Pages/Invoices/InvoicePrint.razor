@@ -4,6 +4,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="REPORTS" />
+
 <style>
     /* Inline styles so the page is self-contained for print. */
     .inv-shell { max-width:780px; margin:0 auto; padding:24px; background:#fff; color:#111827; font-size:13px; line-height:1.5; }

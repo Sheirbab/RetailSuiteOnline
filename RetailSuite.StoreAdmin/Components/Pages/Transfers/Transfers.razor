@@ -4,6 +4,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="INVENTORY_TRANSFER" />
+
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
     <div>
         <h3 style="margin:0;">Stock transfers</h3>

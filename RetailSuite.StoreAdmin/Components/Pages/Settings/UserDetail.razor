@@ -4,6 +4,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="USERS" />
+
 <a class="btn" style="font-size:12px;padding:3px 10px;margin-bottom:8px;" href="/settings/users">← All users</a>
 
 @if (_loading)

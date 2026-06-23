@@ -3,6 +3,8 @@
 @inject ToastService Toast
 @using System.Text.Json
 
+<PermissionGuard Code="TAX_SETTINGS" />
+
 <h3 style="margin-bottom:8px;">Tax & FBR settings</h3>
 <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">
     These details are printed on every compliant invoice. Update them carefully — past invoices keep their snapshot of these values.

@@ -4,6 +4,8 @@
 @inject NavigationManager Nav
 @using System.Text.Json
 
+<PermissionGuard Code="RECEIVING_ORDERS" />
+
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
     <h3 style="margin:0;">Receiving orders</h3>
     <a class="btn btn-primary" href="/receiving-orders/new">+ New order</a>
