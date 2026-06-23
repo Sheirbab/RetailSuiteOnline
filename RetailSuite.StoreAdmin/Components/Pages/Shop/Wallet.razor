@@ -144,19 +144,31 @@
                 <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">Store credit</p>
                 @if (_creditTx == null || !_creditTx.Any())
                 {
-                    <p style="color:#9ca3af;font-size:13px;margin:0;">No store-credit activity yet.</p>
+                    <p style="color:#9ca3af;font-size:13px;margin:0;">
+                        No store-credit activity yet. Ask the store to add credit on your account —
+                        you can then apply it at checkout.
+                    </p>
                 }
                 else
                 {
-                    @foreach (var t in _creditTx)
+                    var running = _storeCredit;
+                    foreach (var t in _creditTx)
                     {
+                        var balanceAfter = running;
+                        running -= t.Amount; // walk backward to the balance prior to this txn
                         <div class="tx-row">
                             <div>
                                 <div>@t.Reason</div>
-                                <div style="font-size:11px;color:#6b7280;">@t.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm") · @t.Note</div>
+                                <div style="font-size:11px;color:#6b7280;">
+                                    @t.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")
+                                    @if (!string.IsNullOrEmpty(t.Note)) { <span> · @t.Note</span> }
+                                </div>
                             </div>
-                            <div class="@(t.Amount > 0 ? "tx-pos" : "tx-neg")">
-                                @(t.Amount > 0 ? "+" : "−") Rs @Math.Abs(t.Amount).ToString("N2")
+                            <div style="text-align:right;">
+                                <div class="@(t.Amount > 0 ? "tx-pos" : "tx-neg")">
+                                    @(t.Amount > 0 ? "+" : "−") Rs @Math.Abs(t.Amount).ToString("N2")
+                                </div>
+                                <div style="font-size:11px;color:#9ca3af;">Balance: Rs @balanceAfter.ToString("N2")</div>
                             </div>
                         </div>
                     }

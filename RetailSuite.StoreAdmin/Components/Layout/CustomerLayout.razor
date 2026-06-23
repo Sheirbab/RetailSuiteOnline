@@ -2,6 +2,10 @@
 @inject CartService Cart
 @inject NavigationManager Nav
 @inject AuthService Auth
+@inject HttpClient Http
+@inject IJSRuntime JS
+@using System.Text.Json
+@using System.Net.Http.Headers
 @implements IDisposable
 
 <div class="shop-layout">
@@ -11,7 +15,13 @@
             <nav class="shop-nav">
                 <a href="/shop">Shop</a>
                 <a href="/shop/track">Track order</a>
-                <a href="/wallet">💳 Wallet</a>
+                <a href="/wallet" class="wallet-link">
+                    💳 Wallet
+                    @if (_walletBalance.HasValue && _walletBalance.Value > 0)
+                    {
+                        <span class="wallet-balance">Rs @_walletBalance.Value.ToString("N0")</span>
+                    }
+                </a>
                 <a href="/cart" class="cart-link">
                     🛒 Cart
                     @if (Cart.TotalCount > 0)
@@ -32,7 +42,22 @@
     </footer>
 </div>
 
+<style>
+    .wallet-link { display:inline-flex; align-items:center; gap:6px; }
+    .wallet-balance {
+        background:#dcfce7;
+        color:#15803d;
+        font-weight:700;
+        font-size:11px;
+        padding:2px 8px;
+        border-radius:999px;
+    }
+</style>
+
 @code {
+    const string WALLET_TOKEN_KEY = "wallet_token";
+    decimal? _walletBalance;
+
     protected override void OnInitialized()
     {
         Cart.OnChange += StateHasChanged;
@@ -44,6 +69,27 @@
     {
         if (!firstRender) return;
         await Auth.InitializeAsync();
+        await TryLoadWalletBalanceAsync();
+    }
+
+    async Task TryLoadWalletBalanceAsync()
+    {
+        try
+        {
+            var t = await JS.InvokeAsync<string?>("localStorage.getItem", WALLET_TOKEN_KEY);
+            if (string.IsNullOrEmpty(t)) return;
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, "api/wallet/me");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", t);
+            var resp = await Http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            _walletBalance = doc.RootElement.GetProperty("data")
+                .GetProperty("balances").GetProperty("storeCredit").GetDecimal();
+            StateHasChanged();
+        }
+        catch { /* best-effort — chip just doesn't render */ }
     }
 
     public void Dispose()

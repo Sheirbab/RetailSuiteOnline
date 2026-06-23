@@ -1,10 +1,15 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Email;
 using RetailSuite.Infrastructure.Exceptions;
+using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Payments.Entities;
 using RetailSuite.Infrastructure.Modules.Payments.Services;
@@ -32,6 +37,8 @@ public class ShopController : ControllerBase
     private readonly ITenantContext _tenantContext;
     private readonly IInvoiceStampingService _invoiceStamper;
     private readonly IOrderPaymentService _paymentService;
+    private readonly IStoreCreditService _storeCredit;
+    private readonly IConfiguration _config;
 
     public ShopController(
         RetailDbContext db,
@@ -39,7 +46,9 @@ public class ShopController : ControllerBase
         IEmailService email,
         ITenantContext tenantContext,
         IInvoiceStampingService invoiceStamper,
-        IOrderPaymentService paymentService)
+        IOrderPaymentService paymentService,
+        IStoreCreditService storeCredit,
+        IConfiguration config)
     {
         _db = db;
         _accounting = accounting;
@@ -47,6 +56,8 @@ public class ShopController : ControllerBase
         _tenantContext = tenantContext;
         _invoiceStamper = invoiceStamper;
         _paymentService = paymentService;
+        _storeCredit   = storeCredit;
+        _config        = config;
     }
 
     // ============================================================
@@ -256,6 +267,22 @@ public class ShopController : ControllerBase
         if (!shipping.IsPickup && request.ShippingAddress == null)
             return BadRequest(ApiResponse<object>.Fail("Shipping address is required for delivery methods."));
 
+        // ---- 0. Wallet token (optional) — when present, the order belongs to a
+        //         verified customer who may redeem store credit at checkout.
+        Guid? walletCustomerId = null;
+        if (!string.IsNullOrWhiteSpace(request.WalletToken))
+        {
+            var decoded = DecodeWalletToken(request.WalletToken);
+            if (decoded == null)
+                return Unauthorized(ApiResponse<object>.Fail("Wallet session expired — sign in again."));
+            if (decoded.Value.TenantId != tenantId)
+                return BadRequest(ApiResponse<object>.Fail("Wallet token does not belong to this store."));
+            walletCustomerId = decoded.Value.CustomerId;
+        }
+
+        if (request.StoreCreditApply > 0 && walletCustomerId == null)
+            return BadRequest(ApiResponse<object>.Fail("Wallet sign-in required to redeem store credit."));
+
         using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
@@ -263,11 +290,13 @@ public class ShopController : ControllerBase
             var orderNumber = $"WEB-{DateTime.UtcNow.Ticks}";
             // Guest orders have no real CustomerId — fall back to the tenant's
             // auto-seeded Walk-in Customer row so the Order FK is satisfied.
-            var hasRealCustomer = request.CustomerId.HasValue
-                                && request.CustomerId.Value != Guid.Empty;
-            var customerId  = hasRealCustomer
-                ? request.CustomerId!.Value
-                : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId);
+            // A wallet-signed-in customer takes precedence over a guest body field.
+            var hasRealCustomer = walletCustomerId.HasValue
+                               || (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty);
+            var customerId  = walletCustomerId
+                ?? (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty
+                    ? request.CustomerId.Value
+                    : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId));
             var order = new Order(orderNumber, customerId);
             order.SetChannel("Online");
             order.SetGuestContact(request.GuestName.Trim(), request.GuestPhone.Trim(), request.GuestEmail?.Trim());
@@ -314,8 +343,26 @@ public class ShopController : ControllerBase
             await _invoiceStamper.StampAsync(order);
             _db.Orders.Add(order);
 
-            // ---- 5. Accounting — book inventory issue (COGS) only.
-            //         Revenue + cash get booked when payment is recorded later.
+            // ---- 4b. Wallet redemption — book the negative store-credit ledger entry
+            //          and stamp the redemption snapshot on the order. Throws if the
+            //          customer's balance is insufficient. Walk-in customers can never
+            //          reach this branch (gated above on walletCustomerId).
+            if (request.StoreCreditApply > 0 && walletCustomerId.HasValue)
+            {
+                // Cap the redemption at the order total so we never go negative on AR.
+                var maxApply  = order.TotalAmount;
+                var applying  = Math.Min(request.StoreCreditApply, maxApply);
+
+                await _storeCredit.RedeemAsync(
+                    tenantId, walletCustomerId.Value, applying,
+                    order.Id, null, $"Online sale {order.OrderNumber}");
+
+                order.ApplyStoreCreditRedemption(applying);
+            }
+
+            // ---- 5. Accounting — book inventory issue (COGS) + AR for the net amount the
+            //         customer still owes after wallet redemption. The redeemed portion
+            //         is tracked in StoreCreditTransactions; treated as discount in GL.
             // Self-heal: ensure baseline Chart of Accounts exists. Idempotent.
             await TenantDefaultsSeeder.SeedAsync(_db, tenantId);
 
@@ -327,20 +374,30 @@ public class ShopController : ControllerBase
                 throw new BusinessRuleException(
                     "Chart of Accounts is incomplete for this tenant (1100 / 5000 / 1200 / 4000).");
 
-            // Receivable booking for COD: DR AR (we're owed money) / CR Revenue.
-            //                              DR COGS / CR Inventory.
-            var revenue = order.TotalAmount - order.TaxAmount;
-            var journalLines = new List<(Guid, decimal, decimal)>
+            // Amount the customer still owes (= TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees).
+            // For online checkout this is what shows up in AR and on the payment QR / COD slip.
+            var amountDue   = order.AmountDueAfterRedemptions;
+            // Proportional split of tax across what the customer actually owes, mirroring POS.
+            var dueRatio    = order.TotalAmount > 0
+                ? Math.Min(1m, amountDue / order.TotalAmount)
+                : 0m;
+            var dueTax      = order.TaxAmount * dueRatio;
+            var dueRevenue  = amountDue - dueTax;
+
+            var journalLines = new List<(Guid, decimal, decimal)>();
+            if (amountDue > 0)
             {
-                (arAccount.Id,        order.TotalAmount, 0),
-                (revenueAccount.Id,   0, revenue),
-                (cogsAccount.Id,      totalCogs, 0),
-                (inventoryAccount.Id, 0, totalCogs)
-            };
-            if (order.TaxAmount > 0)
+                journalLines.Add((arAccount.Id,      amountDue, 0));
+                journalLines.Add((revenueAccount.Id, 0, dueRevenue));
+            }
+            // COGS posts even when redemption pays the entire order — inventory still moved.
+            journalLines.Add((cogsAccount.Id,      totalCogs, 0));
+            journalLines.Add((inventoryAccount.Id, 0, totalCogs));
+
+            if (dueTax > 0)
             {
                 var taxAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2000");
-                if (taxAccount != null) journalLines.Add((taxAccount.Id, 0, order.TaxAmount));
+                if (taxAccount != null) journalLines.Add((taxAccount.Id, 0, dueTax));
             }
 
             await _accounting.CreateJournalEntryAsync(
@@ -352,13 +409,14 @@ public class ShopController : ControllerBase
             await tx.CommitAsync();
 
             // ---- 5b. Payment intent for QR-based providers (EasyPaisa / JazzCash).
-            //         COD orders skip this — cash is collected on delivery, no QR needed.
+            //         Intent amount must reflect the net amount owed AFTER wallet redemption.
+            //         If wallet fully covers the order, no QR is needed.
             OrderPaymentIntent? paymentIntent = null;
             var providerLower = (order.PaymentMethodCode ?? "").ToLowerInvariant();
-            if (providerLower is "easypaisa" or "jazzcash")
+            if (providerLower is "easypaisa" or "jazzcash" && amountDue > 0)
             {
                 paymentIntent = await _paymentService.CreateIntentAsync(
-                    order.Id, order.PaymentMethodCode!, order.TotalAmount);
+                    order.Id, order.PaymentMethodCode!, amountDue);
             }
 
             // ---- 6. Email confirmation (best-effort)
@@ -394,7 +452,10 @@ public class ShopController : ControllerBase
                 ShippingMethod  = shipping.Name,
                 IsPickup        = shipping.IsPickup,
                 ExpectedDelivery = shipping.Eta,
-                // Present only for QR-based providers — null otherwise.
+                StoreCreditRedeemed = order.StoreCreditRedeemed,
+                AmountDue       = amountDue,
+                // Present only for QR-based providers AND when the customer still owes
+                // something after wallet redemption.
                 Payment = paymentIntent == null ? null : new
                 {
                     IntentId  = paymentIntent.Id,
@@ -474,6 +535,52 @@ public class ShopController : ControllerBase
             }
         }));
     }
+
+    // ============================================================
+    //  Wallet-token helper
+    // ============================================================
+    /// <summary>
+    /// Validates a wallet JWT issued by /api/wallet/otp/verify and returns the
+    /// embedded customer + tenant ids. Returns null when the token is invalid,
+    /// expired, or missing required claims.
+    /// </summary>
+    private (Guid CustomerId, Guid TenantId)? DecodeWalletToken(string token)
+    {
+        try
+        {
+            var jwt = _config.GetSection("Jwt");
+            var keyBytes = Encoding.UTF8.GetBytes(jwt["Key"] ?? "");
+            var parameters = new TokenValidationParameters
+            {
+                ValidateIssuer           = true,
+                ValidIssuer              = jwt["Issuer"],
+                ValidateAudience         = true,
+                ValidAudience            = jwt["Audience"],
+                ValidateLifetime         = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey         = new SymmetricSecurityKey(keyBytes),
+                ClockSkew                = TimeSpan.FromSeconds(30)
+            };
+
+            var handler = new JwtSecurityTokenHandler();
+            var principal = handler.ValidateToken(token, parameters, out _);
+
+            var customerClaim = principal.FindFirst("customer_id")?.Value;
+            var tenantClaim   = principal.FindFirst("tenantId")?.Value;
+            if (!Guid.TryParse(customerClaim, out var cid)) return null;
+            if (!Guid.TryParse(tenantClaim,   out var tid)) return null;
+
+            // Must be a wallet token (not a staff JWT).
+            var role = principal.FindFirst(ClaimTypes.Role)?.Value;
+            if (role != "WalletCustomer") return null;
+
+            return (cid, tid);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 // ----- Storefront DTOs ----------------------------------------------
@@ -497,6 +604,15 @@ public class GuestCheckoutRequest
 
     /// <summary>"COD" | "BankTransfer" | future: "EasyPaisa", "JazzCash", "Stripe".</summary>
     public string PaymentMethod { get; set; } = "COD";
+
+    /// <summary>
+    /// Optional wallet JWT (issued by /api/wallet/otp/verify). When present the order
+    /// is linked to the verified customer and store credit / loyalty may be redeemed.
+    /// </summary>
+    public string? WalletToken { get; set; }
+
+    /// <summary>Amount of store credit to redeem against this sale. Requires WalletToken.</summary>
+    public decimal StoreCreditApply { get; set; }
 }
 
 public class GuestCheckoutLine

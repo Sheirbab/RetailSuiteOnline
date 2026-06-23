@@ -4,7 +4,9 @@
 @inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
+@inject IJSRuntime JS
 @using System.Text.Json
+@using System.Net.Http.Headers
 @implements IDisposable
 
 @if (_confirmed)
@@ -14,6 +16,13 @@
         <h2>Order placed!</h2>
         <p style="color:#6b7280;margin-bottom:4px;">Order number:</p>
         <p style="font-size:22px;font-family:monospace;font-weight:700;margin:0 0 16px;">@_orderNumber</p>
+
+        @if (_creditRedeemed > 0)
+        {
+            <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#15803d;font-size:14px;">
+                💳 Rs @_creditRedeemed.ToString("N2") store credit applied.
+            </div>
+        }
 
         @if (_paymentQrUrl != null && _paymentStatus != "Paid")
         {
@@ -201,6 +210,35 @@ else
                 </label>
             </div>
 
+            <!-- Wallet credit (only shown when the customer is signed into the wallet) -->
+            @if (_walletBalance > 0)
+            {
+                <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,#ecfeff 0%, #f0fdf4 100%);border:1px solid #a7f3d0;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <strong>💳 Use store credit</strong>
+                        <span style="font-size:12px;color:#0f766e;">Available: Rs @_walletBalance.ToString("N2")</span>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;">
+                        <input type="checkbox" @bind="_applyCredit" />
+                        Apply store credit on this order
+                    </label>
+                    @if (_applyCredit)
+                    {
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <span style="font-size:12px;color:#6b7280;">Apply Rs</span>
+                            <input type="number" step="1" min="0"
+                                   max="@MaxApplyableCredit"
+                                   @bind="_creditToApply"
+                                   style="width:120px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+                            <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="ApplyAllCredit">
+                                Apply max
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+
             <!-- Totals + place -->
             <div class="card" style="margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;">
@@ -210,10 +248,16 @@ else
                     <span>Shipping</span>
                     <span>@(_shippingFee == 0 ? "Free" : $"Rs {_shippingFee:N2}")</span>
                 </div>
+                @if (_applyCredit && _creditToApply > 0)
+                {
+                    <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;color:#15803d;">
+                        <span>Store credit</span><span>− Rs @_creditToApply.ToString("N2")</span>
+                    </div>
+                }
                 <hr style="margin:6px 0;" />
                 <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;">
                     <span>Total</span>
-                    <span>Rs @((Cart.TotalAmount + _shippingFee).ToString("N2"))</span>
+                    <span>Rs @((Math.Max(0, Cart.TotalAmount + _shippingFee - (_applyCredit ? _creditToApply : 0))).ToString("N2"))</span>
                 </div>
                 <button class="btn btn-primary full" style="margin-top:14px;"
                         disabled="@_placing"
@@ -235,6 +279,7 @@ else
     string? _email;
     string? _eta;
     bool   _isPickup;
+    decimal _creditRedeemed;
 
     // Form state
     string _name = string.Empty;
@@ -261,10 +306,57 @@ else
     string  _paymentStatus = "Pending";
     System.Threading.Timer? _statusPoller;
 
+    // Wallet state (loaded from localStorage on first render)
+    const string WALLET_TOKEN_KEY = "wallet_token";
+    string? _walletToken;
+    decimal _walletBalance;
+    string  _walletPhone = "";
+    bool    _applyCredit;
+    decimal _creditToApply;
+
+    decimal MaxApplyableCredit =>
+        Math.Min(_walletBalance, Cart.TotalAmount + _shippingFee);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await LoadShippingMethods();
+        if (firstRender)
+        {
+            await LoadShippingMethods();
+            await LoadWalletAsync();
+        }
     }
+
+    async Task LoadWalletAsync()
+    {
+        try
+        {
+            var t = await JS.InvokeAsync<string?>("localStorage.getItem", WALLET_TOKEN_KEY);
+            if (string.IsNullOrEmpty(t)) return;
+
+            _walletToken = t;
+            // Probe /api/wallet/me for the live balance using this token.
+            using var req = new HttpRequestMessage(HttpMethod.Get, "api/wallet/me");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", t);
+            var resp = await Http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) { _walletToken = null; return; }
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var d = doc.RootElement.GetProperty("data");
+            _walletBalance = d.GetProperty("balances").GetProperty("storeCredit").GetDecimal();
+            _walletPhone   = d.GetProperty("customer").GetProperty("phone").GetString() ?? "";
+
+            // Prefill name + phone fields from the wallet customer so they don't retype.
+            if (string.IsNullOrWhiteSpace(_name))
+                _name = d.GetProperty("customer").GetProperty("fullName").GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(_phone))
+                _phone = _walletPhone;
+
+            StateHasChanged();
+        }
+        catch { /* wallet probe is best-effort */ }
+    }
+
+    void ApplyAllCredit() => _creditToApply = MaxApplyableCredit;
 
     async Task LoadShippingMethods()
     {
@@ -336,6 +428,10 @@ else
         _placing = true;
         StateHasChanged();
 
+        var creditApply = (_applyCredit && _creditToApply > 0) ? _creditToApply : 0m;
+        // Don't redeem more than the customer actually has, or more than the order is worth.
+        if (creditApply > MaxApplyableCredit) creditApply = MaxApplyableCredit;
+
         var body = new
         {
             guestName  = _name,
@@ -348,7 +444,9 @@ else
             }).ToList(),
             shippingMethodCode = _selectedShippingCode,
             shippingAddress    = _requireAddress ? _address : null,
-            paymentMethod      = _paymentMethod
+            paymentMethod      = _paymentMethod,
+            walletToken        = _walletToken,
+            storeCreditApply   = creditApply
         };
 
         try
@@ -368,6 +466,8 @@ else
             _orderNumber = d.GetProperty("orderNumber").GetString();
             _isPickup    = d.TryGetProperty("isPickup", out var ip) && ip.GetBoolean();
             _eta         = d.TryGetProperty("expectedDelivery", out var et) ? et.GetString() : null;
+            _creditRedeemed = d.TryGetProperty("storeCreditRedeemed", out var sc) && sc.ValueKind == JsonValueKind.Number
+                              ? sc.GetDecimal() : 0m;
 
             // QR-based payment? Stash the intent details and start polling for status.
             if (d.TryGetProperty("payment", out var pay) && pay.ValueKind == JsonValueKind.Object)
