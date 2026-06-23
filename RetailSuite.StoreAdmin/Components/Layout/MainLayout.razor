@@ -64,6 +64,12 @@ else
                     <NavLink href="/barcodes/print">Print barcodes</NavLink>
                 }
 
+                @if (Auth.Can("REPORTS"))
+                {
+                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Reports</span>
+                    <NavLink href="/reports">Sales &amp; inventory reports</NavLink>
+                }
+
                 @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
                   || Auth.Can("SUBSCRIPTION") || Auth.IsAdmin)
                 {

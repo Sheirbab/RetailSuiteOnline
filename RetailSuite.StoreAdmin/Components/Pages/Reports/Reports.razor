@@ -1,0 +1,276 @@
+@page "/reports"
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="REPORTS" />
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Reports</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Sales trends, top sellers, inventory health and supplier dues — for the period below.
+        </p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <label style="font-size:12px;color:#6b7280;">From</label>
+        <input type="date" @bind="From" @bind:event="onchange" style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <label style="font-size:12px;color:#6b7280;">To</label>
+        <input type="date" @bind="To" @bind:event="onchange" style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <button class="btn btn-primary" @onclick="LoadAll" style="padding:6px 14px;">Refresh</button>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    @foreach (var t in _tabs)
+    {
+        <button class="@(t == _activeTab ? "tab active" : "tab")" @onclick="() => _activeTab = t">@t</button>
+    }
+</div>
+
+<div class="report-pane">
+@switch (_activeTab)
+{
+    case "Overview":
+        if (_sales == null) { <p>Loading…</p> }
+        else
+        {
+            <div class="kpi-grid">
+                <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">@_sales!.TotalOrders</div></div>
+                <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">Rs @_sales!.TotalRevenue.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Tax collected</div><div class="kpi-value">Rs @_sales!.TotalTax.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Avg order</div><div class="kpi-value">Rs @_sales!.AverageOrderValue.ToString("N0")</div></div>
+            </div>
+
+            <h4 style="margin-top:24px;">Daily revenue</h4>
+            <div class="bar-chart">
+                @{
+                    var maxRev = _sales!.DailyBreakdown.Count == 0 ? 1m : _sales.DailyBreakdown.Max(d => d.Revenue);
+                }
+                @foreach (var d in _sales!.DailyBreakdown)
+                {
+                    var pct = maxRev == 0 ? 0 : (int)(d.Revenue / maxRev * 100);
+                    <div class="bar-row" title="@d.Date — Rs @d.Revenue.ToString("N0") (@d.Count orders)">
+                        <span class="bar-label">@d.Date</span>
+                        <div class="bar-track"><div class="bar-fill" style="width:@(pct)%;"></div></div>
+                        <span class="bar-value">Rs @d.Revenue.ToString("N0")</span>
+                    </div>
+                }
+                @if (_sales!.DailyBreakdown.Count == 0)
+                {
+                    <p style="color:#9ca3af;">No completed sales in this range.</p>
+                }
+            </div>
+        }
+        break;
+
+    case "Top products":
+        if (_top == null) { <p>Loading…</p> }
+        else
+        {
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <button class="@(_topBy == "revenue" ? "chip active" : "chip")" @onclick='() => SetTopBy("revenue")'>By revenue</button>
+                <button class="@(_topBy == "qty" ? "chip active" : "chip")" @onclick='() => SetTopBy("qty")'>By units</button>
+                <button class="btn btn-secondary" style="margin-left:auto;padding:6px 10px;" @onclick="ExportTopProducts">Export CSV</button>
+            </div>
+            <table class="report-table">
+                <thead><tr><th>#</th><th>Product</th><th class="num">Units</th><th class="num">Revenue</th><th class="num">Cost</th><th class="num">Gross profit</th></tr></thead>
+                <tbody>
+                @{ var idx = 0; }
+                @foreach (var r in _top!.Items)
+                {
+                    idx++;
+                    <tr>
+                        <td>@idx</td>
+                        <td>@r.ProductName</td>
+                        <td class="num">@r.UnitsSold</td>
+                        <td class="num">Rs @r.Revenue.ToString("N0")</td>
+                        <td class="num">Rs @r.Cost.ToString("N0")</td>
+                        <td class="num">Rs @r.GrossProfit.ToString("N0")</td>
+                    </tr>
+                }
+                @if (_top!.Items.Count == 0)
+                {
+                    <tr><td colspan="6" style="color:#9ca3af;">No sales in this range.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "Low stock":
+        if (_lowStock == null) { <p>Loading…</p> }
+        else
+        {
+            <p style="color:#6b7280;">@_lowStock!.Count item(s) at or below the reorder threshold.</p>
+            <table class="report-table">
+                <thead><tr><th>SKU</th><th>Product</th><th class="num">In stock</th><th class="num">Threshold</th><th class="num">Shortfall</th></tr></thead>
+                <tbody>
+                @foreach (var r in _lowStock!.Items)
+                {
+                    <tr>
+                        <td>@r.Sku</td>
+                        <td>@r.ProductName</td>
+                        <td class="num">@r.CurrentStock</td>
+                        <td class="num">@r.Threshold</td>
+                        <td class="num" style="color:#b91c1c;font-weight:600;">@r.Shortfall</td>
+                    </tr>
+                }
+                @if (_lowStock!.Items.Count == 0)
+                {
+                    <tr><td colspan="5" style="color:#9ca3af;">Nothing low. Stock looks healthy.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "Payment mix":
+        if (_paymentMix == null) { <p>Loading…</p> }
+        else
+        {
+            <table class="report-table">
+                <thead><tr><th>Method</th><th class="num">Orders</th><th class="num">Total</th><th class="num">Share</th></tr></thead>
+                <tbody>
+                @foreach (var r in _paymentMix!.Mix)
+                {
+                    <tr>
+                        <td>@r.Method</td>
+                        <td class="num">@r.Count</td>
+                        <td class="num">Rs @r.Total.ToString("N0")</td>
+                        <td class="num">@((r.Share * 100).ToString("0.0"))%</td>
+                    </tr>
+                }
+                @if (_paymentMix!.Mix.Count == 0)
+                {
+                    <tr><td colspan="4" style="color:#9ca3af;">No sales in this range.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "Tax summary":
+        if (_taxSummary == null) { <p>Loading…</p> }
+        else
+        {
+            <div class="kpi-grid">
+                <div class="kpi"><div class="kpi-label">Net sales</div><div class="kpi-value">Rs @_taxSummary!.NetSales.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Total tax</div><div class="kpi-value">Rs @_taxSummary!.TotalTax.ToString("N0")</div></div>
+            </div>
+            <table class="report-table" style="margin-top:18px;">
+                <thead><tr><th>Tax rate</th><th class="num">Net sales</th><th class="num">Tax due</th></tr></thead>
+                <tbody>
+                @foreach (var r in _taxSummary!.ByTaxRate)
+                {
+                    <tr>
+                        <td>@r.RatePct</td>
+                        <td class="num">Rs @r.NetSales.ToString("N0")</td>
+                        <td class="num">Rs @r.TaxDue.ToString("N0")</td>
+                    </tr>
+                }
+                @if (_taxSummary!.ByTaxRate.Count == 0)
+                {
+                    <tr><td colspan="3" style="color:#9ca3af;">No tax to report in this range.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "Categories":
+        if (_categories == null) { <p>Loading…</p> }
+        else
+        {
+            <table class="report-table">
+                <thead><tr><th>Category</th><th class="num">Units</th><th class="num">Revenue</th></tr></thead>
+                <tbody>
+                @foreach (var r in _categories!.Categories)
+                {
+                    <tr>
+                        <td>@r.CategoryName</td>
+                        <td class="num">@r.UnitsSold</td>
+                        <td class="num">Rs @r.Revenue.ToString("N0")</td>
+                    </tr>
+                }
+                @if (_categories!.Categories.Count == 0)
+                {
+                    <tr><td colspan="3" style="color:#9ca3af;">No category sales yet.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "Supplier dues":
+        if (_supplierDues == null) { <p>Loading…</p> }
+        else
+        {
+            <p style="color:#6b7280;font-size:13px;">Closed receiving orders by supplier — cross-reference with payments you've made offline.</p>
+            <table class="report-table">
+                <thead><tr><th>Supplier</th><th class="num">Closed POs</th><th class="num">Received total</th></tr></thead>
+                <tbody>
+                @foreach (var r in _supplierDues!.Suppliers)
+                {
+                    <tr>
+                        <td>@r.SupplierName</td>
+                        <td class="num">@r.OrderCount</td>
+                        <td class="num">Rs @r.ReceivedTotal.ToString("N0")</td>
+                    </tr>
+                }
+                @if (_supplierDues!.Suppliers.Count == 0)
+                {
+                    <tr><td colspan="3" style="color:#9ca3af;">No closed receiving orders.</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+        break;
+
+    case "P&L":
+        if (_pl == null) { <p>Loading…</p> }
+        else
+        {
+            <div class="kpi-grid">
+                <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">Rs @_pl!.Revenue.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">COGS</div><div class="kpi-value">Rs @_pl!.COGS.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Gross profit</div><div class="kpi-value">Rs @_pl!.GrossProfit.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Tax payable</div><div class="kpi-value">Rs @_pl!.TaxPayable.ToString("N0")</div></div>
+                <div class="kpi"><div class="kpi-label">Net profit</div><div class="kpi-value">Rs @_pl!.NetProfit.ToString("N0")</div></div>
+            </div>
+        }
+        break;
+}
+</div>
+
+<style>
+    .tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid #e5e7eb; margin-bottom:18px; }
+    .tab { background:transparent; border:none; padding:8px 14px; font-size:13px; color:#6b7280; cursor:pointer; border-bottom:2px solid transparent; font-weight:500; }
+    .tab:hover { color:#111827; }
+    .tab.active { color:#2563eb; border-bottom-color:#2563eb; }
+
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; }
+    .kpi { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; }
+    .kpi-label { font-size:12px; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; }
+    .kpi-value { font-size:22px; font-weight:700; color:#0f172a; margin-top:4px; }
+
+    .report-table { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; }
+    .report-table th, .report-table td { padding:8px 12px; border-bottom:1px solid #f1f5f9; text-align:left; }
+    .report-table th { background:#f9fafb; color:#374151; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+    .report-table td.num, .report-table th.num { text-align:right; font-variant-numeric:tabular-nums; }
+
+    .bar-chart { display:flex; flex-direction:column; gap:6px; }
+    .bar-row   { display:grid; grid-template-columns:90px 1fr 110px; gap:8px; align-items:center; font-size:12px; }
+    .bar-label { color:#6b7280; }
+    .bar-track { background:#f1f5f9; border-radius:4px; height:14px; overflow:hidden; }
+    .bar-fill  { background:linear-gradient(90deg,#3b82f6,#2563eb); height:100%; transition:width 0.3s; }
+    .bar-value { text-align:right; color:#0f172a; font-variant-numeric:tabular-nums; }
+
+    .chip { background:#f1f5f9; border:1px solid transparent; border-radius:999px; padding:6px 14px; font-size:13px; cursor:pointer; }
+    .chip.active { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; }
+</style>
+
+
+@* Code-behind in Reports.razor.cs *@

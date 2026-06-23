@@ -44,3 +44,20 @@ window.printReceipt = function () {
     // Delay close to allow print dialog to appear
     setTimeout(() => w.close(), 2000);
 };
+
+// ---------------------------------------------------------------------------
+// CSV download helper — used by Reports pages to export tables
+// ---------------------------------------------------------------------------
+window.downloadCsv = function (filename, csv) {
+    if (!csv) return;
+    // BOM so Excel opens with UTF-8 correctly
+    const blob = new Blob(["﻿" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename || 'export.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+};

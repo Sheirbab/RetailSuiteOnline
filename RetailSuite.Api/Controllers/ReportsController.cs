@@ -147,6 +147,285 @@ public class ReportsController : ControllerBase
         }));
     }
 
+    // -----------------------------------------------------------------------
+    // GET /api/reports/top-products?from=&to=&take=10&by=revenue|qty
+    // -----------------------------------------------------------------------
+    [HttpGet("top-products")]
+    public async Task<IActionResult> TopProducts(
+        DateTime? from,
+        DateTime? to,
+        int take = 10,
+        string by = "revenue")
+    {
+        if (take <= 0 || take > 100) take = 10;
+        var fromDate = from ?? DateTime.UtcNow.Date.AddMonths(-1);
+        var toDate   = (to ?? DateTime.UtcNow.Date).AddDays(1);
+
+        var lines = await _db.OrderItems
+            .Join(_db.Orders,
+                i => i.OrderId,
+                o => o.Id,
+                (i, o) => new { i, o })
+            .Where(x => x.o.Status == OrderStatus.Completed
+                     && x.o.CreatedAt >= fromDate
+                     && x.o.CreatedAt <  toDate)
+            .Join(_db.ProductVariants,
+                x => x.i.ProductVariantId,
+                v => v.Id,
+                (x, v) => new { x.i, v })
+            .Join(_db.Products,
+                x => x.v.ProductId,
+                p => p.Id,
+                (x, p) => new
+                {
+                    ProductId   = p.Id,
+                    ProductName = p.Name,
+                    Sku         = x.i.SKU,
+                    Quantity    = x.i.Quantity,
+                    LineNet     = (x.i.UnitPrice * x.i.Quantity) - x.i.LineDiscountAmount,
+                    CostBasis   = x.v.AverageCost * x.i.Quantity
+                })
+            .ToListAsync();
+
+        var grouped = lines
+            .GroupBy(l => new { l.ProductId, l.ProductName })
+            .Select(g => new
+            {
+                ProductId   = g.Key.ProductId,
+                ProductName = g.Key.ProductName,
+                UnitsSold   = g.Sum(l => l.Quantity),
+                Revenue     = g.Sum(l => l.LineNet),
+                Cost        = g.Sum(l => l.CostBasis),
+                GrossProfit = g.Sum(l => l.LineNet) - g.Sum(l => l.CostBasis)
+            });
+
+        grouped = by.Equals("qty", StringComparison.OrdinalIgnoreCase)
+            ? grouped.OrderByDescending(g => g.UnitsSold)
+            : grouped.OrderByDescending(g => g.Revenue);
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            From  = fromDate.ToString("yyyy-MM-dd"),
+            To    = toDate.AddDays(-1).ToString("yyyy-MM-dd"),
+            By    = by,
+            Items = grouped.Take(take).ToList()
+        }));
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/reports/low-stock
+    // -----------------------------------------------------------------------
+    [HttpGet("low-stock")]
+    public async Task<IActionResult> LowStock()
+    {
+        var rows = await _db.InventoryItems
+            .Where(inv => inv.CurrentStock <= inv.LowStockThreshold)
+            .Join(_db.ProductVariants,
+                inv => inv.ProductVariantId,
+                v   => v.Id,
+                (inv, v) => new { inv, v })
+            .Join(_db.Products,
+                x => x.v.ProductId,
+                p => p.Id,
+                (x, p) => new
+                {
+                    ProductId    = p.Id,
+                    ProductName  = p.Name,
+                    Sku          = x.v.SKU,
+                    CurrentStock = x.inv.CurrentStock,
+                    Threshold    = x.inv.LowStockThreshold,
+                    Shortfall    = x.inv.LowStockThreshold - x.inv.CurrentStock,
+                    LocationId   = x.inv.LocationId
+                })
+            .OrderByDescending(r => r.Shortfall)
+            .ToListAsync();
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            Count = rows.Count,
+            Items = rows
+        }));
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/reports/supplier-dues
+    // Outstanding amount per supplier = sum of received but unpaid receiving
+    // orders (ExpectedTotal − ReceivedTotal counted on closed orders).
+    // -----------------------------------------------------------------------
+    [HttpGet("supplier-dues")]
+    public async Task<IActionResult> SupplierDues()
+    {
+        var rows = await _db.ReceivingOrders
+            .Where(ro => ro.Status == RetailSuite.Infrastructure.Modules.Receiving.Entities.ReceivingStatus.Closed)
+            .Join(_db.Suppliers,
+                ro => ro.SupplierId,
+                s  => s.Id,
+                (ro, s) => new { ro, s })
+            .GroupBy(x => new { SupplierId = x.s.Id, SupplierName = x.s.Name })
+            .Select(g => new
+            {
+                SupplierId   = g.Key.SupplierId,
+                SupplierName = g.Key.SupplierName,
+                OrderCount   = g.Count(),
+                ReceivedTotal = g.Sum(x => x.ro.ReceivedTotal)
+            })
+            .OrderByDescending(r => r.ReceivedTotal)
+            .ToListAsync();
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            Suppliers = rows
+        }));
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/reports/tax-summary?from=&to=
+    // FBR-friendly: net sales, tax collected, broken down by tax rate.
+    // -----------------------------------------------------------------------
+    [HttpGet("tax-summary")]
+    public async Task<IActionResult> TaxSummary(DateTime? from, DateTime? to)
+    {
+        var fromDate = from ?? DateTime.UtcNow.Date.AddMonths(-1);
+        var toDate   = (to ?? DateTime.UtcNow.Date).AddDays(1);
+
+        var lines = await _db.OrderItems
+            .Join(_db.Orders,
+                i => i.OrderId,
+                o => o.Id,
+                (i, o) => new { i, o })
+            .Where(x => x.o.Status == OrderStatus.Completed
+                     && x.o.CreatedAt >= fromDate
+                     && x.o.CreatedAt <  toDate)
+            .Select(x => new
+            {
+                x.i.TaxRate,
+                LineNet = (x.i.UnitPrice * x.i.Quantity) - x.i.LineDiscountAmount
+            })
+            .ToListAsync();
+
+        var byRate = lines
+            .GroupBy(l => l.TaxRate)
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                Rate    = g.Key,
+                RatePct = $"{g.Key * 100:0.##}%",
+                NetSales = g.Sum(l => l.LineNet),
+                TaxDue   = g.Sum(l => l.LineNet * l.TaxRate)
+            })
+            .ToList();
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            From      = fromDate.ToString("yyyy-MM-dd"),
+            To        = toDate.AddDays(-1).ToString("yyyy-MM-dd"),
+            NetSales  = byRate.Sum(b => b.NetSales),
+            TotalTax  = byRate.Sum(b => b.TaxDue),
+            ByTaxRate = byRate
+        }));
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/reports/payment-mix?from=&to=
+    // Split of sales by payment method code on the order header.
+    // -----------------------------------------------------------------------
+    [HttpGet("payment-mix")]
+    public async Task<IActionResult> PaymentMix(DateTime? from, DateTime? to)
+    {
+        var fromDate = from ?? DateTime.UtcNow.Date.AddMonths(-1);
+        var toDate   = (to ?? DateTime.UtcNow.Date).AddDays(1);
+
+        var rows = await _db.Orders
+            .Where(o => o.Status == OrderStatus.Completed
+                     && o.CreatedAt >= fromDate
+                     && o.CreatedAt <  toDate)
+            .GroupBy(o => o.PaymentMethodCode ?? "Unknown")
+            .Select(g => new
+            {
+                Method = g.Key,
+                Count  = g.Count(),
+                Total  = g.Sum(o => o.TotalAmount)
+            })
+            .OrderByDescending(r => r.Total)
+            .ToListAsync();
+
+        var grand = rows.Sum(r => r.Total);
+        var withShare = rows.Select(r => new
+        {
+            r.Method,
+            r.Count,
+            r.Total,
+            Share = grand > 0 ? (double)(r.Total / grand) : 0
+        }).ToList();
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            From  = fromDate.ToString("yyyy-MM-dd"),
+            To    = toDate.AddDays(-1).ToString("yyyy-MM-dd"),
+            Total = grand,
+            Mix   = withShare
+        }));
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/reports/category-sales?from=&to=
+    // Revenue per category (a product may be in multiple — revenue is double
+    // counted on purpose so the chart matches "X% of sales touched category").
+    // -----------------------------------------------------------------------
+    [HttpGet("category-sales")]
+    public async Task<IActionResult> CategorySales(DateTime? from, DateTime? to)
+    {
+        var fromDate = from ?? DateTime.UtcNow.Date.AddMonths(-1);
+        var toDate   = (to ?? DateTime.UtcNow.Date).AddDays(1);
+
+        var lines = await _db.OrderItems
+            .Join(_db.Orders,
+                i => i.OrderId,
+                o => o.Id,
+                (i, o) => new { i, o })
+            .Where(x => x.o.Status == OrderStatus.Completed
+                     && x.o.CreatedAt >= fromDate
+                     && x.o.CreatedAt <  toDate)
+            .Join(_db.ProductVariants,
+                x => x.i.ProductVariantId,
+                v => v.Id,
+                (x, v) => new { x.i, v })
+            .Join(_db.ProductCategories,
+                x => x.v.ProductId,
+                pc => pc.ProductId,
+                (x, pc) => new { x.i, pc })
+            .Join(_db.Categories,
+                x => x.pc.CategoryId,
+                c => c.Id,
+                (x, c) => new
+                {
+                    CategoryId   = c.Id,
+                    CategoryName = c.Name,
+                    LineNet      = (x.i.UnitPrice * x.i.Quantity) - x.i.LineDiscountAmount,
+                    Quantity     = x.i.Quantity
+                })
+            .ToListAsync();
+
+        var grouped = lines
+            .GroupBy(l => new { l.CategoryId, l.CategoryName })
+            .Select(g => new
+            {
+                CategoryId   = g.Key.CategoryId,
+                CategoryName = g.Key.CategoryName,
+                UnitsSold    = g.Sum(l => l.Quantity),
+                Revenue      = g.Sum(l => l.LineNet)
+            })
+            .OrderByDescending(r => r.Revenue)
+            .ToList();
+
+        return Ok(new ApiResponse<object>(true, null, new
+        {
+            From       = fromDate.ToString("yyyy-MM-dd"),
+            To         = toDate.AddDays(-1).ToString("yyyy-MM-dd"),
+            Categories = grouped
+        }));
+    }
+
     // ============================================================
     //  X-report — running totals during the cashier's day
     //  (typically printed mid-shift to spot-check the drawer)
