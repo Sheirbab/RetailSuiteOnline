@@ -124,29 +124,85 @@ else
         case "Variants":
             <p style="color:#6b7280;font-size:13px;margin-top:0;">
                 Variants are the SKUs customers actually buy (e.g. "Red Size M"). Set price, cost,
-                stock and tax per variant. Use the Attributes tab to define Size / Color first.
+                stock and tax per variant. Define attribute values first under
+                <a href="/settings/attributes">Settings → Attributes</a>.
             </p>
+
+            <!-- ============ Generate from attributes wizard ============ -->
+            @if (_attributesCatalog != null && _attributesCatalog.Any())
+            {
+                <div class="card" style="margin-bottom:14px;background:#eff6ff;border:1px solid #bfdbfe;">
+                    <h5 style="margin-top:0;color:#1d4ed8;">⚡ Generate variants from attributes</h5>
+                    <p style="color:#475569;font-size:12px;margin:0 0 10px;">
+                        Pick values from each attribute — we'll create one SKU per combination.
+                        Existing SKUs are skipped (safe to re-run).
+                    </p>
+
+                    @foreach (var attr in _attributesCatalog)
+                    {
+                        <div style="margin-bottom:10px;">
+                            <div class="form-label">@attr.Name</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                                @foreach (var val in attr.Values)
+                                {
+                                    var picked = _generatorPicks.TryGetValue(attr.Id, out var set) && set.Contains(val.Id);
+                                    <button class="@(picked ? "chip picked" : "chip")"
+                                            @onclick="() => ToggleGeneratorPick(attr.Id, val.Id)">
+                                        @val.Value
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="form-grid" style="margin-top:10px;">
+                        <div><label class="form-label">Base SKU prefix</label>
+                            <input class="input full" @bind="_genSkuPrefix" placeholder="(defaults to product slug)" /></div>
+                        <div><label class="form-label">Base price</label>
+                            <input class="input full" type="number" step="0.01" @bind="_genPrice" /></div>
+                        <div><label class="form-label">Base cost</label>
+                            <input class="input full" type="number" step="0.01" @bind="_genCost" /></div>
+                        <div><label class="form-label">Tax rate (e.g. 0.17)</label>
+                            <input class="input full" type="number" step="0.01" @bind="_genTax" /></div>
+                    </div>
+
+                    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+                        <button class="btn btn-primary" disabled="@_generating" @onclick="GenerateVariants">
+                            @(_generating ? "Generating…" : $"Generate {CountGeneratorCombos()} variant(s)")
+                        </button>
+                        <span style="color:#64748b;font-size:12px;">
+                            Result: @_lastGenResult
+                        </span>
+                    </div>
+                </div>
+            }
             @if (_form.Variants.Count == 0)
             {
-                <p style="color:#9ca3af;">No variants yet. Add one below.</p>
+                <p style="color:#9ca3af;">No variants yet. Add one below or generate from attributes.</p>
             }
             else
             {
                 <table class="table">
                     <thead>
-                        <tr><th>SKU</th><th>Barcode</th><th class="num">Price</th><th class="num">Cost</th><th class="num">Stock</th><th class="num">Tax %</th><th></th></tr>
+                        <tr><th>SKU</th><th>Barcode</th><th class="num">Price</th><th class="num">Cost</th><th class="num">Stock</th><th class="num">Tax %</th><th>Active</th><th></th></tr>
                     </thead>
                     <tbody>
                         @foreach (var v in _form.Variants)
                         {
-                            <tr>
-                                <td><strong>@v.Sku</strong></td>
-                                <td style="font-family:monospace;font-size:12px;color:#6b7280;">@v.Barcode</td>
-                                <td class="num">Rs @v.Price.ToString("N2")</td>
-                                <td class="num">Rs @v.CostPrice.ToString("N2")</td>
+                            <tr class="@(v.IsActive ? "" : "row-hidden")">
+                                <td><input class="input" style="width:140px;font-family:monospace;" @bind="v.Sku" /></td>
+                                <td><input class="input" style="width:120px;font-family:monospace;" @bind="v.Barcode" /></td>
+                                <td class="num"><input class="input" style="width:90px;text-align:right;" type="number" step="0.01" @bind="v.Price" /></td>
+                                <td class="num"><input class="input" style="width:90px;text-align:right;" type="number" step="0.01" @bind="v.CostPrice" /></td>
                                 <td class="num">@v.StockQuantity</td>
-                                <td class="num">@((v.TaxRate * 100).ToString("0.##"))%</td>
-                                <td></td>
+                                <td class="num"><input class="input" style="width:70px;text-align:right;" type="number" step="0.01" @bind="v.TaxRate" /></td>
+                                <td><input type="checkbox" @bind="v.IsActive" /></td>
+                                <td style="text-align:right;white-space:nowrap;">
+                                    <button class="btn" style="padding:2px 10px;font-size:12px;"
+                                            @onclick="() => SaveVariant(v)">Save</button>
+                                    <button class="btn btn-danger" style="padding:2px 10px;font-size:12px;"
+                                            @onclick="() => DeleteVariant(v)">×</button>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -231,11 +287,14 @@ else
     .chip { background:#f1f5f9; border:1px solid #e2e8f0; padding:4px 10px; border-radius:6px;
             cursor:pointer; font-size:13px; }
     .chip:hover { background:#e2e8f0; }
+    .chip.picked { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; font-weight:600; }
 
     .cat-picker { display:flex; flex-direction:column; gap:6px; max-width:480px; }
     .cat-line   { display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer; padding:4px 0; }
 
     .table .num { text-align:right; }
+    .row-hidden { opacity:0.55; }
+    .row-hidden td { background:#fafafa; }
 </style>
 
 @code {
@@ -251,13 +310,111 @@ else
     NewVariantForm _newVariant = new();
     bool _saving;
 
+    // Variant generator state
+    List<AttributeCatalog>? _attributesCatalog;
+    Dictionary<Guid, HashSet<Guid>> _generatorPicks = new();
+    string  _genSkuPrefix = "";
+    decimal _genPrice;
+    decimal _genCost;
+    decimal _genTax;
+    bool    _generating;
+    string  _lastGenResult = "";
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            await Task.WhenAll(LoadProduct(), LoadBrands(), LoadCategories());
+            await Task.WhenAll(LoadProduct(), LoadBrands(), LoadCategories(), LoadAttributes());
             StateHasChanged();
         }
+    }
+
+    async Task LoadAttributes()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/attributes");
+            using var doc = JsonDocument.Parse(json);
+            _attributesCatalog = new();
+            foreach (var a in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                var ac = new AttributeCatalog
+                {
+                    Id     = a.GetProperty("id").GetGuid(),
+                    Name   = a.GetProperty("name").GetString() ?? "",
+                    Values = new()
+                };
+                foreach (var v in a.GetProperty("values").EnumerateArray())
+                {
+                    ac.Values.Add(new AttributeValueSlim
+                    {
+                        Id    = v.GetProperty("id").GetGuid(),
+                        Value = v.GetProperty("value").GetString() ?? ""
+                    });
+                }
+                _attributesCatalog.Add(ac);
+            }
+        }
+        catch { /* non-fatal — wizard hides itself */ }
+    }
+
+    void ToggleGeneratorPick(Guid attrId, Guid valueId)
+    {
+        if (!_generatorPicks.TryGetValue(attrId, out var set))
+        {
+            set = new HashSet<Guid>();
+            _generatorPicks[attrId] = set;
+        }
+        if (set.Contains(valueId)) set.Remove(valueId);
+        else                       set.Add(valueId);
+    }
+
+    int CountGeneratorCombos()
+    {
+        var dims = _generatorPicks.Values.Where(s => s.Count > 0).ToList();
+        if (dims.Count == 0) return 0;
+        return dims.Aggregate(1, (acc, s) => acc * s.Count);
+    }
+
+    async Task GenerateVariants()
+    {
+        var selections = _generatorPicks
+            .Where(kv => kv.Value.Count > 0)
+            .Select(kv => new { attributeId = kv.Key, valueIds = kv.Value.ToList() })
+            .ToList();
+
+        if (selections.Count == 0)
+        {
+            Toast.Show("Pick at least one value from one attribute.");
+            return;
+        }
+
+        _generating = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/products/{Id}/variants/generate", new
+            {
+                attributeSelections = selections,
+                skuPrefix = string.IsNullOrWhiteSpace(_genSkuPrefix) ? null : _genSkuPrefix,
+                price     = _genPrice,
+                costPrice = _genCost,
+                taxRate   = _genTax
+            });
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Generate failed: {body}");
+                return;
+            }
+            using var doc = JsonDocument.Parse(body);
+            var d = doc.RootElement.GetProperty("data");
+            var created = d.GetProperty("created").GetInt32();
+            var skipped = d.GetProperty("skipped").GetInt32();
+            _lastGenResult = $"Created {created}, skipped {skipped}.";
+            Toast.Show(_lastGenResult);
+            await LoadProduct();
+        }
+        finally { _generating = false; }
     }
 
     async Task LoadProduct()
@@ -294,7 +451,8 @@ else
                         Price         = v.GetProperty("price").GetDecimal(),
                         CostPrice     = v.TryGetProperty("costPrice", out var cp) ? cp.GetDecimal() : 0m,
                         StockQuantity = v.TryGetProperty("stockQuantity", out var st) ? st.GetInt32() : 0,
-                        TaxRate       = v.TryGetProperty("taxRate", out var tx) ? tx.GetDecimal() : 0m
+                        TaxRate       = v.TryGetProperty("taxRate", out var tx) ? tx.GetDecimal() : 0m,
+                        IsActive      = !v.TryGetProperty("isActive", out var va) || va.GetBoolean()
                     });
                 }
             }
@@ -437,6 +595,38 @@ else
         Toast.Show("Categories saved.");
     }
 
+    async Task SaveVariant(VariantRow v)
+    {
+        var resp = await Http.PutAsJsonAsync($"api/products/variants/{v.Id}", new
+        {
+            sku       = v.Sku,
+            price     = v.Price,
+            costPrice = v.CostPrice,
+            taxRate   = v.TaxRate,
+            barcode   = v.Barcode,
+            isActive  = v.IsActive
+        });
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        Toast.Show("Variant saved.");
+    }
+
+    async Task DeleteVariant(VariantRow v)
+    {
+        var resp = await Http.DeleteAsync($"api/products/variants/{v.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Delete failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        await LoadProduct();
+        StateHasChanged();
+        Toast.Show("Variant removed.");
+    }
+
     async Task AddVariant()
     {
         if (_form == null) return;
@@ -485,6 +675,7 @@ else
         public decimal CostPrice     { get; set; }
         public int     StockQuantity { get; set; }
         public decimal TaxRate       { get; set; }
+        public bool    IsActive      { get; set; } = true;
     }
 
     class NewVariantForm
@@ -506,5 +697,18 @@ else
         public Guid    Id   { get; set; }
         public string  Name { get; set; } = "";
         public List<CategoryNode> Children { get; set; } = new();
+    }
+
+    class AttributeCatalog
+    {
+        public Guid   Id     { get; set; }
+        public string Name   { get; set; } = "";
+        public List<AttributeValueSlim> Values { get; set; } = new();
+    }
+
+    class AttributeValueSlim
+    {
+        public Guid   Id    { get; set; }
+        public string Value { get; set; } = "";
     }
 }

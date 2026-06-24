@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RetailSuite.Infrastructure;
+using RetailSuite.Infrastructure.Modules.Catalog.Services;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Modules.Catalog.Dtos;
 using RetailSuite.Modules.Catalog.Entities;
@@ -19,17 +20,20 @@ public class ProductsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly ICurrentUserContext _currentUser;
     private readonly IEntitlementService _entitlements;
+    private readonly IHtmlSanitizerService _htmlSanitizer;
 
     public ProductsController(
         RetailDbContext db,
         IWebHostEnvironment env,
         ICurrentUserContext currentUser,
-        IEntitlementService entitlements)
+        IEntitlementService entitlements,
+        IHtmlSanitizerService htmlSanitizer)
     {
         _db = db;
         _env = env;
         _currentUser = currentUser;
         _entitlements = entitlements;
+        _htmlSanitizer = htmlSanitizer;
     }
 
     // GET /api/products?page=1&pageSize=20
@@ -160,7 +164,11 @@ public class ProductsController : ControllerBase
             : Product.Slugify(request.Slug);
         slug = await EnsureUniqueSlugAsync(slug, excludeProductId: null);
 
-        var product = new Product(request.Name, request.Description, slug);
+        // Sanitize the HTML description before we store it — strips scripts, event
+        // handlers, disallowed schemes; keeps formatting (p, h2, strong, lists, …).
+        var safeDescription = _htmlSanitizer.Sanitize(request.Description);
+
+        var product = new Product(request.Name, safeDescription, slug);
         if (request.ShortDescription != null) product.SetShortDescription(request.ShortDescription);
         if (request.BrandId.HasValue)         product.SetBrand(request.BrandId);
         if (!string.IsNullOrWhiteSpace(request.UnitOfMeasure)) product.SetUnitOfMeasure(request.UnitOfMeasure);
@@ -182,7 +190,8 @@ public class ProductsController : ControllerBase
         if (product == null)
             return NotFound(ApiResponse<object>.Fail("Product not found."));
 
-        product.Update(request.Name, request.Description);
+        var safeDescription = _htmlSanitizer.Sanitize(request.Description);
+        product.Update(request.Name, safeDescription);
         if (request.ShortDescription != null) product.SetShortDescription(request.ShortDescription);
         if (request.BrandId.HasValue)         product.SetBrand(request.BrandId);
         if (!string.IsNullOrWhiteSpace(request.UnitOfMeasure)) product.SetUnitOfMeasure(request.UnitOfMeasure);
@@ -358,6 +367,195 @@ public class ProductsController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new ApiResponse<object>(true, "Category removed.", null));
     }
+
+    // PUT /api/products/variants/{variantId} — update price/cost/tax/sku
+    [HttpPut("variants/{variantId:guid}")]
+    public async Task<IActionResult> UpdateVariant(Guid variantId, [FromBody] UpdateVariantRequest request)
+    {
+        var v = await _db.ProductVariants.FirstOrDefaultAsync(x => x.Id == variantId);
+        if (v == null) return NotFound(ApiResponse<object>.Fail("Variant not found."));
+
+        if (!string.IsNullOrWhiteSpace(request.Sku)
+            && !string.Equals(request.Sku, v.SKU, StringComparison.OrdinalIgnoreCase))
+        {
+            // Uniqueness check before hitting the index.
+            if (await _db.ProductVariants.AnyAsync(x => x.SKU == request.Sku && x.Id != v.Id))
+                return Conflict(ApiResponse<object>.Fail($"SKU '{request.Sku}' is already in use."));
+            v.SetSku(request.Sku);
+            // Default the barcode to follow the SKU if it was tracking it before.
+            if (string.IsNullOrEmpty(v.Barcode) || v.Barcode == v.SKU)
+                v.SetBarcode(request.Sku);
+        }
+        if (request.Price     .HasValue) v.UpdatePrice(request.Price.Value);
+        if (request.CostPrice .HasValue) v.SetCostPrice(request.CostPrice.Value);
+        if (request.TaxRate   .HasValue) v.SetTaxRate(request.TaxRate.Value);
+        if (request.IsActive  .HasValue)
+        {
+            if (request.IsActive.Value) v.Activate(); else v.Deactivate();
+        }
+        if (request.Barcode != null) v.SetBarcode(request.Barcode);
+
+        await _db.SaveChangesAsync();
+        return Ok(new ApiResponse<object>(true, "Variant updated.",
+            new { v.Id, v.SKU, v.Price, v.CostPrice, v.TaxRate, v.IsActive, v.Barcode }));
+    }
+
+    // DELETE /api/products/variants/{variantId} — soft (deactivate); refuses if active orders use it
+    [HttpDelete("variants/{variantId:guid}")]
+    public async Task<IActionResult> DeleteVariant(Guid variantId)
+    {
+        var v = await _db.ProductVariants.FirstOrDefaultAsync(x => x.Id == variantId);
+        if (v == null) return NotFound(ApiResponse<object>.Fail("Variant not found."));
+
+        // If it's been sold, soft delete only (history references this SKU).
+        var hasSales = await _db.OrderItems.AnyAsync(o => o.ProductVariantId == variantId);
+        if (hasSales)
+        {
+            v.Deactivate();
+            await _db.SaveChangesAsync();
+            return Ok(new ApiResponse<object>(true, "Variant hidden (has historical sales).",
+                new { Deactivated = variantId }));
+        }
+
+        // Otherwise wipe its attribute links + the variant itself.
+        var links = await _db.VariantAttributeValues.Where(x => x.ProductVariantId == variantId).ToListAsync();
+        _db.VariantAttributeValues.RemoveRange(links);
+        _db.ProductVariants.Remove(v);
+        await _db.SaveChangesAsync();
+        return Ok(new ApiResponse<object>(true, "Variant removed.", new { Deleted = variantId }));
+    }
+
+    // ================================================================
+    // POST /api/products/{id}/variants/generate
+    //
+    // Cross-product of selected attribute-value sets into variants.
+    // Pass selections grouped by attribute (e.g. Size: [M,L], Color: [Red,Blue])
+    // → produces M-Red, M-Blue, L-Red, L-Blue. SKUs already in use are skipped
+    // so the call is idempotent: running again only fills gaps.
+    // ================================================================
+    [HttpPost("{id:guid}/variants/generate")]
+    public async Task<IActionResult> GenerateVariants(Guid id, [FromBody] GenerateVariantsRequest request)
+    {
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null) return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        if (request.AttributeSelections == null || request.AttributeSelections.Count == 0)
+            return BadRequest(ApiResponse<object>.Fail("Pick at least one attribute with at least one value."));
+
+        // Validate every value belongs to its claimed attribute, and pull labels for SKU naming.
+        var allValueIds = request.AttributeSelections.SelectMany(s => s.ValueIds).Distinct().ToList();
+        var valueRows = await _db.ProductAttributeValues
+            .Where(v => allValueIds.Contains(v.Id))
+            .Select(v => new { v.Id, v.AttributeId, v.Value })
+            .ToListAsync();
+        var valueLookup = valueRows.ToDictionary(v => v.Id);
+
+        // Build per-attribute lists of (id, label) in caller order.
+        var dimensions = new List<List<(Guid Id, string Label)>>();
+        foreach (var sel in request.AttributeSelections)
+        {
+            var row = sel.ValueIds
+                .Where(vid => valueLookup.ContainsKey(vid)
+                           && valueLookup[vid].AttributeId == sel.AttributeId)
+                .Select(vid => (vid, valueLookup[vid].Value))
+                .ToList();
+            if (row.Count == 0)
+                return BadRequest(ApiResponse<object>.Fail("One of the attribute selections is empty or invalid."));
+            dimensions.Add(row);
+        }
+
+        // Cartesian product across dimensions.
+        IEnumerable<List<(Guid Id, string Label)>> Cartesian(List<List<(Guid, string)>> dims)
+        {
+            IEnumerable<List<(Guid, string)>> acc = new[] { new List<(Guid, string)>() };
+            foreach (var dim in dims)
+                acc = acc.SelectMany(prefix => dim.Select(d => prefix.Concat(new[] { d }).ToList()));
+            return acc;
+        }
+
+        var skuPrefix = (request.SkuPrefix ?? product.Slug ?? "p").Trim();
+        if (string.IsNullOrEmpty(skuPrefix)) skuPrefix = "p";
+        var basePrice = request.Price ?? 0m;
+        var baseCost  = request.CostPrice ?? 0m;
+        var taxRate   = request.TaxRate ?? 0m;
+
+        int created = 0, skipped = 0;
+        foreach (var combo in Cartesian(dimensions))
+        {
+            var suffix = string.Join("-", combo.Select(c => Slugify(c.Label).ToUpperInvariant()));
+            var sku    = string.IsNullOrEmpty(suffix) ? skuPrefix : $"{skuPrefix}-{suffix}";
+
+            // Idempotent: existing SKU on this product (or any product in the tenant)? Skip.
+            if (await _db.ProductVariants.AnyAsync(v => v.SKU == sku))
+            {
+                skipped++;
+                continue;
+            }
+
+            var variant = new ProductVariant(id, sku, basePrice, baseCost);
+            if (taxRate > 0) variant.SetTaxRate(taxRate);
+            variant.SetBarcode(sku);
+
+            product.AddVariant(variant);
+            _db.ProductVariants.Add(variant);
+            await _db.SaveChangesAsync(); // need variant.Id for the link rows below
+
+            foreach (var (valueId, _) in combo)
+            {
+                _db.VariantAttributeValues.Add(new VariantAttributeValue
+                {
+                    ProductVariantId        = variant.Id,
+                    ProductAttributeValueId = valueId
+                });
+            }
+            created++;
+        }
+        await _db.SaveChangesAsync();
+
+        return Ok(new ApiResponse<object>(true,
+            $"Generated {created} variant(s); {skipped} already existed.",
+            new { Created = created, Skipped = skipped }));
+
+        // Local slug helper — strips non-alnum, lowercases.
+        static string Slugify(string s)
+        {
+            var sb = new System.Text.StringBuilder(s.Length);
+            foreach (var ch in s.ToLowerInvariant())
+                if (ch is >= 'a' and <= 'z' or >= '0' and <= '9') sb.Append(ch);
+            return sb.ToString();
+        }
+    }
+}
+
+public class GenerateVariantsRequest
+{
+    /// <summary>Picks per attribute. Cartesian product across all groups produces the variant set.</summary>
+    public List<AttributeSelection> AttributeSelections { get; set; } = new();
+    /// <summary>Optional override for the SKU base (defaults to product slug).</summary>
+    public string?  SkuPrefix { get; set; }
+    /// <summary>Default price applied to every generated variant; admin can adjust per row.</summary>
+    public decimal? Price     { get; set; }
+    public decimal? CostPrice { get; set; }
+    /// <summary>Tax rate as fraction (e.g. 0.17 for 17%).</summary>
+    public decimal? TaxRate   { get; set; }
+}
+
+public class AttributeSelection
+{
+    public Guid       AttributeId { get; set; }
+    public List<Guid> ValueIds    { get; set; } = new();
+}
+
+public class UpdateVariantRequest
+{
+    public string?   Sku       { get; set; }
+    public decimal?  Price     { get; set; }
+    public decimal?  CostPrice { get; set; }
+    public decimal?  TaxRate   { get; set; }
+    public string?   Barcode   { get; set; }
+    public bool?     IsActive  { get; set; }
 }
 
 public class ReplaceCategoriesRequest
