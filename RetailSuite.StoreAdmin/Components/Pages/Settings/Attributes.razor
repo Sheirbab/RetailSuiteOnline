@@ -1,0 +1,234 @@
+@page "/settings/attributes"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ATTRIBUTES" />
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Attributes</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Define the variant-shaping attributes (e.g. <em>Size, Color, Material</em>).
+            Then on a product's Variants tab, pick attribute values to generate the matching SKUs.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreateAttr">+ Add attribute</button>
+</div>
+
+@if (_attributes == null)
+{
+    <div class="spinner"></div>
+}
+else if (!_attributes.Any())
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No attributes yet. Common starting points: Size, Color.</p>
+    </div>
+}
+else
+{
+    @foreach (var a in _attributes)
+    {
+        <div class="card" style="margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div>
+                    <strong style="font-size:16px;">@a.Name</strong>
+                    <span style="color:#6b7280;font-size:12px;margin-left:8px;">
+                        @a.Values.Count value@(a.Values.Count == 1 ? "" : "s")
+                    </span>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn" style="padding:4px 10px;font-size:12px;"
+                            @onclick="() => RenameAttr(a)">Rename</button>
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;"
+                            @onclick="() => DeleteAttr(a)">Delete</button>
+                </div>
+            </div>
+
+            <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;">
+                @foreach (var v in a.Values)
+                {
+                    <div class="attr-val-chip">
+                        <span>@v.Value</span>
+                        @if (v.UsageCount > 0)
+                        {
+                            <span class="usage" title="In use by @v.UsageCount variant(s)">×@v.UsageCount</span>
+                        }
+                        <button class="x" title="Delete value" @onclick="() => DeleteValue(v)">×</button>
+                    </div>
+                }
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input class="input" style="width:140px;padding:6px 8px;font-size:13px;"
+                           placeholder="New value"
+                           @bind="_newValueInputs[a.Id]" />
+                    <button class="btn" style="padding:4px 10px;font-size:12px;"
+                            @onclick="() => AddValue(a.Id)">Add</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (_attrEditor != null)
+{
+    <div class="modal-backdrop" @onclick="CloseEditor"></div>
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <h4 style="margin-top:0;">@(_attrEditor.IsNew ? "Add attribute" : "Rename attribute")</h4>
+        <label class="form-label">Name *</label>
+        <input class="input full" @bind="_attrEditor.Name" placeholder="e.g. Size, Color, Material" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+            <button class="btn" @onclick="CloseEditor">Cancel</button>
+            <button class="btn btn-primary" @onclick="SaveAttr">Save</button>
+        </div>
+    </div>
+}
+
+<style>
+    .form-label  { display:block; font-size:12px; color:#6b7280; text-transform:uppercase;
+                   letter-spacing:.04em; margin:10px 0 4px; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9998; }
+    .modal-card     { position:fixed; top:15%; left:50%; transform:translateX(-50%);
+                      background:#fff; border-radius:12px; padding:24px;
+                      width:min(92vw, 420px); z-index:9999; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .attr-val-chip   { display:inline-flex; align-items:center; gap:6px;
+                       background:#f1f5f9; padding:4px 4px 4px 12px; border-radius:999px;
+                       font-size:13px; color:#1f2937; }
+    .attr-val-chip .usage { font-size:11px; color:#6b7280; }
+    .attr-val-chip .x     { background:transparent; border:none; color:#9ca3af; font-size:14px;
+                            cursor:pointer; padding:0 6px; }
+    .attr-val-chip .x:hover { color:#b91c1c; }
+</style>
+
+@code {
+    List<AttrRow>? _attributes;
+    Dictionary<Guid, string> _newValueInputs = new();
+    AttrEditor? _attrEditor;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/attributes");
+            using var doc = JsonDocument.Parse(json);
+            _attributes = new();
+            foreach (var a in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                var row = new AttrRow
+                {
+                    Id     = a.GetProperty("id").GetGuid(),
+                    Name   = a.GetProperty("name").GetString() ?? "",
+                    Values = new()
+                };
+                foreach (var v in a.GetProperty("values").EnumerateArray())
+                {
+                    row.Values.Add(new ValueRow
+                    {
+                        Id         = v.GetProperty("id").GetGuid(),
+                        AttrId     = row.Id,
+                        Value      = v.GetProperty("value").GetString() ?? "",
+                        UsageCount = v.TryGetProperty("usageCount", out var u) ? u.GetInt32() : 0
+                    });
+                }
+                _attributes.Add(row);
+                if (!_newValueInputs.ContainsKey(row.Id))
+                    _newValueInputs[row.Id] = "";
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    void OpenCreateAttr() => _attrEditor = new AttrEditor { IsNew = true };
+    void RenameAttr(AttrRow a) => _attrEditor = new AttrEditor { Id = a.Id, Name = a.Name };
+    void CloseEditor() => _attrEditor = null;
+
+    async Task SaveAttr()
+    {
+        if (_attrEditor == null) return;
+        if (string.IsNullOrWhiteSpace(_attrEditor.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+        var body = new { name = _attrEditor.Name };
+        var resp = _attrEditor.IsNew
+            ? await Http.PostAsJsonAsync("api/attributes", body)
+            : await Http.PutAsJsonAsync($"api/attributes/{_attrEditor.Id}", body);
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        _attrEditor = null;
+        await Load();
+        Toast.Show("Saved.");
+    }
+
+    async Task DeleteAttr(AttrRow a)
+    {
+        var resp = await Http.DeleteAsync($"api/attributes/{a.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Delete failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        await Load();
+        Toast.Show("Deleted.");
+    }
+
+    async Task AddValue(Guid attrId)
+    {
+        if (!_newValueInputs.TryGetValue(attrId, out var v) || string.IsNullOrWhiteSpace(v))
+        {
+            Toast.Show("Value cannot be empty.");
+            return;
+        }
+        var resp = await Http.PostAsJsonAsync($"api/attributes/{attrId}/values", new { value = v });
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Add value failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        _newValueInputs[attrId] = "";
+        await Load();
+    }
+
+    async Task DeleteValue(ValueRow v)
+    {
+        var resp = await Http.DeleteAsync($"api/attributes/values/{v.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Delete value failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        await Load();
+    }
+
+    class AttrRow
+    {
+        public Guid   Id     { get; set; }
+        public string Name   { get; set; } = "";
+        public List<ValueRow> Values { get; set; } = new();
+    }
+
+    class ValueRow
+    {
+        public Guid   Id         { get; set; }
+        public Guid   AttrId     { get; set; }
+        public string Value      { get; set; } = "";
+        public int    UsageCount { get; set; }
+    }
+
+    class AttrEditor
+    {
+        public bool   IsNew { get; set; }
+        public Guid?  Id    { get; set; }
+        public string Name  { get; set; } = "";
+    }
+}
