@@ -15,6 +15,7 @@ using RetailSuite.Infrastructure.Modules.Customer.Services;
 using RetailSuite.Infrastructure.Modules.Customer.Entities;
 using RetailSuite.Infrastructure.Modules.Identity;
 using RetailSuite.Infrastructure.Modules.Barcodes.Services;
+using RetailSuite.Infrastructure.Modules.Catalog.Services;
 using RetailSuite.Infrastructure.Modules.Identity.Services;
 using RetailSuite.Infrastructure.Modules.Images.Services;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
@@ -97,6 +98,9 @@ try
 
     // Barcode generation (ZXing + SkiaSharp under the hood).
     builder.Services.AddSingleton<IBarcodeService, BarcodeService>();
+
+    // HTML sanitizer for product descriptions — stateless, register as singleton.
+    builder.Services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
 
     // Suppliers + Receiving (purchase orders).
     builder.Services.AddScoped<IReceivingOrderNumberGenerator, ReceivingOrderNumberGenerator>();
