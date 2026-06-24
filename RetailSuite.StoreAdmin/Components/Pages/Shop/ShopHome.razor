@@ -10,22 +10,36 @@
 <div style="display:flex;gap:20px;align-items:flex-start;">
 
     <!-- Categories sidebar -->
-    <div class="card" style="width:220px;flex-shrink:0;">
+    <div class="card" style="width:240px;flex-shrink:0;">
         <h4 style="margin-bottom:10px;">Categories</h4>
 
-        <div style="padding:6px 8px;border-radius:4px;cursor:pointer;background:@(_selectedCategoryId == null ? "#e0e7ff" : "transparent");"
+        <div class="cat-row @(_selectedCategoryId == null ? "selected" : "")"
              @onclick="() => SelectCategory(null)">
+            <span class="cat-twisty"></span>
             <strong>All products</strong>
         </div>
 
-        @if (_categories != null)
+        @if (_tree != null)
         {
-            @foreach (var c in _categories)
+            @foreach (var row in FlattenVisibleTree())
             {
-                <div style="padding:6px 8px;border-radius:4px;cursor:pointer;background:@(_selectedCategoryId == c.Id ? "#e0e7ff" : "transparent");margin-top:2px;display:flex;justify-content:space-between;"
+                var c     = row.Node;
+                var depth = row.Depth;
+                var open  = _openCats.Contains(c.Id);
+                <div class="cat-row @(_selectedCategoryId == c.Id ? "selected" : "")"
+                     style="padding-left:@(8 + depth * 14)px;"
                      @onclick="() => SelectCategory(c.Id)">
-                    <span>@c.Name</span>
-                    <span style="color:#9ca3af;font-size:12px;">(@c.ProductCount)</span>
+                    @if (c.Children.Any())
+                    {
+                        <span class="cat-twisty" @onclick:stopPropagation="true"
+                              @onclick="() => ToggleCat(c.Id)">@(open ? "▾" : "▸")</span>
+                    }
+                    else
+                    {
+                        <span class="cat-twisty"></span>
+                    }
+                    <span style="flex:1;">@c.Name</span>
+                    <span style="color:#9ca3af;font-size:12px;">(@c.TotalCount)</span>
                 </div>
             }
         }
@@ -33,6 +47,17 @@
             <a class="btn full" href="/shop/track" style="font-size:13px;text-align:center;">Track an order ↗</a>
         </div>
     </div>
+
+    <style>
+        .cat-row {
+            display:flex; align-items:center; gap:6px;
+            padding:6px 8px; border-radius:4px; cursor:pointer; margin-top:2px;
+            font-size:14px;
+        }
+        .cat-row:hover    { background:#f1f5f9; }
+        .cat-row.selected { background:#e0e7ff; color:#1d4ed8; font-weight:600; }
+        .cat-twisty       { width:14px; display:inline-flex; align-items:center; justify-content:center; color:#9ca3af; font-size:11px; }
+    </style>
 
     <!-- Product grid -->
     <div style="flex:1;">
@@ -66,7 +91,15 @@
                             <div class="product-img-placeholder">📦</div>
                         }
                         <div class="product-info">
+                            @if (!string.IsNullOrEmpty(p.BrandName))
+                            {
+                                <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">@p.BrandName</div>
+                            }
                             <div class="product-name">@p.Name</div>
+                            @if (!string.IsNullOrEmpty(p.ShortDescription))
+                            {
+                                <div style="font-size:12px;color:#6b7280;line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">@p.ShortDescription</div>
+                            }
                             <div class="product-price">
                                 @if (p.MinPrice > 0)
                                 {
@@ -95,7 +128,8 @@
     string _search = string.Empty;
     Guid? _selectedCategoryId;
     string? _selectedCategoryName;
-    List<CategoryRow>? _categories;
+    List<CategoryNode>? _tree;
+    HashSet<Guid> _openCats = new();
     List<ProductRow> _products = new();
 
     // Debounce timer for search-as-you-type.
@@ -114,22 +148,62 @@
         {
             var json = await Http.GetStringAsync("api/shop/categories");
             using var doc = JsonDocument.Parse(json);
-            _categories = new();
-            if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
+            var data = doc.RootElement.GetProperty("data");
+
+            // New shape: { Flat: [...], Tree: [...] }. Read Tree.
+            if (data.TryGetProperty("tree", out var treeEl))
             {
-                foreach (var e in d.EnumerateArray())
-                {
-                    _categories.Add(new CategoryRow
-                    {
-                        Id           = e.GetProperty("id").GetGuid(),
-                        Name         = e.GetProperty("name").GetString() ?? "",
-                        ProductCount = e.TryGetProperty("productCount", out var pc) ? pc.GetInt32() : 0
-                    });
-                }
+                _tree = ParseTree(treeEl);
+                // Expand top-level only — leave deeper levels collapsed.
+                _openCats.Clear();
+                if (_tree != null)
+                    foreach (var n in _tree) _openCats.Add(n.Id);
             }
             StateHasChanged();
         }
         catch { /* non-fatal */ }
+    }
+
+    List<CategoryNode> ParseTree(JsonElement el)
+    {
+        var list = new List<CategoryNode>();
+        if (el.ValueKind != JsonValueKind.Array) return list;
+        foreach (var e in el.EnumerateArray())
+        {
+            var n = new CategoryNode
+            {
+                Id           = e.GetProperty("id").GetGuid(),
+                Name         = e.GetProperty("name").GetString() ?? "",
+                Slug         = e.TryGetProperty("slug", out var sl) ? sl.GetString() ?? "" : "",
+                ProductCount = e.TryGetProperty("productCount", out var pc) ? pc.GetInt32() : 0,
+                TotalCount   = e.TryGetProperty("productCountWithChildren", out var tc) ? tc.GetInt32() : 0
+            };
+            if (e.TryGetProperty("children", out var kids))
+                n.Children = ParseTree(kids);
+            list.Add(n);
+        }
+        return list;
+    }
+
+    void ToggleCat(Guid id)
+    {
+        if (_openCats.Contains(id)) _openCats.Remove(id);
+        else _openCats.Add(id);
+    }
+
+    IEnumerable<(CategoryNode Node, int Depth)> FlattenVisibleTree()
+    {
+        if (_tree == null) yield break;
+        foreach (var r in WalkVisible(_tree, 0)) yield return r;
+    }
+    IEnumerable<(CategoryNode, int)> WalkVisible(IEnumerable<CategoryNode> nodes, int depth)
+    {
+        foreach (var n in nodes)
+        {
+            yield return (n, depth);
+            if (_openCats.Contains(n.Id))
+                foreach (var c in WalkVisible(n.Children, depth + 1)) yield return c;
+        }
     }
 
     async Task LoadProducts()
@@ -153,10 +227,12 @@
                 {
                     _products.Add(new ProductRow
                     {
-                        Id       = p.GetProperty("id").GetGuid(),
-                        Name     = p.GetProperty("name").GetString() ?? "",
-                        ImageUrl = p.TryGetProperty("imageUrl", out var img) ? img.GetString() : null,
-                        MinPrice = p.TryGetProperty("minPrice", out var mp) ? mp.GetDecimal() : 0m
+                        Id               = p.GetProperty("id").GetGuid(),
+                        Name             = p.GetProperty("name").GetString() ?? "",
+                        ShortDescription = p.TryGetProperty("shortDescription", out var sd) && sd.ValueKind == JsonValueKind.String ? sd.GetString() : null,
+                        BrandName        = p.TryGetProperty("brandName",        out var bn) && bn.ValueKind == JsonValueKind.String ? bn.GetString() : null,
+                        ImageUrl         = p.TryGetProperty("imageUrl",         out var img) ? img.GetString() : null,
+                        MinPrice         = p.TryGetProperty("minPrice",         out var mp) ? mp.GetDecimal() : 0m
                     });
                 }
             }
@@ -170,8 +246,20 @@
     async Task SelectCategory(Guid? id)
     {
         _selectedCategoryId   = id;
-        _selectedCategoryName = id == null ? null : _categories?.FirstOrDefault(c => c.Id == id)?.Name;
+        _selectedCategoryName = id == null ? null : FindNode(_tree, id.Value)?.Name;
         await LoadProducts();
+    }
+
+    static CategoryNode? FindNode(IEnumerable<CategoryNode>? nodes, Guid id)
+    {
+        if (nodes == null) return null;
+        foreach (var n in nodes)
+        {
+            if (n.Id == id) return n;
+            var hit = FindNode(n.Children, id);
+            if (hit != null) return hit;
+        }
+        return null;
     }
 
     void OnSearchChanged(ChangeEventArgs e)
@@ -191,18 +279,24 @@
 
     void GoToProduct(Guid id) => Nav.NavigateTo($"/shop/product/{id}");
 
-    class CategoryRow
+    public class CategoryNode
     {
-        public Guid    Id { get; set; }
-        public string  Name { get; set; } = "";
+        public Guid    Id           { get; set; }
+        public string  Name         { get; set; } = "";
+        public string  Slug         { get; set; } = "";
         public int     ProductCount { get; set; }
+        /// <summary>Aggregated count including descendants — what the sidebar displays.</summary>
+        public int     TotalCount   { get; set; }
+        public List<CategoryNode> Children { get; set; } = new();
     }
 
     class ProductRow
     {
-        public Guid    Id { get; set; }
-        public string  Name { get; set; } = "";
-        public string? ImageUrl { get; set; }
-        public decimal MinPrice { get; set; }
+        public Guid    Id               { get; set; }
+        public string  Name             { get; set; } = "";
+        public string? ShortDescription { get; set; }
+        public string? BrandName        { get; set; }
+        public string? ImageUrl         { get; set; }
+        public decimal MinPrice         { get; set; }
     }
 }

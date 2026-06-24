@@ -1,4 +1,5 @@
 @page "/shop/product/{Id:guid}"
+@page "/shop/p/{Slug}"
 @layout CustomerLayout
 @inject HttpClient Http
 @inject CartService Cart
@@ -66,6 +67,29 @@
         .pd-name     { font-size:22px; }
         .pd-price    { font-size:24px; }
     }
+
+    .pd-crumb        { font-size:13px; color:#6b7280; margin-bottom:8px; display:flex; gap:6px; align-items:center; }
+    .pd-crumb a      { color:#6366f1; text-decoration:none; }
+    .pd-crumb a:hover{ text-decoration:underline; }
+
+    .pd-brand        { display:flex; align-items:center; gap:8px; margin-bottom:12px; color:#475569; font-size:14px; }
+    .pd-brand img    { width:28px; height:28px; object-fit:contain; border-radius:4px; background:#fff; border:1px solid #e5e7eb; }
+
+    .pd-html         { line-height:1.65; color:#1f2937; font-size:15px; }
+    .pd-html h2      { margin-top:1.2em; font-size:1.4em; }
+    .pd-html h3      { margin-top:1em; font-size:1.15em; }
+    .pd-html ul, .pd-html ol { padding-left:1.4em; }
+    .pd-html p       { margin: 0 0 0.8em; }
+    .pd-html a       { color:#2563eb; }
+
+    .pd-spec-table        { border-collapse:collapse; width:100%; max-width:560px; }
+    .pd-spec-table th, .pd-spec-table td {
+        padding:8px 12px; border-bottom:1px solid #f1f5f9; text-align:left; vertical-align:top;
+    }
+    .pd-spec-table th     { width:30%; color:#6b7280; font-weight:500; background:#fafafa; }
+
+    .pd-tags        { display:flex; flex-wrap:wrap; gap:6px; }
+    .pd-tag         { background:#f1f5f9; color:#475569; font-size:12px; padding:3px 10px; border-radius:999px; }
 </style>
 
 @if (_loading)
@@ -110,11 +134,35 @@ else
 
         <!-- ============================ Info ============================ -->
         <div class="pd-info">
+
+            <!-- Breadcrumb (primary category) -->
+            @if (_product.Categories.Any())
+            {
+                var primary = _product.Categories.First();
+                <nav class="pd-crumb">
+                    <a href="/shop">Shop</a> <span>›</span>
+                    <a href="@($"/shop?categoryId={primary.Id}")">@primary.Name</a>
+                </nav>
+            }
+
             <h2 class="pd-name">@_product.Name</h2>
 
-            @if (!string.IsNullOrEmpty(_product.Description))
+            <!-- Brand chip -->
+            @if (_product.Brand != null)
             {
-                <p class="pd-desc">@_product.Description</p>
+                <div class="pd-brand">
+                    @if (!string.IsNullOrEmpty(_product.Brand.LogoUrl))
+                    {
+                        <img src="@Api.Absolute(_product.Brand.LogoUrl)" alt="@_product.Brand.Name" />
+                    }
+                    <span>by <strong>@_product.Brand.Name</strong></span>
+                </div>
+            }
+
+            <!-- Short description: 1-liner above the long body -->
+            @if (!string.IsNullOrEmpty(_product.ShortDescription))
+            {
+                <p class="pd-desc">@_product.ShortDescription</p>
             }
 
             @if (_selected != null)
@@ -192,10 +240,49 @@ else
             <a href="/shop" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
         </div>
     </div>
+
+    <!-- ============================ Long description + specs ============================ -->
+    @if (!string.IsNullOrEmpty(_product.Description) || _product.Specs.Any() || !string.IsNullOrEmpty(_product.Tags))
+    {
+        <div class="pd-below" style="max-width:1000px;margin:32px 0;">
+            @if (!string.IsNullOrEmpty(_product.Description))
+            {
+                <section style="margin-bottom:28px;">
+                    <h3 style="margin-bottom:8px;">Description</h3>
+                    <div class="pd-html">@((MarkupString)_product.Description)</div>
+                </section>
+            }
+            @if (_product.Specs.Any())
+            {
+                <section style="margin-bottom:28px;">
+                    <h3 style="margin-bottom:8px;">Specifications</h3>
+                    <table class="pd-spec-table">
+                        @foreach (var s in _product.Specs)
+                        {
+                            <tr><th>@s.Key</th><td>@s.Value</td></tr>
+                        }
+                    </table>
+                </section>
+            }
+            @if (!string.IsNullOrWhiteSpace(_product.Tags))
+            {
+                <section>
+                    <h4 style="margin-bottom:6px;">Tags</h4>
+                    <div class="pd-tags">
+                        @foreach (var t in _product.Tags!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            <span class="pd-tag">@t</span>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
 }
 
 @code {
-    [Parameter] public Guid Id { get; set; }
+    [Parameter] public Guid   Id   { get; set; }
+    [Parameter] public string? Slug { get; set; }
 
     bool              _loading = true;
     ProductDetailDto? _product;
@@ -222,19 +309,78 @@ else
     {
         try
         {
-            var json = await Http.GetStringAsync($"api/shop/products/{Id}");
+            // Two routes share this page — by-slug uses Slug, by-id uses Id.
+            var url = !string.IsNullOrWhiteSpace(Slug)
+                ? $"api/shop/products/by-slug/{Slug}"
+                : $"api/shop/products/{Id}";
+            var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             var d = doc.RootElement.GetProperty("data");
 
             _product = new ProductDetailDto
             {
-                Id          = d.GetProperty("id").GetGuid(),
-                Name        = d.GetProperty("name").GetString() ?? "—",
-                Description = d.TryGetProperty("description", out var desc) ? desc.GetString() : null,
-                ImageUrl    = d.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String ? img.GetString() : null,
-                Variants    = new(),
-                Images      = new()
+                Id               = d.GetProperty("id").GetGuid(),
+                Name             = d.GetProperty("name").GetString() ?? "—",
+                Slug             = d.TryGetProperty("slug", out var sl) ? sl.GetString() : null,
+                Description      = d.TryGetProperty("description", out var desc) ? desc.GetString() : null,
+                ShortDescription = d.TryGetProperty("shortDescription", out var sd) ? sd.GetString() : null,
+                ImageUrl         = d.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String ? img.GetString() : null,
+                UnitOfMeasure    = d.TryGetProperty("unitOfMeasure", out var uo) ? uo.GetString() : null,
+                Tags             = d.TryGetProperty("tags", out var tg) && tg.ValueKind == JsonValueKind.String ? tg.GetString() : null,
+                Variants         = new(),
+                Images           = new(),
+                Specs            = new(),
+                Categories       = new()
             };
+
+            // Brand snapshot (may be null)
+            if (d.TryGetProperty("brand", out var br) && br.ValueKind == JsonValueKind.Object)
+            {
+                _product.Brand = new BrandSlim
+                {
+                    Id      = br.GetProperty("id").GetGuid(),
+                    Name    = br.GetProperty("name").GetString() ?? "",
+                    Slug    = br.TryGetProperty("slug", out var bs)    ? bs.GetString() ?? "" : "",
+                    LogoUrl = br.TryGetProperty("logoUrl", out var bl) ? bl.GetString()       : null
+                };
+            }
+
+            // Categories (used for breadcrumb on the primary one)
+            if (d.TryGetProperty("categories", out var cats) && cats.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in cats.EnumerateArray())
+                {
+                    _product.Categories.Add(new CategorySlim
+                    {
+                        Id   = c.GetProperty("id").GetGuid(),
+                        Name = c.GetProperty("name").GetString() ?? "",
+                        Slug = c.TryGetProperty("slug", out var cs) ? cs.GetString() ?? "" : ""
+                    });
+                }
+            }
+
+            // Specs JSON — array of { Key: Value } objects.
+            if (d.TryGetProperty("specs", out var sp) && sp.ValueKind == JsonValueKind.String)
+            {
+                var raw = sp.GetString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    try
+                    {
+                        using var specDoc = JsonDocument.Parse(raw);
+                        if (specDoc.RootElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var row in specDoc.RootElement.EnumerateArray())
+                            {
+                                if (row.ValueKind != JsonValueKind.Object) continue;
+                                foreach (var kv in row.EnumerateObject())
+                                    _product.Specs.Add(new SpecRow { Key = kv.Name, Value = kv.Value.ToString() });
+                            }
+                        }
+                    }
+                    catch { /* invalid JSON — skip silently */ }
+                }
+            }
 
             if (d.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
             {
@@ -365,12 +511,38 @@ else
 
     class ProductDetailDto
     {
-        public Guid    Id { get; set; }
-        public string  Name { get; set; } = string.Empty;
-        public string? Description { get; set; }
-        public string? ImageUrl { get; set; }
+        public Guid    Id               { get; set; }
+        public string  Name             { get; set; } = string.Empty;
+        public string? Slug             { get; set; }
+        public string? Description      { get; set; }
+        public string? ShortDescription { get; set; }
+        public string? ImageUrl         { get; set; }
+        public string? UnitOfMeasure    { get; set; }
+        public string? Tags             { get; set; }
+        public BrandSlim?       Brand      { get; set; }
+        public List<CategorySlim> Categories { get; set; } = new();
+        public List<SpecRow>    Specs      { get; set; } = new();
         public List<VariantDetail> Variants { get; set; } = new();
         public List<ImageDto>      Images   { get; set; } = new();
+    }
+
+    class BrandSlim
+    {
+        public Guid    Id      { get; set; }
+        public string  Name    { get; set; } = "";
+        public string  Slug    { get; set; } = "";
+        public string? LogoUrl { get; set; }
+    }
+    class CategorySlim
+    {
+        public Guid   Id   { get; set; }
+        public string Name { get; set; } = "";
+        public string Slug { get; set; } = "";
+    }
+    class SpecRow
+    {
+        public string Key   { get; set; } = "";
+        public string Value { get; set; } = "";
     }
 
     class VariantDetail
