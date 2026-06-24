@@ -22,6 +22,8 @@ public static class Permissions
     // ---- Catalog ----
     public const string Products         = "PRODUCTS";
     public const string Categories       = "CATEGORIES";
+    public const string Brands           = "BRANDS";
+    public const string Attributes       = "ATTRIBUTES";
     public const string Barcodes         = "BARCODES";
 
     // ---- Orders ----
@@ -72,6 +74,8 @@ public static class Permissions
         {
             new PermissionEntry(Products,   "Products"),
             new PermissionEntry(Categories, "Categories"),
+            new PermissionEntry(Brands,     "Brands"),
+            new PermissionEntry(Attributes, "Attributes (Size, Color…)"),
             new PermissionEntry(Barcodes,   "Print barcodes"),
         }),
         new PermissionGroup("Orders", new[]

@@ -42,6 +42,7 @@ public class RetailDbContext : DbContext
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
+    public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<ProductAttribute> ProductAttributes => Set<ProductAttribute>();
@@ -214,16 +215,60 @@ public class RetailDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(200);
 
+            // HTML descriptions can be large — use MAX. Migration must drop the old
+            // 2000-char limit on existing rows; data is preserved.
             b.Property(p => p.Description)
-                .HasMaxLength(2000);
+                .HasColumnType("nvarchar(max)");
+
+            b.Property(p => p.ShortDescription)
+                .HasMaxLength(500);
+
+            b.Property(p => p.Slug)
+                .IsRequired()
+                .HasMaxLength(160);
+            // One product per slug per tenant.
+            b.HasIndex(p => new { p.TenantId, p.Slug })
+                .IsUnique();
+
+            b.Property(p => p.UnitOfMeasure)
+                .IsRequired()
+                .HasMaxLength(20)
+                .HasDefaultValue("PCS");
+
+            b.Property(p => p.Specs)
+                .HasColumnType("nvarchar(max)");
+
+            b.Property(p => p.Tags)
+                .HasMaxLength(500);
 
             b.Property(p => p.ImageUrl)
                 .HasMaxLength(500);
+
+            // Brand FK (optional) — no cascade so dropping a brand doesn't kill its products.
+            b.HasOne<Brand>()
+                .WithMany()
+                .HasForeignKey(p => p.BrandId)
+                .OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(p => p.BrandId);
 
             b.HasMany(p => p.Variants)
                 .WithOne()
                 .HasForeignKey(v => v.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Brand>(b =>
+        {
+            b.ToTable("Brands");
+            b.HasKey(x => x.Id);
+
+            b.Property(x => x.Name).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Slug).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Description).HasMaxLength(1000);
+            b.Property(x => x.LogoUrl).HasMaxLength(500);
+
+            // Unique slug per tenant — the storefront uses it for /shop/brand/{slug}.
+            b.HasIndex(x => new { x.TenantId, x.Slug }).IsUnique();
         });
 
         modelBuilder.Entity<ProductImage>(b =>
@@ -289,10 +334,16 @@ public class RetailDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(200);
 
+            // Slug unique within a tenant — drives /shop/c/{slug} URLs.
+            b.HasIndex(c => new { c.TenantId, c.Slug }).IsUnique();
+
             b.HasOne<Category>()
                 .WithMany()
                 .HasForeignKey(c => c.ParentCategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Index for fetching siblings of a parent quickly.
+            b.HasIndex(c => new { c.TenantId, c.ParentCategoryId, c.SortOrder });
         });
 
         modelBuilder.Entity<ProductCategory>(b =>

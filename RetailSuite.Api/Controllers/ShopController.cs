@@ -17,6 +17,7 @@ using RetailSuite.Infrastructure.Modules.Shipping.Entities;
 using RetailSuite.Infrastructure.Modules.Tax.Services;
 using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Modules.Accounting.Services;
+using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Modules.Orders.Entities;
 using RetailSuite.Shared;
 
@@ -77,23 +78,51 @@ public class ShopController : ControllerBase
             .ToDictionaryAsync(x => x.CategoryId, x => x.Count);
 
         var rows = await _db.Categories
-            .OrderBy(c => c.Name)
-            .Select(c => new
-            {
-                c.Id,
-                c.Name,
-                c.Slug,
-                c.ParentCategoryId
-            })
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
             .ToListAsync();
 
-        var enriched = rows.Select(c => new
+        // Build a flat enriched list with parent ids (keeps back-compat with the
+        // existing flat sidebar), plus a nested Tree property so newer UI can
+        // render hierarchy without a second round-trip.
+        var flat = rows.Select(c => new
         {
             c.Id, c.Name, c.Slug, c.ParentCategoryId,
             ProductCount = counts.TryGetValue(c.Id, out var n) ? n : 0
-        });
+        }).ToList();
 
-        return Ok(ApiResponse<object>.Ok(enriched));
+        // Tree of all-descendants counts so the storefront can show "(45)" on a
+        // parent that aggregates every product under its subtree.
+        var byId       = rows.ToDictionary(c => c.Id);
+        var childrenOf = rows
+            .Where(c => c.ParentCategoryId.HasValue)
+            .GroupBy(c => c.ParentCategoryId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        int CountIncludingDescendants(Guid id)
+        {
+            var total = counts.TryGetValue(id, out var n) ? n : 0;
+            if (childrenOf.TryGetValue(id, out var kids))
+                foreach (var k in kids) total += CountIncludingDescendants(k.Id);
+            return total;
+        }
+
+        object MakeNode(Modules.Catalog.Entities.Category c) => new
+        {
+            c.Id, c.Name, c.Slug, c.ParentCategoryId,
+            ProductCount             = counts.TryGetValue(c.Id, out var n) ? n : 0,
+            ProductCountWithChildren = CountIncludingDescendants(c.Id),
+            Children = childrenOf.TryGetValue(c.Id, out var kids)
+                ? kids.Select(MakeNode).ToList()
+                : new List<object>()
+        };
+
+        var tree = rows
+            .Where(c => !c.ParentCategoryId.HasValue)
+            .Select(MakeNode)
+            .ToList();
+
+        return Ok(ApiResponse<object>.Ok(new { Flat = flat, Tree = tree }));
     }
 
     // ============================================================
@@ -120,8 +149,12 @@ public class ShopController : ControllerBase
 
         if (categoryId.HasValue && categoryId.Value != Guid.Empty)
         {
+            // Include products in this category AND any descendant categories so a
+            // shopper clicking "Electronics" sees items tagged "Audio > Headphones" too.
+            var descendants = await GetDescendantCategoryIdsAsync(categoryId.Value);
+            descendants.Add(categoryId.Value);
             var productIds = _db.ProductCategories
-                .Where(pc => pc.CategoryId == categoryId.Value)
+                .Where(pc => descendants.Contains(pc.CategoryId))
                 .Select(pc => pc.ProductId);
             query = query.Where(p => productIds.Contains(p.Id));
         }
@@ -144,10 +177,12 @@ public class ShopController : ControllerBase
             {
                 p.Id,
                 p.Name,
-                p.Description,
+                p.Slug,
+                p.ShortDescription,
                 p.ImageUrl,
-                MinPrice = p.Variants.Where(v => v.IsActive).Min(v => (decimal?)v.Price) ?? 0m,
-                VariantCount = p.Variants.Count(v => v.IsActive)
+                MinPrice     = p.Variants.Where(v => v.IsActive).Min(v => (decimal?)v.Price) ?? 0m,
+                VariantCount = p.Variants.Count(v => v.IsActive),
+                BrandName    = _db.Brands.Where(b => b.Id == p.BrandId).Select(b => b.Name).FirstOrDefault()
             })
             .ToListAsync();
 
@@ -162,14 +197,37 @@ public class ShopController : ControllerBase
     // ============================================================
     /// <summary>Product detail with active variants — used by the storefront product page.</summary>
     [HttpGet("products/{id:guid}")]
-    public async Task<IActionResult> ProductDetail(Guid id)
+    public async Task<IActionResult> ProductDetail(Guid id) => await BuildProductDetailAsync(p => p.Id == id);
+
+    /// <summary>
+    /// Slug-based lookup for the storefront — e.g. /api/shop/products/by-slug/blue-cotton-shirt.
+    /// Used by /shop/p/{slug} so URLs are SEO friendly and shareable.
+    /// </summary>
+    [HttpGet("products/by-slug/{slug}")]
+    public async Task<IActionResult> ProductDetailBySlug(string slug)
+        => await BuildProductDetailAsync(p => p.Slug == slug);
+
+    private async Task<IActionResult> BuildProductDetailAsync(System.Linq.Expressions.Expression<Func<Product, bool>> filter)
     {
         var product = await _db.Products
             .Include(p => p.Variants)
-            .Where(p => p.Id == id && p.IsActive)
+            .Where(filter)
+            .Where(p => p.IsActive)
             .Select(p => new
             {
-                p.Id, p.Name, p.Description, p.ImageUrl,
+                p.Id, p.Name, p.Slug, p.Description, p.ShortDescription, p.ImageUrl,
+                p.UnitOfMeasure, p.Specs, p.Tags,
+                Brand = _db.Brands
+                    .Where(b => b.Id == p.BrandId && b.IsActive)
+                    .Select(b => new { b.Id, b.Name, b.Slug, b.LogoUrl })
+                    .FirstOrDefault(),
+                Categories = _db.ProductCategories
+                    .Where(pc => pc.ProductId == p.Id)
+                    .Join(_db.Categories,
+                          pc => pc.CategoryId,
+                          c  => c.Id,
+                          (pc, c) => new { c.Id, c.Name, c.Slug, c.ParentCategoryId })
+                    .ToList(),
                 Variants = p.Variants
                     .Where(v => v.IsActive)
                     .Select(v => new
@@ -534,6 +592,40 @@ public class ShopController : ControllerBase
                 QrImageUrl = $"/api/payments/qr/{activeIntent.Id}.png"
             }
         }));
+    }
+
+    // ============================================================
+    //  Category descendant helper
+    // ============================================================
+    /// <summary>
+    /// Returns every descendant category id under <paramref name="rootId"/> (not including the root itself).
+    /// One round-trip — loads the parent/child map for the tenant and walks it in memory.
+    /// Category trees are small enough that a recursive CTE isn't worth the complexity.
+    /// </summary>
+    private async Task<HashSet<Guid>> GetDescendantCategoryIdsAsync(Guid rootId)
+    {
+        var pairs = await _db.Categories
+            .Where(c => c.ParentCategoryId != null)
+            .Select(c => new { c.Id, ParentId = c.ParentCategoryId!.Value })
+            .ToListAsync();
+
+        var childrenOf = pairs
+            .GroupBy(p => p.ParentId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+
+        var result = new HashSet<Guid>();
+        var stack  = new Stack<Guid>();
+        stack.Push(rootId);
+        while (stack.Count > 0)
+        {
+            var cur = stack.Pop();
+            if (!childrenOf.TryGetValue(cur, out var kids)) continue;
+            foreach (var k in kids)
+            {
+                if (result.Add(k)) stack.Push(k);
+            }
+        }
+        return result;
     }
 
     // ============================================================

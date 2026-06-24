@@ -155,7 +155,18 @@ public class ProductsController : ControllerBase
                 }));
         }
 
-        var product = new Product(request.Name, request.Description);
+        var slug = string.IsNullOrWhiteSpace(request.Slug)
+            ? Product.Slugify(request.Name)
+            : Product.Slugify(request.Slug);
+        slug = await EnsureUniqueSlugAsync(slug, excludeProductId: null);
+
+        var product = new Product(request.Name, request.Description, slug);
+        if (request.ShortDescription != null) product.SetShortDescription(request.ShortDescription);
+        if (request.BrandId.HasValue)         product.SetBrand(request.BrandId);
+        if (!string.IsNullOrWhiteSpace(request.UnitOfMeasure)) product.SetUnitOfMeasure(request.UnitOfMeasure);
+        if (request.Specs != null)            product.SetSpecs(request.Specs);
+        if (request.Tags != null)             product.SetTags(request.Tags);
+
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
@@ -172,9 +183,44 @@ public class ProductsController : ControllerBase
             return NotFound(ApiResponse<object>.Fail("Product not found."));
 
         product.Update(request.Name, request.Description);
+        if (request.ShortDescription != null) product.SetShortDescription(request.ShortDescription);
+        if (request.BrandId.HasValue)         product.SetBrand(request.BrandId);
+        if (!string.IsNullOrWhiteSpace(request.UnitOfMeasure)) product.SetUnitOfMeasure(request.UnitOfMeasure);
+        if (request.Specs != null)            product.SetSpecs(request.Specs);
+        if (request.Tags != null)             product.SetTags(request.Tags);
+
+        // Slug update is optional — only run uniqueness check if the caller changed it.
+        if (!string.IsNullOrWhiteSpace(request.Slug)
+            && !string.Equals(request.Slug, product.Slug, StringComparison.OrdinalIgnoreCase))
+        {
+            var slug = await EnsureUniqueSlugAsync(Product.Slugify(request.Slug), excludeProductId: product.Id);
+            product.SetSlug(slug);
+        }
+
+        if (request.IsActive.HasValue)
+        {
+            if (request.IsActive.Value) product.Activate(); else product.Deactivate();
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new ApiResponse<object>(true, "Product updated.", null));
+    }
+
+    // Ensures the candidate slug is unique within this tenant; appends -2, -3, …
+    // if a collision exists. Pass excludeProductId when updating an existing row.
+    private async Task<string> EnsureUniqueSlugAsync(string candidate, Guid? excludeProductId)
+    {
+        var slug = candidate;
+        var n = 1;
+        while (await _db.Products
+                       .AnyAsync(p => p.Slug == slug
+                                   && (excludeProductId == null || p.Id != excludeProductId)))
+        {
+            n++;
+            slug = $"{candidate}-{n}";
+        }
+        return slug;
     }
 
     // POST /api/products/{productId}/variants
@@ -255,4 +301,66 @@ public class ProductsController : ControllerBase
 
         return Ok(new ApiResponse<object>(true, "Category assigned.", null));
     }
+
+    // GET /api/products/{id}/categories — current category assignments
+    [HttpGet("{id:guid}/categories")]
+    public async Task<IActionResult> GetCategories(Guid id)
+    {
+        var rows = await _db.ProductCategories
+            .Where(pc => pc.ProductId == id)
+            .Select(pc => new { pc.CategoryId, CategoryName = pc.Category.Name })
+            .ToListAsync();
+
+        return Ok(new ApiResponse<object>(true, null, rows));
+    }
+
+    // POST /api/products/{id}/categories/replace — replace the entire category set
+    [HttpPost("{id:guid}/categories/replace")]
+    public async Task<IActionResult> ReplaceCategories(Guid id, [FromBody] ReplaceCategoriesRequest request)
+    {
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null)
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        var existing = await _db.ProductCategories
+            .Where(pc => pc.ProductId == id)
+            .ToListAsync();
+
+        var desired = request.CategoryIds?.Distinct().ToHashSet() ?? new HashSet<Guid>();
+
+        // Remove links no longer wanted
+        var toRemove = existing.Where(e => !desired.Contains(e.CategoryId)).ToList();
+        _db.ProductCategories.RemoveRange(toRemove);
+
+        // Add new links
+        var existingIds = existing.Select(e => e.CategoryId).ToHashSet();
+        foreach (var newId in desired.Where(d => !existingIds.Contains(d)))
+        {
+            // Validate the category exists before linking
+            var exists = await _db.Categories.AnyAsync(c => c.Id == newId);
+            if (!exists) continue;
+            _db.ProductCategories.Add(new ProductCategory(id, newId));
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new ApiResponse<object>(true, "Categories updated.", new { Count = desired.Count }));
+    }
+
+    // DELETE /api/products/{productId}/categories/{categoryId}
+    [HttpDelete("{productId:guid}/categories/{categoryId:guid}")]
+    public async Task<IActionResult> UnassignCategory(Guid productId, Guid categoryId)
+    {
+        var link = await _db.ProductCategories
+            .FirstOrDefaultAsync(pc => pc.ProductId == productId && pc.CategoryId == categoryId);
+        if (link == null) return Ok(new ApiResponse<object>(true, "Already not assigned.", null));
+
+        _db.ProductCategories.Remove(link);
+        await _db.SaveChangesAsync();
+        return Ok(new ApiResponse<object>(true, "Category removed.", null));
+    }
+}
+
+public class ReplaceCategoriesRequest
+{
+    public List<Guid>? CategoryIds { get; set; }
 }
