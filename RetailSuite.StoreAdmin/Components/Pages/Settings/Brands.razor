@@ -1,0 +1,248 @@
+@page "/settings/brands"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject ApiUrlService Api
+@using System.Text.Json
+
+<PermissionGuard Code="BRANDS" />
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Brands</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Manage the brands / manufacturers you stock. Storefront customers can filter by brand.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Add brand</button>
+</div>
+
+@if (_brands == null)
+{
+    <div class="spinner"></div>
+}
+else if (!_brands.Any())
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No brands yet. Click <strong>+ Add brand</strong> to start.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:60px;"></th>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th class="num">Products</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in _brands)
+                {
+                    <tr>
+                        <td>
+                            @if (!string.IsNullOrEmpty(b.LogoUrl))
+                            {
+                                <img src="@Api.Absolute(b.LogoUrl)" alt="@b.Name"
+                                     style="width:40px;height:40px;object-fit:contain;border:1px solid #e5e7eb;border-radius:6px;background:#fff;" />
+                            }
+                            else
+                            {
+                                <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#f3f4f6;border-radius:6px;color:#9ca3af;font-weight:700;">
+                                    @(b.Name.Length > 0 ? char.ToUpper(b.Name[0]) : '?')
+                                </div>
+                            }
+                        </td>
+                        <td><strong>@b.Name</strong></td>
+                        <td style="color:#6b7280;font-family:monospace;font-size:12px;">@b.Slug</td>
+                        <td class="num">@b.ProductCount</td>
+                        <td>
+                            <span class="status-chip @(b.IsActive ? "status-on" : "status-off")">
+                                @(b.IsActive ? "Active" : "Hidden")
+                            </span>
+                        </td>
+                        <td style="text-align:right;">
+                            <button class="btn" style="padding:4px 10px;font-size:12px;"
+                                    @onclick="() => OpenEdit(b)">Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_editor != null)
+{
+    <div class="modal-backdrop" @onclick="CloseEditor"></div>
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <h4 style="margin-top:0;">@(_editor.IsNew ? "Add brand" : "Edit brand")</h4>
+
+        <label class="form-label">Name *</label>
+        <input class="input full" @bind="_editor.Name" placeholder="e.g. Sony, Nike" />
+
+        <label class="form-label">Slug (URL fragment) — leave blank to auto-generate</label>
+        <input class="input full" @bind="_editor.Slug" placeholder="e.g. sony" />
+
+        <label class="form-label">Description</label>
+        <textarea class="input full" rows="3" @bind="_editor.Description"
+                  placeholder="A short note about the brand"></textarea>
+
+        <label class="form-label">Logo URL</label>
+        <input class="input full" @bind="_editor.LogoUrl" placeholder="/uploads/{tenantId}/brands/sony.png or full URL" />
+
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;text-transform:none;">
+            <input type="checkbox" @bind="_editor.IsActive" /> Active (shown to customers)
+        </label>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+            <button class="btn" @onclick="CloseEditor">Cancel</button>
+            @if (!_editor.IsNew)
+            {
+                <button class="btn btn-danger" @onclick="DeleteBrand">Hide</button>
+            }
+            <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
+                @(_saving ? "Saving…" : "Save")
+            </button>
+        </div>
+    </div>
+}
+
+<style>
+    .form-label { display:block; font-size:12px; color:#6b7280; text-transform:uppercase;
+                  letter-spacing:.04em; margin:14px 0 4px; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9998; }
+    .modal-card     { position:fixed; top:8%; left:50%; transform:translateX(-50%);
+                      background:#fff; border-radius:12px; padding:24px;
+                      width:min(92vw, 520px); max-height:84vh; overflow:auto;
+                      z-index:9999; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .status-chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .status-on   { background:#dcfce7; color:#15803d; }
+    .status-off  { background:#fef3c7; color:#a16207; }
+    .table .num  { text-align:right; }
+</style>
+
+@code {
+    List<BrandRow>? _brands;
+    Editor?         _editor;
+    bool            _saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/brands");
+            using var doc = JsonDocument.Parse(json);
+            _brands = new();
+            foreach (var b in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                _brands.Add(new BrandRow
+                {
+                    Id           = b.GetProperty("id").GetGuid(),
+                    Name         = b.GetProperty("name").GetString() ?? "",
+                    Slug         = b.GetProperty("slug").GetString() ?? "",
+                    Description  = b.TryGetProperty("description", out var ds) ? ds.GetString() : null,
+                    LogoUrl      = b.TryGetProperty("logoUrl",     out var lu) ? lu.GetString() : null,
+                    IsActive     = b.GetProperty("isActive").GetBoolean(),
+                    ProductCount = b.TryGetProperty("productCount", out var pc) ? pc.GetInt32() : 0
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    void OpenCreate() => _editor = new Editor { IsNew = true, IsActive = true };
+    void OpenEdit(BrandRow b) => _editor = new Editor
+    {
+        Id          = b.Id,
+        Name        = b.Name,
+        Slug        = b.Slug,
+        Description = b.Description,
+        LogoUrl     = b.LogoUrl,
+        IsActive    = b.IsActive
+    };
+    void CloseEditor() => _editor = null;
+
+    async Task Save()
+    {
+        if (_editor == null) return;
+        if (string.IsNullOrWhiteSpace(_editor.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var body = new
+            {
+                name        = _editor.Name,
+                slug        = string.IsNullOrWhiteSpace(_editor.Slug) ? null : _editor.Slug,
+                description = _editor.Description,
+                logoUrl     = _editor.LogoUrl,
+                isActive    = _editor.IsActive
+            };
+
+            var resp = _editor.IsNew
+                ? await Http.PostAsJsonAsync("api/brands", body)
+                : await Http.PutAsJsonAsync($"api/brands/{_editor.Id}", body);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+
+            _editor = null;
+            await Load();
+            Toast.Show("Saved.");
+        }
+        finally { _saving = false; }
+    }
+
+    async Task DeleteBrand()
+    {
+        if (_editor == null || _editor.IsNew) return;
+        var resp = await Http.DeleteAsync($"api/brands/{_editor.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Hide failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        _editor = null;
+        await Load();
+        Toast.Show("Brand hidden.");
+    }
+
+    class BrandRow
+    {
+        public Guid    Id           { get; set; }
+        public string  Name         { get; set; } = "";
+        public string  Slug         { get; set; } = "";
+        public string? Description  { get; set; }
+        public string? LogoUrl      { get; set; }
+        public bool    IsActive     { get; set; }
+        public int     ProductCount { get; set; }
+    }
+
+    class Editor
+    {
+        public bool    IsNew       { get; set; }
+        public Guid?   Id          { get; set; }
+        public string  Name        { get; set; } = "";
+        public string  Slug        { get; set; } = "";
+        public string? Description { get; set; }
+        public string? LogoUrl     { get; set; }
+        public bool    IsActive    { get; set; } = true;
+    }
+}

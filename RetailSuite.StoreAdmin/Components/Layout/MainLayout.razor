@@ -71,9 +71,13 @@ else
                 }
 
                 @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
-                  || Auth.Can("SUBSCRIPTION") || Auth.IsAdmin)
+                  || Auth.Can("SUBSCRIPTION") || Auth.Can("CATEGORIES") || Auth.Can("BRANDS")
+                  || Auth.Can("ATTRIBUTES") || Auth.IsAdmin)
                 {
                     <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Settings</span>
+                    @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
+                    @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
+                    @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
                     @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
                     @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
                     @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax & FBR</NavLink> }

@@ -1,15 +1,29 @@
 @page "/products"
 @inject HttpClient Http
 @inject ToastService Toast
+@inject NavigationManager Nav
+@inject ApiUrlService Api
 @using System.Text.Json
 
 <PermissionGuard Code="PRODUCTS" />
 
-<h3 style="margin-bottom:20px;">Products</h3>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Products</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Click a row to open its detail page (description, variants, categories, images).
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="() => showModal = true">+ Add Product</button>
+</div>
 
-<button class="btn btn-primary" @onclick="() => showModal = true">
-    + Add Product
-</button>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+    <input class="input" style="width:280px;" placeholder="Search by name…"
+           value="@_search" @oninput="OnSearch" />
+    <label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" @bind="_activeOnly" /> Active only
+    </label>
+</div>
 
 @if (isLoading)
 {
@@ -19,51 +33,54 @@ else if (!string.IsNullOrEmpty(_error))
 {
     <div class="card" style="margin-top:20px;color:#b91c1c;">⚠️ @_error</div>
 }
-else if (products != null && products.Any())
+else if (products != null && Filtered().Any())
 {
-    <div class="card" style="margin-top:20px;">
-        <table class="table">
+    <div class="card">
+        <table class="table products-table">
             <thead>
                 <tr>
-                    <th>Product</th>
-                    <th>Variants</th>
-                    <th>Add Variant</th>
+                    <th style="width:60px;"></th>
+                    <th>Name</th>
+                    <th>Slug</th>
+                    <th class="num">Variants</th>
+                    <th class="num">Min price</th>
+                    <th>Status</th>
                     <th></th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var p in products)
+                @foreach (var p in Filtered())
                 {
-                    <tr>
-                        <td><strong>@p.Name</strong></td>
+                    <tr @onclick="() => Open(p.Id)" style="cursor:pointer;">
                         <td>
-                            @if (p.Variants != null && p.Variants.Any())
+                            @if (!string.IsNullOrEmpty(p.ImageUrl))
                             {
-                                @foreach (var v in p.Variants)
-                                {
-                                    <div>@v.SKU — Rs @v.Price.ToString("N2")</div>
-                                }
+                                <img src="@Api.Absolute(p.ImageUrl)" alt="@p.Name"
+                                     style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;" />
                             }
                             else
                             {
-                                <span style="color:#9ca3af;">No variants</span>
+                                <div style="width:40px;height:40px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;">📦</div>
                             }
                         </td>
-                        <td>
-                            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                                <input class="input" style="width:100px;" placeholder="SKU"
-                                       @bind="variantInputs[p.Id].Sku" />
-                                <input class="input" type="number" style="width:90px;" placeholder="Price"
-                                       @bind="variantInputs[p.Id].Price" />
-                                <button class="btn btn-primary" style="padding:6px 12px;"
-                                        @onclick="() => AddVariant(p.Id)">
-                                    Add
-                                </button>
-                            </div>
+                        <td><strong>@p.Name</strong></td>
+                        <td style="font-family:monospace;font-size:12px;color:#6b7280;">@p.Slug</td>
+                        <td class="num">@p.Variants.Count</td>
+                        <td class="num">
+                            @(p.Variants.Any()
+                                ? "Rs " + p.Variants.Min(v => v.Price).ToString("N0")
+                                : "—")
                         </td>
-                        <td style="text-align:right;">
+                        <td>
+                            <span class="status-chip @(p.IsActive ? "status-on" : "status-off")">
+                                @(p.IsActive ? "Active" : "Hidden")
+                            </span>
+                        </td>
+                        <td style="text-align:right;" @onclick:stopPropagation="true">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/products/{p.Id}/images")">📷 Images</a>
+                               href="@($"/products/{p.Id}")">Edit</a>
+                            <a class="btn" style="padding:4px 10px;font-size:12px;"
+                               href="@($"/products/{p.Id}/images")">📷</a>
                         </td>
                     </tr>
                 }
@@ -71,107 +88,117 @@ else if (products != null && products.Any())
         </table>
     </div>
 }
-else if (!isLoading)
+else
 {
-    <div class="card" style="margin-top:20px;">
-        <p style="color:#9ca3af;">No products yet. Click <strong>+ Add Product</strong> to get started.</p>
+    <div class="card">
+        <p style="color:#9ca3af;">No products yet. Click <strong>+ Add Product</strong> to start.</p>
     </div>
 }
 
 <!-- Add Product Modal -->
 <Modal Visible="@showModal" OnClose="CloseModal">
     <h3 style="margin-bottom:15px;">Add Product</h3>
-    <input class="input full" @bind="newProductName" placeholder="Product Name" style="margin-bottom:8px;" />
-    <input class="input full" @bind="newProductDesc" placeholder="Description (optional)" style="margin-bottom:12px;" />
+    <input class="input full" @bind="newProductName" placeholder="Product Name *" style="margin-bottom:8px;" />
+    <input class="input full" @bind="newProductDesc" placeholder="Short description (optional)" style="margin-bottom:12px;" />
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">
+        After creating, the detail page will open so you can add description, variants, categories, and images.
+    </p>
     <div style="display:flex;gap:8px;">
         <button class="btn btn-primary" @onclick="CreateProduct">Save</button>
         <button class="btn" @onclick="CloseModal">Cancel</button>
     </div>
 </Modal>
 
+<style>
+    .products-table .num { text-align:right; }
+    .products-table tr:hover { background:#f9fafb; }
+    .status-chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .status-on   { background:#dcfce7; color:#15803d; }
+    .status-off  { background:#fef3c7; color:#a16207; }
+</style>
+
 @code {
     List<ProductDto>? products;
-    bool isLoading = true;
+    bool   isLoading = true;
     string? _error;
-    bool showModal = false;
+    bool   showModal = false;
+    string  _search   = "";
+    bool   _activeOnly;
 
     string? newProductName;
     string? newProductDesc;
 
-    Dictionary<Guid, VariantInput> variantInputs = new();
-
-    // -----------------------------------------------------------------------
-    // Use OnAfterRenderAsync so Auth.InitializeAsync() has already run
-    // in MainLayout and the HttpClient has a Bearer token.
-    // -----------------------------------------------------------------------
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-            await LoadProducts();
+        if (firstRender) await LoadProducts();
     }
+
+    IEnumerable<ProductDto> Filtered()
+    {
+        if (products == null) yield break;
+        foreach (var p in products)
+        {
+            if (_activeOnly && !p.IsActive) continue;
+            if (!string.IsNullOrWhiteSpace(_search) &&
+                !p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) &&
+                !p.Slug.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                continue;
+            yield return p;
+        }
+    }
+
+    void OnSearch(ChangeEventArgs e) => _search = e.Value?.ToString() ?? "";
 
     async Task LoadProducts()
     {
         isLoading = true;
         _error    = null;
-
         try
         {
-            // API returns ApiResponse<{ Total, Page, PageSize, Items: [...] }>
             var json = await Http.GetStringAsync("api/products?page=1&pageSize=200");
             using var doc = JsonDocument.Parse(json);
 
-            // Unwrap ApiResponse envelope if present
-            var root = doc.RootElement;
-            var dataEl = root.TryGetProperty("data", out var d) ? d : root;
-
-            // Get the items array (paginated envelope)
+            var dataEl = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
             var itemsEl = dataEl.TryGetProperty("items", out var arr) ? arr
                         : dataEl.ValueKind == JsonValueKind.Array ? dataEl
                         : default;
 
-            products = new List<ProductDto>();
-
+            products = new();
             if (itemsEl.ValueKind == JsonValueKind.Array)
             {
                 foreach (var p in itemsEl.EnumerateArray())
                 {
                     var dto = new ProductDto
                     {
-                        Id       = p.TryGetProperty("id",   out var id)   ? id.GetGuid()    : Guid.Empty,
-                        Name     = p.TryGetProperty("name", out var nm)   ? nm.GetString()! : "—",
-                        Variants = new List<VariantDto>()
+                        Id       = p.GetProperty("id").GetGuid(),
+                        Name     = p.GetProperty("name").GetString() ?? "",
+                        Slug     = p.TryGetProperty("slug", out var sl) ? sl.GetString() ?? "" : "",
+                        ImageUrl = p.TryGetProperty("imageUrl", out var iu) ? iu.GetString() : null,
+                        IsActive = !p.TryGetProperty("isActive", out var ia) || ia.GetBoolean(),
+                        Variants = new()
                     };
-
-                    if (p.TryGetProperty("variants", out var vars) && vars.ValueKind == JsonValueKind.Array)
+                    if (p.TryGetProperty("variants", out var vs) && vs.ValueKind == JsonValueKind.Array)
                     {
-                        foreach (var v in vars.EnumerateArray())
+                        foreach (var v in vs.EnumerateArray())
                         {
                             dto.Variants.Add(new VariantDto
                             {
-                                Id    = v.TryGetProperty("id",    out var vid) ? vid.GetGuid()    : Guid.Empty,
-                                SKU   = v.TryGetProperty("sku",   out var sku) ? sku.GetString()! : "—",
-                                Price = v.TryGetProperty("price", out var prc) ? prc.GetDecimal() : 0
+                                Id    = v.GetProperty("id").GetGuid(),
+                                SKU   = v.GetProperty("sku").GetString() ?? "",
+                                Price = v.TryGetProperty("price", out var pr) ? pr.GetDecimal() : 0m
                             });
                         }
                     }
-
                     products.Add(dto);
                 }
             }
-
-            // Ensure a variant-input slot exists for every product
-            foreach (var p in products)
-                variantInputs.TryAdd(p.Id, new VariantInput());
         }
-        catch (Exception ex)
-        {
-            _error = $"Failed to load products: {ex.Message}";
-        }
-
+        catch (Exception ex) { _error = $"Failed to load: {ex.Message}"; }
         isLoading = false;
         StateHasChanged();
     }
+
+    void Open(Guid id) => Nav.NavigateTo($"/products/{id}");
 
     async Task CreateProduct()
     {
@@ -180,69 +207,38 @@ else if (!isLoading)
             Toast.Show("Product name is required.");
             return;
         }
-
-        var response = await Http.PostAsJsonAsync("api/products",
-            new { name = newProductName, description = newProductDesc });
-
-        if (response.IsSuccessStatusCode)
+        var resp = await Http.PostAsJsonAsync("api/products",
+            new { name = newProductName, shortDescription = newProductDesc });
+        if (!resp.IsSuccessStatusCode)
         {
-            Toast.Show("Product created successfully.");
-            newProductName = newProductDesc = null;
-            showModal = false;
-            await LoadProducts();
-        }
-        else
-        {
-            Toast.Show("Failed to create product.");
-        }
-    }
-
-    async Task AddVariant(Guid productId)
-    {
-        var input = variantInputs[productId];
-
-        if (string.IsNullOrWhiteSpace(input.Sku))
-        {
-            Toast.Show("SKU is required.");
+            Toast.Show($"Failed to create: {await resp.Content.ReadAsStringAsync()}");
             return;
         }
-
-        var response = await Http.PostAsJsonAsync(
-            $"api/products/{productId}/variants",
-            new { sku = input.Sku, price = input.Price });
-
-        if (response.IsSuccessStatusCode)
-        {
-            Toast.Show("Variant added.");
-            variantInputs[productId] = new VariantInput();
-            await LoadProducts();
-        }
-        else
-        {
-            Toast.Show("Failed to add variant.");
-        }
+        var json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var newId = doc.RootElement.GetProperty("data").GetGuid();
+        Toast.Show("Product created.");
+        showModal = false;
+        newProductName = newProductDesc = null;
+        Nav.NavigateTo($"/products/{newId}");
     }
 
     void CloseModal() => showModal = false;
 
-    // DTOs
     class ProductDto
     {
-        public Guid         Id       { get; set; }
-        public string       Name     { get; set; } = string.Empty;
+        public Guid     Id       { get; set; }
+        public string   Name     { get; set; } = "";
+        public string   Slug     { get; set; } = "";
+        public string?  ImageUrl { get; set; }
+        public bool     IsActive { get; set; }
         public List<VariantDto> Variants { get; set; } = new();
     }
 
     class VariantDto
     {
         public Guid    Id    { get; set; }
-        public string  SKU   { get; set; } = string.Empty;
+        public string  SKU   { get; set; } = "";
         public decimal Price { get; set; }
-    }
-
-    class VariantInput
-    {
-        public string?  Sku   { get; set; }
-        public decimal  Price { get; set; }
     }
 }

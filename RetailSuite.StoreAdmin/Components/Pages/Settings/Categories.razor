@@ -1,0 +1,331 @@
+@page "/settings/categories"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="CATEGORIES" />
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Categories</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Organise products into a tree. Click a row to rename, move, or hide it.
+            Sub-categories nest under their parent — use them for sections like
+            <em>Men &gt; Shirts &gt; Casual</em>.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreateRoot">+ Add top-level</button>
+</div>
+
+@if (_tree == null)
+{
+    <div class="spinner"></div>
+}
+else if (!_tree.Any())
+{
+    <div class="card">
+        <p style="color:#9ca3af;">No categories yet. Click <strong>+ Add top-level</strong> to start.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table cat-tree">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Slug</th>
+                    <th class="num">Products</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in FlattenVisible())
+                {
+                    var n = row.Node;
+                    var depth = row.Depth;
+                    var isOpen = _expanded.Contains(n.Id);
+                    <tr>
+                        <td>
+                            <div class="name-cell" style="padding-left:@(depth * 18)px;" @onclick="() => OpenEdit(n)">
+                                @if (n.Children.Any())
+                                {
+                                    <span class="twisty" @onclick:stopPropagation="true" @onclick="() => Toggle(n.Id)">
+                                        @(isOpen ? "▼" : "▶")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="twisty">·</span>
+                                }
+                                <strong>@n.Name</strong>
+                            </div>
+                        </td>
+                        <td style="color:#6b7280;font-family:monospace;font-size:12px;">@n.Slug</td>
+                        <td class="num">@n.ProductCount</td>
+                        <td>
+                            <span class="status-chip @(n.IsActive ? "status-on" : "status-off")">
+                                @(n.IsActive ? "Active" : "Hidden")
+                            </span>
+                        </td>
+                        <td style="text-align:right;">
+                            <button class="btn" style="padding:2px 10px;font-size:12px;"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => OpenCreateChild(n)">+ Sub</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_editor != null)
+{
+    <div class="modal-backdrop" @onclick="CloseEditor"></div>
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <h4 style="margin-top:0;">@(_editor.IsNew ? "Add category" : "Edit category")</h4>
+
+        <label class="form-label">Name</label>
+        <input class="input full" @bind="_editor.Name" placeholder="Category name" />
+
+        <label class="form-label">Slug (URL fragment) — leave blank to auto-generate</label>
+        <input class="input full" @bind="_editor.Slug" placeholder="e.g. mens-shirts" />
+
+        <label class="form-label">Parent</label>
+        <select class="input full" @bind="_editor.ParentId">
+            <option value="">— Top level —</option>
+            @foreach (var (id, name, depth) in FlatPicker(_tree, 0, excludeSubtreeOf: _editor.Id))
+            {
+                <option value="@id">@(new string('—', depth)) @name</option>
+            }
+        </select>
+
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;text-transform:none;">
+            <input type="checkbox" @bind="_editor.IsActive" /> Active (shown to customers)
+        </label>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+            <button class="btn" @onclick="CloseEditor">Cancel</button>
+            @if (!_editor.IsNew)
+            {
+                <button class="btn btn-danger" @onclick="DeleteCategory">Delete</button>
+            }
+            <button class="btn btn-primary" disabled="@_saving" @onclick="SaveEditor">
+                @(_saving ? "Saving…" : "Save")
+            </button>
+        </div>
+    </div>
+}
+
+<style>
+    .cat-tree td { vertical-align:middle; }
+    .cat-tree .name-cell { display:flex; align-items:center; gap:6px; cursor:pointer; }
+    .cat-tree .twisty   { width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; color:#9ca3af; }
+    .cat-tree .name-cell:hover { color:#1d4ed8; }
+    .cat-tree .num      { text-align:right; }
+
+    .form-label { display:block; font-size:12px; color:#6b7280; text-transform:uppercase;
+                  letter-spacing:.04em; margin:14px 0 4px; }
+
+    .modal-backdrop {
+        position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9998;
+    }
+    .modal-card {
+        position:fixed; top:10%; left:50%; transform:translateX(-50%);
+        background:#fff; border-radius:12px; padding:24px;
+        width:min(92vw, 520px); max-height:80vh; overflow:auto;
+        z-index:9999; box-shadow:0 20px 60px rgba(0,0,0,.25);
+    }
+
+    .status-chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .status-on   { background:#dcfce7; color:#15803d; }
+    .status-off  { background:#fef3c7; color:#a16207; }
+</style>
+
+@code {
+    List<CategoryNode>? _tree;
+    HashSet<Guid>       _expanded = new();
+    Editor?             _editor;
+    bool                _saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/categories/tree");
+            using var doc = JsonDocument.Parse(json);
+            _tree = doc.RootElement.GetProperty("data")
+                .Deserialize<List<CategoryNode>>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? new();
+            // Expand top level by default for visibility.
+            foreach (var n in _tree) _expanded.Add(n.Id);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Couldn't load: {ex.Message}");
+        }
+    }
+
+    // Flatten the tree honouring the expanded set — only descend into open nodes.
+    IEnumerable<(CategoryNode Node, int Depth)> FlattenVisible()
+    {
+        if (_tree == null) yield break;
+        foreach (var r in Walk(_tree, 0)) yield return r;
+    }
+    IEnumerable<(CategoryNode, int)> Walk(IEnumerable<CategoryNode> nodes, int depth)
+    {
+        foreach (var n in nodes)
+        {
+            yield return (n, depth);
+            if (_expanded.Contains(n.Id))
+            {
+                foreach (var c in Walk(n.Children, depth + 1)) yield return c;
+            }
+        }
+    }
+
+    // Flatten for the parent-picker dropdown, excluding the subtree of the edited
+    // category so we can't move it into itself / a descendant.
+    IEnumerable<(string Id, string Name, int Depth)> FlatPicker(
+        IEnumerable<CategoryNode>? nodes, int depth, Guid? excludeSubtreeOf)
+    {
+        if (nodes == null) yield break;
+        foreach (var n in nodes)
+        {
+            if (n.Id == excludeSubtreeOf) continue;
+            yield return (n.Id.ToString(), n.Name, depth);
+            foreach (var c in FlatPicker(n.Children, depth + 1, excludeSubtreeOf))
+                yield return c;
+        }
+    }
+
+    void Toggle(Guid id)
+    {
+        if (_expanded.Contains(id)) _expanded.Remove(id);
+        else _expanded.Add(id);
+    }
+
+    void OpenCreateRoot() => _editor = new Editor { IsNew = true, IsActive = true };
+
+    void OpenCreateChild(CategoryNode parent) => _editor = new Editor
+    {
+        IsNew    = true,
+        ParentId = parent.Id.ToString(),
+        IsActive = true
+    };
+
+    void OpenEdit(CategoryNode n) => _editor = new Editor
+    {
+        Id       = n.Id,
+        Name     = n.Name,
+        Slug     = n.Slug,
+        IsActive = n.IsActive,
+        ParentId = "" // populated from parent on the server; user can change
+    };
+
+    void CloseEditor() => _editor = null;
+
+    async Task SaveEditor()
+    {
+        if (_editor == null) return;
+        if (string.IsNullOrWhiteSpace(_editor.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+        _saving = true;
+        try
+        {
+            Guid? parentId = string.IsNullOrEmpty(_editor.ParentId)
+                ? null
+                : Guid.Parse(_editor.ParentId);
+
+            if (_editor.IsNew)
+            {
+                var resp = await Http.PostAsJsonAsync("api/categories", new
+                {
+                    name = _editor.Name,
+                    slug = string.IsNullOrWhiteSpace(_editor.Slug) ? null : _editor.Slug,
+                    parentCategoryId = parentId
+                });
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                    return;
+                }
+            }
+            else
+            {
+                var resp = await Http.PutAsJsonAsync($"api/categories/{_editor.Id}", new
+                {
+                    name = _editor.Name,
+                    slug = string.IsNullOrWhiteSpace(_editor.Slug) ? null : _editor.Slug,
+                    isActive = _editor.IsActive
+                });
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                    return;
+                }
+                // Parent change is a separate endpoint (server has cycle guard).
+                var mv = await Http.PostAsJsonAsync($"api/categories/{_editor.Id}/move", new
+                {
+                    newParentId = parentId
+                });
+                if (!mv.IsSuccessStatusCode)
+                {
+                    Toast.Show($"Move failed: {await mv.Content.ReadAsStringAsync()}");
+                    return;
+                }
+            }
+
+            _editor = null;
+            await LoadAsync();
+            Toast.Show("Saved.");
+        }
+        finally { _saving = false; }
+    }
+
+    async Task DeleteCategory()
+    {
+        if (_editor == null || _editor.IsNew) return;
+        var resp = await Http.DeleteAsync($"api/categories/{_editor.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Delete failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        _editor = null;
+        await LoadAsync();
+        Toast.Show("Deleted (or hidden if it had children / products).");
+    }
+
+    public class CategoryNode
+    {
+        public Guid    Id           { get; set; }
+        public string  Name         { get; set; } = "";
+        public string  Slug         { get; set; } = "";
+        public int     SortOrder    { get; set; }
+        public bool    IsActive     { get; set; }
+        public int     ProductCount { get; set; }
+        public List<CategoryNode> Children { get; set; } = new();
+    }
+
+    class Editor
+    {
+        public bool   IsNew    { get; set; }
+        public Guid?  Id       { get; set; }
+        public string Name     { get; set; } = "";
+        public string Slug     { get; set; } = "";
+        public string ParentId { get; set; } = "";
+        public bool   IsActive { get; set; } = true;
+    }
+}

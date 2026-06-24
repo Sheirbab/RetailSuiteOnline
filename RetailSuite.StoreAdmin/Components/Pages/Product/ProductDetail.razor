@@ -1,0 +1,510 @@
+@page "/products/{Id:guid}"
+@inject HttpClient Http
+@inject ToastService Toast
+@inject NavigationManager Nav
+@inject ApiUrlService Api
+@using System.Text.Json
+
+<PermissionGuard Code="PRODUCTS" />
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+    <a class="btn" href="/products">&larr; Products</a>
+    <h3 style="margin:0;flex:1;">@(_form?.Name ?? "Product")</h3>
+    @if (_form != null && !string.IsNullOrEmpty(_form.Slug))
+    {
+        <a class="btn" target="_blank" href="@($"{Api.BaseUrl.Replace(":7001", ":7002")}/shop/product/{Id}")"
+           style="font-size:12px;" title="Open storefront page">View on storefront ↗</a>
+    }
+    <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
+        @(_saving ? "Saving…" : "Save")
+    </button>
+</div>
+
+@if (_form == null)
+{
+    <div class="spinner"></div>
+}
+else
+{
+    <!-- Tabs -->
+    <div class="pd-tabs">
+        @foreach (var t in _tabs)
+        {
+            <button class="@(t == _activeTab ? "pd-tab active" : "pd-tab")"
+                    @onclick="() => _activeTab = t">@t</button>
+        }
+    </div>
+
+    <div class="card pd-pane">
+    @switch (_activeTab)
+    {
+        case "General":
+            <div class="form-grid">
+                <div>
+                    <label class="form-label">Name *</label>
+                    <input class="input full" @bind="_form.Name" />
+                </div>
+                <div>
+                    <label class="form-label">Slug</label>
+                    <input class="input full" @bind="_form.Slug" placeholder="auto-generated from name" />
+                </div>
+                <div>
+                    <label class="form-label">Brand</label>
+                    <select class="input full" @bind="_form.BrandId">
+                        <option value="">— None —</option>
+                        @if (_brands != null)
+                        {
+                            @foreach (var b in _brands)
+                            {
+                                <option value="@b.Id">@b.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Unit of measure</label>
+                    <select class="input full" @bind="_form.UnitOfMeasure">
+                        <option value="PCS">PCS — Pieces</option>
+                        <option value="KG">KG — Kilograms</option>
+                        <option value="G">G — Grams</option>
+                        <option value="L">L — Litres</option>
+                        <option value="ML">ML — Millilitres</option>
+                        <option value="M">M — Metres</option>
+                        <option value="BOX">BOX — Box / Carton</option>
+                        <option value="PACK">PACK — Pack</option>
+                    </select>
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label class="form-label">Short description (1 line — used on cards)</label>
+                    <input class="input full" @bind="_form.ShortDescription"
+                           placeholder="Quick teaser shown on product grid and search results" />
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label class="form-label">Tags (comma-separated)</label>
+                    <input class="input full" @bind="_form.Tags" placeholder="summer, casual, sale" />
+                </div>
+                <div style="grid-column:1/-1;">
+                    <label class="form-label" style="display:flex;align-items:center;gap:6px;text-transform:none;">
+                        <input type="checkbox" @bind="_form.IsActive" /> Active (visible to customers)
+                    </label>
+                </div>
+            </div>
+            break;
+
+        case "Description":
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+                <button class="chip" @onclick='() => Insert("<strong>", "</strong>")' title="Bold"><b>B</b></button>
+                <button class="chip" @onclick='() => Insert("<em>", "</em>")' title="Italic"><i>I</i></button>
+                <button class="chip" @onclick='() => Insert("<h2>", "</h2>")'>H2</button>
+                <button class="chip" @onclick='() => Insert("<h3>", "</h3>")'>H3</button>
+                <button class="chip" @onclick='() => Insert("<p>", "</p>")'>P</button>
+                <button class="chip" @onclick='() => Insert("<ul>\n  <li>", "</li>\n</ul>")'>UL</button>
+                <button class="chip" @onclick='() => Insert("<ol>\n  <li>", "</li>\n</ol>")'>OL</button>
+                <button class="chip" @onclick='() => Insert("<a href=\"https://\">", "</a>")'>Link</button>
+                <button class="chip" @onclick='() => Insert("<br/>", "")'>BR</button>
+            </div>
+            <textarea class="input full" rows="14" @bind="_form.Description"
+                      style="font-family:monospace;font-size:13px;"
+                      placeholder="<p>Long product description in HTML. Tags shown above insert markup. The preview pane below renders the result.</p>"></textarea>
+
+            <h5 style="margin-top:18px;">Preview</h5>
+            <div class="pd-preview">
+                @((MarkupString)(_form.Description ?? ""))
+            </div>
+
+            <h5 style="margin-top:18px;">Specs (JSON list of key/value pairs)</h5>
+            <textarea class="input full" rows="6" @bind="_form.Specs"
+                      style="font-family:monospace;font-size:13px;"
+                      placeholder='[{"Material":"Cotton"},{"Care":"Machine wash"},{"Origin":"Pakistan"}]'></textarea>
+            <p style="color:#6b7280;font-size:12px;margin-top:4px;">
+                Use a JSON array of single-key objects. Storefront renders this as a spec sheet table.
+            </p>
+            break;
+
+        case "Variants":
+            <p style="color:#6b7280;font-size:13px;margin-top:0;">
+                Variants are the SKUs customers actually buy (e.g. "Red Size M"). Set price, cost,
+                stock and tax per variant. Use the Attributes tab to define Size / Color first.
+            </p>
+            @if (_form.Variants.Count == 0)
+            {
+                <p style="color:#9ca3af;">No variants yet. Add one below.</p>
+            }
+            else
+            {
+                <table class="table">
+                    <thead>
+                        <tr><th>SKU</th><th>Barcode</th><th class="num">Price</th><th class="num">Cost</th><th class="num">Stock</th><th class="num">Tax %</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in _form.Variants)
+                        {
+                            <tr>
+                                <td><strong>@v.Sku</strong></td>
+                                <td style="font-family:monospace;font-size:12px;color:#6b7280;">@v.Barcode</td>
+                                <td class="num">Rs @v.Price.ToString("N2")</td>
+                                <td class="num">Rs @v.CostPrice.ToString("N2")</td>
+                                <td class="num">@v.StockQuantity</td>
+                                <td class="num">@((v.TaxRate * 100).ToString("0.##"))%</td>
+                                <td></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <div class="card" style="margin-top:14px;background:#f9fafb;">
+                <h5 style="margin-top:0;">+ Add variant</h5>
+                <div class="form-grid">
+                    <div><label class="form-label">SKU *</label><input class="input full" @bind="_newVariant.Sku" /></div>
+                    <div><label class="form-label">Price</label><input class="input full" type="number" step="0.01" @bind="_newVariant.Price" /></div>
+                    <div><label class="form-label">Cost</label><input class="input full" type="number" step="0.01" @bind="_newVariant.CostPrice" /></div>
+                    <div><label class="form-label">Tax rate (e.g. 0.17 = 17%)</label><input class="input full" type="number" step="0.01" @bind="_newVariant.TaxRate" /></div>
+                </div>
+                <button class="btn btn-primary" style="margin-top:12px;" @onclick="AddVariant">Add variant</button>
+            </div>
+            break;
+
+        case "Categories":
+            <p style="color:#6b7280;font-size:13px;margin-top:0;">
+                A product may belong to multiple categories. Tick all that apply.
+            </p>
+            @if (_categoryTree == null || _categoryTree.Count == 0)
+            {
+                <p style="color:#9ca3af;">No categories defined yet. Go to <a href="/settings/categories">Settings → Categories</a> to add some.</p>
+            }
+            else
+            {
+                <div class="cat-picker">
+                    @foreach (var row in FlattenCategoryTree())
+                    {
+                        <label class="cat-line" style="padding-left:@(row.Depth * 18)px;">
+                            <input type="checkbox"
+                                   checked="@_selectedCategoryIds.Contains(row.Node.Id)"
+                                   @onchange="e => ToggleCategory(row.Node.Id, (bool)(e.Value ?? false))" />
+                            <span>@row.Node.Name</span>
+                        </label>
+                    }
+                </div>
+                <button class="btn btn-primary" style="margin-top:12px;" @onclick="SaveCategories">
+                    Save category selection
+                </button>
+            }
+            break;
+
+        case "Images":
+            <p style="color:#6b7280;font-size:13px;margin-top:0;">
+                Manage the photo gallery for this product. The primary image appears on cards;
+                additional images show in the storefront detail-page carousel.
+            </p>
+            <a class="btn btn-primary" href="@($"/products/{Id}/images")">Open image manager →</a>
+            break;
+
+        case "SEO":
+            <p style="color:#6b7280;font-size:13px;margin-top:0;">
+                Slug + short description above already drive the SEO meta tags on the storefront page.
+                Extra fields here will be wired up in a later release.
+            </p>
+            <label class="form-label">Storefront URL</label>
+            <code style="display:block;padding:8px;background:#f1f5f9;border-radius:6px;">
+                /shop/product/@Id
+            </code>
+            break;
+    }
+    </div>
+}
+
+<style>
+    .pd-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid #e5e7eb; margin-bottom:0; }
+    .pd-tab  { background:transparent; border:none; padding:10px 16px; font-size:14px; color:#6b7280;
+               cursor:pointer; border-bottom:2px solid transparent; font-weight:500; }
+    .pd-tab:hover  { color:#111827; }
+    .pd-tab.active { color:#2563eb; border-bottom-color:#2563eb; }
+    .pd-pane { border-top:none; border-radius:0 0 12px 12px; }
+
+    .form-grid    { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .form-label   { display:block; font-size:12px; color:#6b7280; text-transform:uppercase;
+                    letter-spacing:.04em; margin-bottom:4px; }
+
+    .pd-preview { border:1px solid #e5e7eb; border-radius:8px; padding:16px;
+                  background:#fafafa; min-height:120px; }
+
+    .chip { background:#f1f5f9; border:1px solid #e2e8f0; padding:4px 10px; border-radius:6px;
+            cursor:pointer; font-size:13px; }
+    .chip:hover { background:#e2e8f0; }
+
+    .cat-picker { display:flex; flex-direction:column; gap:6px; max-width:480px; }
+    .cat-line   { display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer; padding:4px 0; }
+
+    .table .num { text-align:right; }
+</style>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    string[] _tabs = new[] { "General", "Description", "Variants", "Categories", "Images", "SEO" };
+    string   _activeTab = "General";
+
+    ProductForm? _form;
+    List<BrandSlim>? _brands;
+    List<CategoryNode>? _categoryTree;
+    HashSet<Guid> _selectedCategoryIds = new();
+    NewVariantForm _newVariant = new();
+    bool _saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Task.WhenAll(LoadProduct(), LoadBrands(), LoadCategories());
+            StateHasChanged();
+        }
+    }
+
+    async Task LoadProduct()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/products/{Id}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _form = new ProductForm
+            {
+                Name             = d.GetProperty("name").GetString() ?? "",
+                Description      = d.TryGetProperty("description", out var de) ? de.GetString() ?? "" : "",
+                ShortDescription = d.TryGetProperty("shortDescription", out var sd) ? sd.GetString() : null,
+                Slug             = d.TryGetProperty("slug", out var sl) ? sl.GetString() ?? "" : "",
+                BrandId          = d.TryGetProperty("brandId", out var br) && br.ValueKind != JsonValueKind.Null ? br.GetGuid().ToString() : "",
+                UnitOfMeasure    = d.TryGetProperty("unitOfMeasure", out var uo) ? uo.GetString() ?? "PCS" : "PCS",
+                Specs            = d.TryGetProperty("specs", out var sp) && sp.ValueKind == JsonValueKind.String ? sp.GetString() : null,
+                Tags             = d.TryGetProperty("tags",  out var tg) && tg.ValueKind == JsonValueKind.String ? tg.GetString() : null,
+                IsActive         = !d.TryGetProperty("isActive", out var ia) || ia.GetBoolean(),
+                Variants         = new()
+            };
+
+            if (d.TryGetProperty("variants", out var vs) && vs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in vs.EnumerateArray())
+                {
+                    _form.Variants.Add(new VariantRow
+                    {
+                        Id            = v.GetProperty("id").GetGuid(),
+                        Sku           = v.GetProperty("sku").GetString() ?? "",
+                        Barcode       = v.TryGetProperty("barcode", out var ba) ? ba.GetString() : null,
+                        Price         = v.GetProperty("price").GetDecimal(),
+                        CostPrice     = v.TryGetProperty("costPrice", out var cp) ? cp.GetDecimal() : 0m,
+                        StockQuantity = v.TryGetProperty("stockQuantity", out var st) ? st.GetInt32() : 0,
+                        TaxRate       = v.TryGetProperty("taxRate", out var tx) ? tx.GetDecimal() : 0m
+                    });
+                }
+            }
+
+            // Currently-assigned categories
+            var pcJson = await Http.GetStringAsync($"api/products/{Id}/categories");
+            using var pcDoc = JsonDocument.Parse(pcJson);
+            _selectedCategoryIds.Clear();
+            if (pcDoc.RootElement.TryGetProperty("data", out var pcd) && pcd.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in pcd.EnumerateArray())
+                    _selectedCategoryIds.Add(c.GetProperty("categoryId").GetGuid());
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    async Task LoadBrands()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/brands?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _brands = new();
+            foreach (var b in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                _brands.Add(new BrandSlim
+                {
+                    Id   = b.GetProperty("id").GetGuid(),
+                    Name = b.GetProperty("name").GetString() ?? ""
+                });
+            }
+        }
+        catch { /* non-fatal */ }
+    }
+
+    async Task LoadCategories()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/categories/tree");
+            using var doc = JsonDocument.Parse(json);
+            _categoryTree = ParseTree(doc.RootElement.GetProperty("data"));
+        }
+        catch { /* non-fatal */ }
+    }
+
+    List<CategoryNode> ParseTree(JsonElement el)
+    {
+        var list = new List<CategoryNode>();
+        if (el.ValueKind != JsonValueKind.Array) return list;
+        foreach (var e in el.EnumerateArray())
+        {
+            var n = new CategoryNode
+            {
+                Id   = e.GetProperty("id").GetGuid(),
+                Name = e.GetProperty("name").GetString() ?? ""
+            };
+            if (e.TryGetProperty("children", out var kids))
+                n.Children = ParseTree(kids);
+            list.Add(n);
+        }
+        return list;
+    }
+
+    IEnumerable<(CategoryNode Node, int Depth)> FlattenCategoryTree()
+    {
+        if (_categoryTree == null) yield break;
+        foreach (var r in Walk(_categoryTree, 0)) yield return r;
+    }
+    IEnumerable<(CategoryNode, int)> Walk(IEnumerable<CategoryNode> nodes, int depth)
+    {
+        foreach (var n in nodes)
+        {
+            yield return (n, depth);
+            foreach (var c in Walk(n.Children, depth + 1)) yield return c;
+        }
+    }
+
+    void ToggleCategory(Guid id, bool on)
+    {
+        if (on) _selectedCategoryIds.Add(id);
+        else    _selectedCategoryIds.Remove(id);
+    }
+
+    void Insert(string open, string close)
+    {
+        // No selection-aware insert in plain textarea — append at end.
+        // Good enough for an MVP HTML editor; users can paste full markup.
+        if (_form == null) return;
+        _form.Description = (_form.Description ?? "") + open + "text" + close;
+    }
+
+    async Task Save()
+    {
+        if (_form == null) return;
+        if (string.IsNullOrWhiteSpace(_form.Name))
+        {
+            Toast.Show("Name is required.");
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var body = new
+            {
+                name             = _form.Name,
+                description      = _form.Description,
+                shortDescription = _form.ShortDescription,
+                slug             = string.IsNullOrWhiteSpace(_form.Slug) ? null : _form.Slug,
+                brandId          = string.IsNullOrEmpty(_form.BrandId) ? (Guid?)null : Guid.Parse(_form.BrandId),
+                unitOfMeasure    = _form.UnitOfMeasure,
+                specs            = _form.Specs,
+                tags             = _form.Tags,
+                isActive         = _form.IsActive
+            };
+            var resp = await Http.PutAsJsonAsync($"api/products/{Id}", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            Toast.Show("Saved.");
+        }
+        finally { _saving = false; }
+    }
+
+    async Task SaveCategories()
+    {
+        // Strategy: server resets the whole set. Replace endpoint expects { categoryIds: [...] }.
+        var resp = await Http.PostAsJsonAsync($"api/products/{Id}/categories/replace", new
+        {
+            categoryIds = _selectedCategoryIds.ToList()
+        });
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Save categories failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        Toast.Show("Categories saved.");
+    }
+
+    async Task AddVariant()
+    {
+        if (_form == null) return;
+        if (string.IsNullOrWhiteSpace(_newVariant.Sku))
+        {
+            Toast.Show("SKU is required.");
+            return;
+        }
+        var resp = await Http.PostAsJsonAsync($"api/products/{Id}/variants", new
+        {
+            sku       = _newVariant.Sku,
+            price     = _newVariant.Price,
+            costPrice = _newVariant.CostPrice,
+            taxRate   = _newVariant.TaxRate
+        });
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Variant failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        _newVariant = new NewVariantForm();
+        await LoadProduct();
+        StateHasChanged();
+    }
+
+    class ProductForm
+    {
+        public string  Name             { get; set; } = "";
+        public string  Description      { get; set; } = "";
+        public string? ShortDescription { get; set; }
+        public string  Slug             { get; set; } = "";
+        public string  BrandId          { get; set; } = "";   // bound as string for <select>
+        public string  UnitOfMeasure    { get; set; } = "PCS";
+        public string? Specs            { get; set; }
+        public string? Tags             { get; set; }
+        public bool    IsActive         { get; set; } = true;
+        public List<VariantRow> Variants { get; set; } = new();
+    }
+
+    class VariantRow
+    {
+        public Guid    Id            { get; set; }
+        public string  Sku           { get; set; } = "";
+        public string? Barcode       { get; set; }
+        public decimal Price         { get; set; }
+        public decimal CostPrice     { get; set; }
+        public int     StockQuantity { get; set; }
+        public decimal TaxRate       { get; set; }
+    }
+
+    class NewVariantForm
+    {
+        public string  Sku       { get; set; } = "";
+        public decimal Price     { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal TaxRate   { get; set; }
+    }
+
+    class BrandSlim
+    {
+        public Guid   Id   { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    class CategoryNode
+    {
+        public Guid    Id   { get; set; }
+        public string  Name { get; set; } = "";
+        public List<CategoryNode> Children { get; set; } = new();
+    }
+}
