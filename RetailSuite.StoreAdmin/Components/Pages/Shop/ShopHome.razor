@@ -43,10 +43,76 @@
                 </div>
             }
         }
+        @if (_filters != null && (_filters.Brands.Any() || _filters.Attributes.Any()))
+        {
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:14px 0;" />
+
+            @if (_filters.Brands.Any())
+            {
+                <h5 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">Brand</h5>
+                @foreach (var b in _filters.Brands)
+                {
+                    var picked = _selectedBrandIds.Contains(b.Id);
+                    <label class="facet-line">
+                        <input type="checkbox" checked="@picked"
+                               @onchange="e => ToggleBrand(b.Id, (bool)(e.Value ?? false))" />
+                        <span style="flex:1;">@b.Name</span>
+                        <span style="color:#9ca3af;font-size:12px;">@b.Count</span>
+                    </label>
+                }
+            }
+
+            @foreach (var attr in _filters.Attributes)
+            {
+                <h5 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">@attr.Name</h5>
+                @foreach (var v in attr.Values)
+                {
+                    var picked = _selectedAttrValueIds.Contains(v.Id);
+                    <label class="facet-line">
+                        <input type="checkbox" checked="@picked"
+                               @onchange="e => ToggleAttr(v.Id, (bool)(e.Value ?? false))" />
+                        <span style="flex:1;">@v.Value</span>
+                        <span style="color:#9ca3af;font-size:12px;">@v.Count</span>
+                    </label>
+                }
+            }
+
+            @if (_filters.PriceMax > 0)
+            {
+                <h5 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">Price (Rs)</h5>
+                <div style="display:flex;gap:6px;align-items:center;">
+                    <input type="number" class="input" style="width:80px;padding:4px 6px;"
+                           placeholder="@_filters.PriceMin.ToString("0")"
+                           @bind="_priceMin" @bind:event="onchange" />
+                    <span style="color:#9ca3af;">—</span>
+                    <input type="number" class="input" style="width:80px;padding:4px 6px;"
+                           placeholder="@_filters.PriceMax.ToString("0")"
+                           @bind="_priceMax" @bind:event="onchange" />
+                </div>
+                <button class="btn" style="margin-top:8px;padding:4px 10px;font-size:12px;"
+                        @onclick="ApplyPriceFilter">Apply</button>
+            }
+
+            @if (_selectedBrandIds.Any() || _selectedAttrValueIds.Any()
+                 || _priceMin.HasValue || _priceMax.HasValue)
+            {
+                <button class="btn" style="margin-top:10px;font-size:12px;width:100%;"
+                        @onclick="ClearFilters">Clear filters</button>
+            }
+        }
+
         <div style="margin-top:14px;">
             <a class="btn full" href="/shop/track" style="font-size:13px;text-align:center;">Track an order ↗</a>
         </div>
     </div>
+
+    <style>
+        .facet-line {
+            display:flex; align-items:center; gap:8px; font-size:13px;
+            padding:3px 0; cursor:pointer;
+        }
+        .facet-line:hover { color:#1d4ed8; }
+    </style>
 
     <style>
         .cat-row {
@@ -132,6 +198,13 @@
     HashSet<Guid> _openCats = new();
     List<ProductRow> _products = new();
 
+    // Faceted filter state
+    Filters? _filters;
+    HashSet<Guid> _selectedBrandIds     = new();
+    HashSet<Guid> _selectedAttrValueIds = new();
+    decimal? _priceMin;
+    decimal? _priceMax;
+
     // Debounce timer for search-as-you-type.
     System.Timers.Timer? _searchTimer;
 
@@ -139,7 +212,71 @@
     {
         if (!firstRender) return;
         await LoadCategories();
+        await LoadFilters();
         await LoadProducts();
+    }
+
+    async Task LoadFilters()
+    {
+        try
+        {
+            var url = $"api/shop/filters";
+            if (_selectedCategoryId.HasValue) url += $"?categoryId={_selectedCategoryId}";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+
+            _filters = new Filters();
+            foreach (var b in d.GetProperty("brands").EnumerateArray())
+            {
+                _filters.Brands.Add(new BrandFacet
+                {
+                    Id    = b.GetProperty("id").GetGuid(),
+                    Name  = b.GetProperty("name").GetString() ?? "",
+                    Count = b.GetProperty("count").GetInt32()
+                });
+            }
+            foreach (var a in d.GetProperty("attributes").EnumerateArray())
+            {
+                var af = new AttrFacet { Name = a.GetProperty("name").GetString() ?? "" };
+                foreach (var v in a.GetProperty("values").EnumerateArray())
+                {
+                    af.Values.Add(new AttrValueFacet
+                    {
+                        Id    = v.GetProperty("id").GetGuid(),
+                        Value = v.GetProperty("value").GetString() ?? "",
+                        Count = v.GetProperty("count").GetInt32()
+                    });
+                }
+                _filters.Attributes.Add(af);
+            }
+            var price = d.GetProperty("price");
+            _filters.PriceMin = price.GetProperty("min").GetDecimal();
+            _filters.PriceMax = price.GetProperty("max").GetDecimal();
+            StateHasChanged();
+        }
+        catch { /* non-fatal */ }
+    }
+
+    void ToggleBrand(Guid id, bool on)
+    {
+        if (on) _selectedBrandIds.Add(id);
+        else    _selectedBrandIds.Remove(id);
+        _ = LoadProducts();
+    }
+    void ToggleAttr(Guid id, bool on)
+    {
+        if (on) _selectedAttrValueIds.Add(id);
+        else    _selectedAttrValueIds.Remove(id);
+        _ = LoadProducts();
+    }
+    void ApplyPriceFilter() => _ = LoadProducts();
+    void ClearFilters()
+    {
+        _selectedBrandIds.Clear();
+        _selectedAttrValueIds.Clear();
+        _priceMin = _priceMax = null;
+        _ = LoadProducts();
     }
 
     async Task LoadCategories()
@@ -215,6 +352,12 @@
             var url = "api/shop/products?page=1&pageSize=60";
             if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
             if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+            if (_selectedBrandIds.Any())
+                url += $"&brandIds={string.Join(",", _selectedBrandIds)}";
+            if (_selectedAttrValueIds.Any())
+                url += $"&attrValueIds={string.Join(",", _selectedAttrValueIds)}";
+            if (_priceMin.HasValue) url += $"&priceMin={_priceMin.Value}";
+            if (_priceMax.HasValue) url += $"&priceMax={_priceMax.Value}";
 
             var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
@@ -247,6 +390,11 @@
     {
         _selectedCategoryId   = id;
         _selectedCategoryName = id == null ? null : FindNode(_tree, id.Value)?.Name;
+        // Clear faceted selections when switching scope — facet ids would otherwise be stale.
+        _selectedBrandIds.Clear();
+        _selectedAttrValueIds.Clear();
+        _priceMin = _priceMax = null;
+        await LoadFilters();
         await LoadProducts();
     }
 
@@ -299,4 +447,15 @@
         public string? ImageUrl         { get; set; }
         public decimal MinPrice         { get; set; }
     }
+
+    class Filters
+    {
+        public List<BrandFacet> Brands     { get; set; } = new();
+        public List<AttrFacet>  Attributes { get; set; } = new();
+        public decimal PriceMin            { get; set; }
+        public decimal PriceMax            { get; set; }
+    }
+    class BrandFacet     { public Guid   Id { get; set; } public string Name  { get; set; } = ""; public int Count { get; set; } }
+    class AttrFacet      { public string Name { get; set; } = ""; public List<AttrValueFacet> Values { get; set; } = new(); }
+    class AttrValueFacet { public Guid   Id { get; set; } public string Value { get; set; } = ""; public int Count { get; set; } }
 }

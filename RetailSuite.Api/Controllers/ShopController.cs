@@ -136,6 +136,10 @@ public class ShopController : ControllerBase
     public async Task<IActionResult> Products(
         [FromQuery] Guid? categoryId,
         [FromQuery] string? search,
+        [FromQuery] string? brandIds,
+        [FromQuery] string? attrValueIds,
+        [FromQuery] decimal? priceMin,
+        [FromQuery] decimal? priceMax,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 24)
     {
@@ -166,6 +170,38 @@ public class ShopController : ControllerBase
                 p.Name.Contains(s) ||
                 p.Variants.Any(v => v.SKU.Contains(s) || (v.Barcode != null && v.Barcode.Contains(s))));
         }
+
+        // Brand filter — OR semantics within the parameter (any-of).
+        var brandList = ParseGuidList(brandIds);
+        if (brandList.Count > 0)
+            query = query.Where(p => p.BrandId.HasValue && brandList.Contains(p.BrandId.Value));
+
+        // Attribute filter — AND across attribute groups, OR within values of a group.
+        // We resolve the values to their attribute ids and require at least one match per group.
+        var attrValueList = ParseGuidList(attrValueIds);
+        if (attrValueList.Count > 0)
+        {
+            var valueToAttr = await _db.ProductAttributeValues
+                .Where(v => attrValueList.Contains(v.Id))
+                .Select(v => new { v.Id, v.AttributeId })
+                .ToListAsync();
+            var groups = valueToAttr.GroupBy(v => v.AttributeId).ToList();
+
+            foreach (var g in groups)
+            {
+                var vids = g.Select(x => x.Id).ToList();
+                query = query.Where(p =>
+                    p.Variants.Any(v =>
+                        _db.VariantAttributeValues.Any(va =>
+                            va.ProductVariantId == v.Id && vids.Contains(va.ProductAttributeValueId))));
+            }
+        }
+
+        // Price filter — at least one active variant within range.
+        if (priceMin.HasValue)
+            query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price >= priceMin.Value));
+        if (priceMax.HasValue)
+            query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price <= priceMax.Value));
 
         var total = await query.CountAsync();
 
@@ -595,6 +631,102 @@ public class ShopController : ControllerBase
     }
 
     // ============================================================
+    //  GET /api/shop/filters?categoryId=&search=
+    //  Returns the available facets for the current product scope:
+    //  brand counts, attribute-value counts, and price min/max.
+    // ============================================================
+    [HttpGet("filters")]
+    public async Task<IActionResult> Filters(
+        [FromQuery] Guid? categoryId,
+        [FromQuery] string? search)
+    {
+        // Resolve the base product set (same scope as /products, no facet filters).
+        var query = _db.Products
+            .Include(p => p.Variants)
+            .Where(p => p.IsActive)
+            .AsQueryable();
+
+        if (categoryId.HasValue && categoryId.Value != Guid.Empty)
+        {
+            var descendants = await GetDescendantCategoryIdsAsync(categoryId.Value);
+            descendants.Add(categoryId.Value);
+            var productIds = _db.ProductCategories
+                .Where(pc => descendants.Contains(pc.CategoryId))
+                .Select(pc => pc.ProductId);
+            query = query.Where(p => productIds.Contains(p.Id));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(p =>
+                p.Name.Contains(s) ||
+                p.Variants.Any(v => v.SKU.Contains(s) || (v.Barcode != null && v.Barcode.Contains(s))));
+        }
+
+        var productIdsForScope = await query.Select(p => p.Id).ToListAsync();
+
+        // Brand counts
+        var brandCounts = await _db.Products
+            .Where(p => productIdsForScope.Contains(p.Id) && p.BrandId.HasValue)
+            .GroupBy(p => p.BrandId!.Value)
+            .Select(g => new { BrandId = g.Key, Count = g.Count() })
+            .ToListAsync();
+        var brands = await _db.Brands.Where(b => b.IsActive).ToListAsync();
+        var brandFacets = brands.Select(b => new
+        {
+            b.Id, b.Name, b.Slug,
+            Count = brandCounts.FirstOrDefault(c => c.BrandId == b.Id)?.Count ?? 0
+        }).Where(x => x.Count > 0).OrderBy(x => x.Name).ToList();
+
+        // Attribute facets: { Name, Values: [{Id, Value, Count}] }
+        var variantIds = await _db.ProductVariants
+            .Where(v => productIdsForScope.Contains(v.ProductId) && v.IsActive)
+            .Select(v => v.Id)
+            .ToListAsync();
+        var attrPairs = await _db.VariantAttributeValues
+            .Where(va => variantIds.Contains(va.ProductVariantId))
+            .Join(_db.ProductAttributeValues,
+                  va => va.ProductAttributeValueId,
+                  pav => pav.Id,
+                  (va, pav) => new { va.ProductVariantId, pav.Id, pav.AttributeId, pav.Value })
+            .ToListAsync();
+        var attrLookup = await _db.ProductAttributes.ToDictionaryAsync(a => a.Id, a => a.Name);
+        var attrFacets = attrPairs
+            .GroupBy(x => x.AttributeId)
+            .Where(g => attrLookup.ContainsKey(g.Key))
+            .Select(g => new
+            {
+                AttributeId = g.Key,
+                Name        = attrLookup[g.Key],
+                Values = g.GroupBy(x => x.Id)
+                    .Select(vg => new
+                    {
+                        Id    = vg.Key,
+                        Value = vg.First().Value,
+                        // Distinct product count for this value within the scope.
+                        Count = vg.Select(x => x.ProductVariantId).Distinct().Count()
+                    })
+                    .OrderBy(x => x.Value)
+                    .ToList()
+            })
+            .OrderBy(g => g.Name)
+            .ToList();
+
+        // Price range across active variants in scope.
+        var priceQ = _db.ProductVariants
+            .Where(v => productIdsForScope.Contains(v.ProductId) && v.IsActive);
+        decimal? priceMin = await priceQ.AnyAsync() ? await priceQ.MinAsync(v => (decimal?)v.Price) : null;
+        decimal? priceMax = await priceQ.AnyAsync() ? await priceQ.MaxAsync(v => (decimal?)v.Price) : null;
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            Brands     = brandFacets,
+            Attributes = attrFacets,
+            Price      = new { Min = priceMin ?? 0m, Max = priceMax ?? 0m }
+        }));
+    }
+
+    // ============================================================
     //  Category descendant helper
     // ============================================================
     /// <summary>
@@ -602,6 +734,18 @@ public class ShopController : ControllerBase
     /// One round-trip — loads the parent/child map for the tenant and walks it in memory.
     /// Category trees are small enough that a recursive CTE isn't worth the complexity.
     /// </summary>
+    /// <summary>Parses a comma-separated list of GUIDs from a query param. Skips invalid entries.</summary>
+    private static List<Guid> ParseGuidList(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return new();
+        var list = new List<Guid>();
+        foreach (var token in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Guid.TryParse(token, out var g)) list.Add(g);
+        }
+        return list;
+    }
+
     private async Task<HashSet<Guid>> GetDescendantCategoryIdsAsync(Guid rootId)
     {
         var pairs = await _db.Categories
