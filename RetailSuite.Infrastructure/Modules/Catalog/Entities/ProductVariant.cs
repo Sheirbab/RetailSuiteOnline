@@ -59,4 +59,23 @@ public class ProductVariant : TenantEntity
     {
         Barcode = barcode;
     }
+
+    public void SetCostPrice(decimal cost)
+    {
+        if (cost < 0) throw new ArgumentException("Cost cannot be negative.");
+        CostPrice = cost;
+    }
+
+    /// <summary>
+    /// Rename the SKU. Caller is responsible for ensuring uniqueness within the tenant
+    /// (the DbContext has a unique index that will throw otherwise).
+    /// </summary>
+    public void SetSku(string sku)
+    {
+        if (string.IsNullOrWhiteSpace(sku)) throw new ArgumentException("SKU required.");
+        SKU = sku.Trim();
+    }
+
+    public void Activate()   => IsActive = true;
+    public void Deactivate() => IsActive = false;
 }
