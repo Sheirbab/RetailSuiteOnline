@@ -68,8 +68,20 @@ try
     // ---------------------------------------------------------------
     // Database
     // ---------------------------------------------------------------
+    var defaultConnectionString = builder.Configuration.GetConnectionString("Default");
+    if (string.IsNullOrWhiteSpace(defaultConnectionString))
+    {
+        throw new InvalidOperationException(
+            "Missing database connection string 'ConnectionStrings:Default'. " +
+            "Set it in appsettings.json for local development or in Azure App Service configuration for production.");
+    }
+
     builder.Services.AddDbContext<RetailDbContext>(options =>
-        options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+        options.UseSqlServer(defaultConnectionString, sqlOptions =>
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null)));
 
     // ---------------------------------------------------------------
     // Health Checks
