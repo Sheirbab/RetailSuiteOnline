@@ -7,6 +7,10 @@ on:
   push:
     branches:
       - claude/agitated-engelbart-5b1655
+    paths:
+      - 'RetailSuite.StoreAdmin/**'
+      - 'RetailSuite.Shared/**'
+      - '.github/workflows/claude-agitated-engelbart-5b1655_retailsuiteonline.yml'
   workflow_dispatch:
 
 jobs:
@@ -24,10 +28,10 @@ jobs:
           dotnet-version: '8.x'
 
       - name: Build with dotnet
-        run: dotnet build --configuration Release
+        run: dotnet build RetailSuite.StoreAdmin\RetailSuite.StoreAdmin.csproj --configuration Release
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish RetailSuite.StoreAdmin\RetailSuite.StoreAdmin.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
