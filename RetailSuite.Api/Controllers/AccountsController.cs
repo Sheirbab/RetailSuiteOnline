@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using RetailSuite.Api.Authorization;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
+using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Modules.Accounting.Entities;
 using RetailSuite.Shared;
 
@@ -20,8 +21,35 @@ namespace RetailSuite.Api.Controllers;
 public class AccountsController : ControllerBase
 {
     private readonly RetailDbContext _db;
+    private readonly ITenantContext _tenantContext;
 
-    public AccountsController(RetailDbContext db) => _db = db;
+    public AccountsController(RetailDbContext db, ITenantContext tenantContext)
+    {
+        _db            = db;
+        _tenantContext = tenantContext;
+    }
+
+    // POST /api/accounts/seed-defaults
+    // Idempotent: safe to call multiple times. Fills in the standard Chart of
+    // Accounts for the current tenant if any of the required accounts are missing.
+    [HttpPost("seed-defaults")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> SeedDefaults()
+    {
+        var tenantId = _tenantContext.TenantId
+            ?? throw new UnauthorizedAccessException("Tenant context missing.");
+
+        var beforeCount = await _db.Accounts.CountAsync();
+        await TenantDefaultsSeeder.SeedAsync(_db, tenantId);
+        var afterCount  = await _db.Accounts.CountAsync();
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            BeforeCount = beforeCount,
+            AfterCount  = afterCount,
+            Added       = afterCount - beforeCount
+        }));
+    }
 
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] bool? active)

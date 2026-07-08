@@ -13,7 +13,12 @@
             add extras (new expense categories, extra bank accounts) as needed.
         </p>
     </div>
-    <button class="btn btn-primary" @onclick="OpenCreate">+ Add account</button>
+    <div style="display:flex;gap:8px;">
+        <button class="btn" @onclick="SeedDefaults" title="Adds the standard set (1000 Cash, 1100 Inventory, 1200 AR, 2000 Tax Payable, 4000 Revenue, 5000 COGS) if missing. Safe to click multiple times.">
+            ↺ Seed default accounts
+        </button>
+        <button class="btn btn-primary" @onclick="OpenCreate">+ Add account</button>
+    </div>
 </div>
 
 @if (_accounts == null)
@@ -150,6 +155,23 @@ else
             StateHasChanged();
         }
         catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    async Task SeedDefaults()
+    {
+        var resp = await Http.PostAsync("api/accounts/seed-defaults", null);
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Seed failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        var body = await resp.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var added = doc.RootElement.GetProperty("data").GetProperty("added").GetInt32();
+        Toast.Show(added == 0
+            ? "Chart of Accounts already has the standard set — nothing to add."
+            : $"Added {added} default account(s).");
+        await Load();
     }
 
     void OpenCreate() => _editor = new Editor { IsNew = true, IsActive = true, AccountType = "Expense" };
