@@ -8,14 +8,12 @@
 
 @if (!_checked)
 {
-    <!-- Still reading localStorage — show nothing to avoid flash -->
     <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f9fafb;">
         <div class="spinner"></div>
     </div>
 }
 else if (!Auth.IsAuthenticated)
 {
-    <!-- Will redirect immediately in OnAfterRenderAsync -->
     <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f9fafb;">
         <p style="color:#9ca3af;">Redirecting to login...</p>
     </div>
@@ -24,89 +22,95 @@ else
 {
     <div class="layout">
 
-        <!-- Mobile sidebar backdrop -->
         <div class="sidebar-backdrop @( _sidebarOpen ? "open" : "")" @onclick="() => _sidebarOpen = false"></div>
 
-        <!-- Sidebar -->
         <div class="sidebar @( _sidebarOpen ? "open" : "")" @onclick="OnSidebarClick">
             <h2>RetailSuite</h2>
 
             @if (Auth.IsSuperAdmin)
             {
-                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:8px 0 4px;display:block;">Platform</span>
+                <span class="nav-section-label">Platform</span>
                 <NavLink href="/admin/tenants" style="color:#fbbf24;">🏢 Tenant Management</NavLink>
-                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
+                <hr class="nav-divider" />
             }
             else
             {
-                <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <!-- Dashboard (always visible, no group) -->
+                <NavLink href="/" Match="NavLinkMatch.All">📊 Dashboard</NavLink>
 
-                @if (Auth.Can("POS"))             { <NavLink href="/pos">POS Terminal</NavLink> }
-                @if (Auth.Can("PRODUCTS"))        { <NavLink href="/products">Products</NavLink> }
-                @if (Auth.Can("INVENTORY_VIEW"))  { <NavLink href="/inventory">Inventory</NavLink> }
-                @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
-                @if (Auth.Can("ORDERS_VIEW"))     { <NavLink href="/orders">Orders</NavLink> }
-                @if (Auth.Can("CUSTOMERS"))       { <NavLink href="/customers">Customers</NavLink> }
+                <!-- ============ Selling ============ -->
+                @if (Auth.Can("POS") || Auth.Can("PRODUCTS") || Auth.Can("INVENTORY_VIEW")
+                  || Auth.Can("INVENTORY_TRANSFER") || Auth.Can("ORDERS_VIEW")
+                  || Auth.Can("CUSTOMERS") || Auth.Can("BARCODES"))
+                {
+                    <NavGroup Title="Selling" Icon="🛒" IsOpen="@IsOpen("selling")" OnToggle='@(() => Toggle("selling"))'>
+                        @if (Auth.Can("POS"))                { <NavLink href="/pos">POS Terminal</NavLink> }
+                        @if (Auth.Can("PRODUCTS"))           { <NavLink href="/products">Products</NavLink> }
+                        @if (Auth.Can("INVENTORY_VIEW"))     { <NavLink href="/inventory">Inventory</NavLink> }
+                        @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
+                        @if (Auth.Can("ORDERS_VIEW"))        { <NavLink href="/orders">Orders</NavLink> }
+                        @if (Auth.Can("CUSTOMERS"))          { <NavLink href="/customers">Customers</NavLink> }
+                        @if (Auth.Can("BARCODES"))           { <NavLink href="/barcodes/print">Print barcodes</NavLink> }
+                    </NavGroup>
+                }
 
+                <!-- ============ Procurement ============ -->
                 @if (Auth.Can("SUPPLIERS") || Auth.Can("RECEIVING_ORDERS")
                   || Auth.Can("BULK_RECEIVE") || Auth.Can("SUPPLIER_RETURNS"))
                 {
-                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Procurement</span>
-                    @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
-                    @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
-                    @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
-                    @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
+                    <NavGroup Title="Procurement" Icon="📦" IsOpen="@IsOpen("procurement")" OnToggle='@(() => Toggle("procurement"))'>
+                        @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
+                        @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
+                        @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
+                        @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
+                    </NavGroup>
                 }
 
-                @if (Auth.Can("BARCODES"))
-                {
-                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Labels</span>
-                    <NavLink href="/barcodes/print">Print barcodes</NavLink>
-                }
-
+                <!-- ============ Reports ============ -->
                 @if (Auth.Can("REPORTS"))
                 {
-                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Reports</span>
-                    <NavLink href="/reports">Sales &amp; inventory reports</NavLink>
+                    <NavGroup Title="Reports" Icon="📈" IsOpen="@IsOpen("reports")" OnToggle='@(() => Toggle("reports"))'>
+                        <NavLink href="/reports">Sales &amp; inventory</NavLink>
+                    </NavGroup>
                 }
 
+                <!-- ============ Accounting ============ -->
                 @if (Auth.Can("ACCOUNTING"))
                 {
-                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Accounting</span>
-                    <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
-                    <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
-                    <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
-                    <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
+                    <NavGroup Title="Accounting" Icon="💰" IsOpen="@IsOpen("accounting")" OnToggle='@(() => Toggle("accounting"))'>
+                        <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
+                        <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
+                        <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
+                        <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
+                    </NavGroup>
                 }
 
+                <!-- ============ Settings ============ -->
                 @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
                   || Auth.Can("SUBSCRIPTION") || Auth.Can("CATEGORIES") || Auth.Can("BRANDS")
                   || Auth.Can("ATTRIBUTES") || Auth.IsAdmin)
                 {
-                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Settings</span>
-                    @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
-                    @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
-                    @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
-                    @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
-                    @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
-                    @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax & FBR</NavLink> }
-                    @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
-                    @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users & permissions</NavLink> }
+                    <NavGroup Title="Settings" Icon="⚙️" IsOpen="@IsOpen("settings")" OnToggle='@(() => Toggle("settings"))'>
+                        @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
+                        @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
+                        @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
+                        @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
+                        @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
+                        @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax &amp; FBR</NavLink> }
+                        @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
+                        @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users &amp; permissions</NavLink> }
+                    </NavGroup>
                 }
 
-                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
+                <hr class="nav-divider" />
                 <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>
             }
         </div>
 
         <!-- Main -->
         <div class="main">
-
-            <!-- Header -->
             <div class="header">
-                <button class="header-burger" @onclick="() => _sidebarOpen = !_sidebarOpen" title="Menu">
-                    ☰
-                </button>
+                <button class="header-burger" @onclick="() => _sidebarOpen = !_sidebarOpen" title="Menu">☰</button>
 
                 @if (Auth.IsSuperAdmin)
                 {
@@ -117,58 +121,119 @@ else
                     <span style="font-weight:500;color:#374151;flex:1;">Admin Panel</span>
                 }
 
-                <button class="btn btn-danger" @onclick="LogoutAsync">
-                    Logout
-                </button>
+                <button class="btn btn-danger" @onclick="LogoutAsync">Logout</button>
             </div>
 
-            <!-- Content -->
             <div class="content">
                 @Body
             </div>
 
-            <!-- Footer -->
             <div class="footer">
-                © 2026 RetailSuite
+                © @DateTime.Now.Year RetailSuite
             </div>
-
         </div>
     </div>
 }
 
+<style>
+    /* Nav group styling */
+    .nav-section-label {
+        font-size: 11px; text-transform: uppercase; color: #9ca3af;
+        letter-spacing: .05em; margin: 8px 0 4px; display: block;
+    }
+    .nav-divider {
+        border: none; border-top: 1px solid #374151; margin: 12px 0;
+    }
+    .nav-group-header {
+        display: flex; align-items: center; gap: 8px; cursor: pointer;
+        padding: 8px 10px; margin: 4px 0; border-radius: 6px;
+        color: #e5e7eb; font-weight: 500; font-size: 14px;
+        user-select: none; transition: background .12s;
+    }
+    .nav-group-header:hover { background: #374151; }
+    .nav-group-header .caret {
+        margin-left: auto; font-size: 10px; color: #9ca3af;
+        transition: transform .18s;
+    }
+    .nav-group-header .caret.open { transform: rotate(90deg); color: #e5e7eb; }
+    .nav-group-body {
+        padding-left: 10px; overflow: hidden;
+        max-height: 0; opacity: 0;
+        transition: max-height .22s ease-out, opacity .18s ease-out;
+    }
+    .nav-group-body.open {
+        max-height: 700px; opacity: 1;
+    }
+</style>
+
 @code {
     private bool _checked;
-    private bool _sidebarOpen;  // mobile drawer state
+    private bool _sidebarOpen;
+    private HashSet<string> _openGroups = new();
+
+    private bool IsOpen(string key) => _openGroups.Contains(key);
+    private void Toggle(string key)
+    {
+        if (_openGroups.Contains(key)) _openGroups.Remove(key);
+        else                            _openGroups.Add(key);
+    }
 
     /// <summary>
-    /// On mobile, tapping a NavLink inside the open sidebar should close the drawer.
-    /// We can't easily intercept individual NavLink clicks, so the easiest is to close
-    /// whenever any click bubbles up from the sidebar — except the sidebar itself is
-    /// only "open" on mobile, so on desktop this is a no-op.
+    /// Auto-open the group that contains the current route so the user always
+    /// sees where they are without hunting through collapsed sections.
     /// </summary>
+    private void AutoOpenCurrentGroup()
+    {
+        var uri = new Uri(Nav.Uri).AbsolutePath.ToLowerInvariant();
+
+        void Ensure(string key) { if (!_openGroups.Contains(key)) _openGroups.Add(key); }
+
+        if (uri is "/pos" or "/products" or "/inventory" or "/orders" or "/customers"
+            || uri.StartsWith("/pos/") || uri.StartsWith("/products/")
+            || uri.StartsWith("/inventory/") || uri.StartsWith("/orders/")
+            || uri.StartsWith("/customers/") || uri.StartsWith("/barcodes/"))
+            Ensure("selling");
+
+        if (uri.StartsWith("/suppliers") || uri.StartsWith("/receiving-orders")
+            || uri.StartsWith("/inventory/bulk-receive") || uri.StartsWith("/supplier-returns"))
+            Ensure("procurement");
+
+        if (uri.StartsWith("/reports"))
+            Ensure("reports");
+
+        if (uri.StartsWith("/accounting"))
+            Ensure("accounting");
+
+        if (uri.StartsWith("/settings") || uri.StartsWith("/locations"))
+            Ensure("settings");
+    }
+
     private void OnSidebarClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
     {
-        // Best-effort: close on click for the mobile-open state.
         if (_sidebarOpen) _sidebarOpen = false;
     }
 
     protected override void OnInitialized()
     {
         Auth.OnChange += StateHasChanged;
+        Nav.LocationChanged += (_, _) =>
+        {
+            AutoOpenCurrentGroup();
+            InvokeAsync(StateHasChanged);
+        };
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
 
-        // Restore token from localStorage — JS is available at this point
         await Auth.InitializeAsync();
-
         _checked = true;
 
         if (!Auth.IsAuthenticated)
             Nav.NavigateTo("/login", replace: true);
 
+        AutoOpenCurrentGroup();
         StateHasChanged();
     }
 

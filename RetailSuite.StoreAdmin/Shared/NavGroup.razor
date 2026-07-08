@@ -1,0 +1,29 @@
+@*
+    Collapsible group of NavLinks in the sidebar.
+    Usage:
+        <NavGroup Title="Reports" Icon="📈" IsOpen="@IsOpen("reports")"
+                  OnToggle='() => Toggle("reports")'>
+            <NavLink href="/reports">Sales</NavLink>
+            <NavLink href="/reports/inventory">Inventory</NavLink>
+        </NavGroup>
+*@
+
+<div class="nav-group-header" @onclick="OnToggle">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <span style="width:20px;text-align:center;">@Icon</span>
+    }
+    <span>@Title</span>
+    <span class="caret @(IsOpen ? "open" : "")">›</span>
+</div>
+<div class="nav-group-body @(IsOpen ? "open" : "")">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title    { get; set; } = "";
+    [Parameter]                 public string? Icon    { get; set; }
+    [Parameter]                 public bool    IsOpen  { get; set; }
+    [Parameter]                 public EventCallback OnToggle { get; set; }
+    [Parameter]                 public RenderFragment? ChildContent { get; set; }
+}
