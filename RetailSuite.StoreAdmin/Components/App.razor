@@ -1,16 +1,18 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
     <HeadOutlet />
-    <link rel="stylesheet" href="app.css?v=20260605" />
+    <link rel="stylesheet" href="/app.css?v=20260605" />
     <link href="https://unpkg.com/lucide-static@latest/font/lucide.css" rel="stylesheet" />
 </head>
 <body>
 
-    <!-- 🔥 THIS IS THE KEY FIX -->
     <Routes @rendermode="InteractiveServer" />
 
-    <script src="_framework/blazor.web.js"></script>
-    <script src="app.js"></script>
+    <script src="/_framework/blazor.web.js"></script>
+    <script src="/app.js"></script>
 </body>
 </html>
