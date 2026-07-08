@@ -15,6 +15,8 @@ public class JournalEntry : TenantEntity
 
     public JournalEntry(string? referenceId, string description)
     {
+        Id          = Guid.NewGuid();
+        CreatedAt   = DateTime.UtcNow;
         ReferenceId = referenceId;
         Description = description;
     }

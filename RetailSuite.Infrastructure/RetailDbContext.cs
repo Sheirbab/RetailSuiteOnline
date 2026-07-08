@@ -1179,12 +1179,22 @@ public class RetailDbContext : DbContext
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        var now = DateTime.UtcNow;
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
-            if (entry.State == EntityState.Added &&
-                _tenantContext.TenantId.HasValue)
+            if (entry.State == EntityState.Added)
             {
-                entry.Entity.TenantId = _tenantContext.TenantId.Value;
+                if (_tenantContext.TenantId.HasValue && entry.Entity.TenantId == Guid.Empty)
+                    entry.Entity.TenantId = _tenantContext.TenantId.Value;
+
+                // Belt-and-braces: some entity constructors forget to set CreatedAt
+                // (e.g. JournalEntry). Fill it in here so downstream date filters
+                // don't miss the row. Only fills when still at the default value.
+                if (entry.Entity.CreatedAt == default)
+                    entry.Entity.CreatedAt = now;
+
+                if (entry.Entity.Id == Guid.Empty)
+                    entry.Entity.Id = Guid.NewGuid();
             }
         }
 
