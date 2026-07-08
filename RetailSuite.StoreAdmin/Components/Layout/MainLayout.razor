@@ -70,6 +70,15 @@ else
                     <NavLink href="/reports">Sales &amp; inventory reports</NavLink>
                 }
 
+                @if (Auth.Can("ACCOUNTING"))
+                {
+                    <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:12px 0 4px;display:block;">Accounting</span>
+                    <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
+                    <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
+                    <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
+                    <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
+                }
+
                 @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
                   || Auth.Can("SUBSCRIPTION") || Auth.Can("CATEGORIES") || Auth.Can("BRANDS")
                   || Auth.Can("ATTRIBUTES") || Auth.IsAdmin)

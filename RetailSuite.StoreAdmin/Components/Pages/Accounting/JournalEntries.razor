@@ -1,0 +1,156 @@
+@page "/accounting/journal-entries"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ACCOUNTING" />
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Journal Entries</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Every transaction posted to the ledger. Auto-posted (POS sales, receipts) and manual adjustments.
+        </p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:12px;color:#6b7280;">From</label>
+        <input type="date" @bind="From" @bind:event="onchange"
+               style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <label style="font-size:12px;color:#6b7280;">To</label>
+        <input type="date" @bind="To" @bind:event="onchange"
+               style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" @bind="ManualOnly" /> Manual only
+        </label>
+        <button class="btn btn-primary" @onclick="Load" style="padding:6px 14px;">Refresh</button>
+    </div>
+</div>
+
+@if (_data == null)
+{
+    <div class="spinner"></div>
+}
+else if (_data.Items.Count == 0)
+{
+    <div class="card"><p style="color:#9ca3af;">No entries in this range.</p></div>
+}
+else
+{
+    <div class="card">
+        <p style="color:#6b7280;font-size:13px;margin:0 0 8px;">
+            @_data.Items.Count of @_data.Total entries shown (page @_data.Page).
+        </p>
+        <table class="table je-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Reference</th>
+                    <th>Type</th>
+                    <th class="num">Lines</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _data.Items)
+                {
+                    <tr>
+                        <td>@e.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
+                        <td>@e.Description</td>
+                        <td style="font-family:monospace;font-size:12px;color:#6b7280;">@e.ReferenceId</td>
+                        <td>
+                            @if (e.IsManual)
+                            {
+                                <span class="chip manual">Manual</span>
+                            }
+                            else
+                            {
+                                <span class="chip auto">Auto</span>
+                            }
+                        </td>
+                        <td class="num">@e.LineCount</td>
+                        <td class="num">Rs @e.Debit.ToString("N2")</td>
+                        <td class="num">Rs @e.Credit.ToString("N2")</td>
+                        <td style="text-align:right;">
+                            <a class="btn" style="padding:2px 10px;font-size:12px;"
+                               href="@($"/accounting/journal-entry/{e.Id}")">Open</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .je-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .chip.manual { background:#fef3c7; color:#a16207; }
+    .chip.auto   { background:#f1f5f9; color:#475569; }
+</style>
+
+@code {
+    DateTime From { get; set; } = DateTime.Today.AddMonths(-1);
+    DateTime To   { get; set; } = DateTime.Today;
+    bool ManualOnly { get; set; }
+
+    JeList? _data;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var url = $"api/gl/journal-entries?from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}&manualOnly={ManualOnly}";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _data = new JeList
+            {
+                Total    = d.GetProperty("total").GetInt32(),
+                Page     = d.GetProperty("page").GetInt32(),
+                Items    = new()
+            };
+            foreach (var e in d.GetProperty("items").EnumerateArray())
+            {
+                _data.Items.Add(new JeRow
+                {
+                    Id          = e.GetProperty("id").GetGuid(),
+                    CreatedAt   = e.GetProperty("createdAt").GetDateTime(),
+                    ReferenceId = e.TryGetProperty("referenceId", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null,
+                    Description = e.GetProperty("description").GetString() ?? "",
+                    IsManual    = e.GetProperty("isManual").GetBoolean(),
+                    LineCount   = e.GetProperty("lineCount").GetInt32(),
+                    Debit       = e.GetProperty("debit").GetDecimal(),
+                    Credit      = e.GetProperty("credit").GetDecimal()
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    class JeList
+    {
+        public int Total { get; set; }
+        public int Page  { get; set; }
+        public List<JeRow> Items { get; set; } = new();
+    }
+    class JeRow
+    {
+        public Guid    Id { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string? ReferenceId { get; set; }
+        public string  Description { get; set; } = "";
+        public bool    IsManual { get; set; }
+        public int     LineCount { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+    }
+}

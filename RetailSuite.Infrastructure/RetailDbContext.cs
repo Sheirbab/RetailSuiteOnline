@@ -669,6 +669,7 @@ public class RetailDbContext : DbContext
 
             b.Property(a => a.Code).IsRequired().HasMaxLength(50);
             b.Property(a => a.Name).IsRequired().HasMaxLength(200);
+            b.Property(a => a.IsActive).HasDefaultValue(true);
 
             b.HasIndex(a => new { a.TenantId, a.Code }).IsUnique();
         });

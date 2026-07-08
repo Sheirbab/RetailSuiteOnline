@@ -1,0 +1,225 @@
+@page "/accounting/chart-of-accounts"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ACCOUNTING" />
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <h3 style="margin:0;">Chart of Accounts</h3>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
+            Every journal entry references these accounts. Standard set is seeded per tenant;
+            add extras (new expense categories, extra bank accounts) as needed.
+        </p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Add account</button>
+</div>
+
+@if (_accounts == null)
+{
+    <div class="spinner"></div>
+}
+else if (!_accounts.Any())
+{
+    <div class="card"><p style="color:#9ca3af;">No accounts yet.</p></div>
+}
+else
+{
+    <div class="card">
+        <table class="table coa-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var a in _accounts)
+                {
+                    <tr>
+                        <td style="font-family:monospace;">@a.Code</td>
+                        <td><strong>@a.Name</strong></td>
+                        <td>
+                            <span class="type-chip type-@(a.AccountType.ToLower())">@a.AccountType</span>
+                        </td>
+                        <td>
+                            <span class="status-chip @(a.IsActive ? "status-on" : "status-off")">
+                                @(a.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <a class="btn" style="padding:2px 10px;font-size:12px;"
+                               href="@($"/accounting/account/{a.Id}")">Ledger</a>
+                            <button class="btn" style="padding:2px 10px;font-size:12px;"
+                                    @onclick="() => OpenEdit(a)">Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_editor != null)
+{
+    <div class="modal-backdrop" @onclick="Close"></div>
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <h4 style="margin-top:0;">@(_editor.IsNew ? "Add account" : "Edit account")</h4>
+
+        <label class="form-label">Code *</label>
+        <input class="input full" @bind="_editor.Code" placeholder="e.g. 5100" style="font-family:monospace;" />
+
+        <label class="form-label">Name *</label>
+        <input class="input full" @bind="_editor.Name" placeholder="e.g. Marketing Expenses" />
+
+        <label class="form-label">Account type *</label>
+        <select class="input full" @bind="_editor.AccountType">
+            <option value="Asset">Asset (Cash, Inventory, AR)</option>
+            <option value="Liability">Liability (Tax Payable, AP)</option>
+            <option value="Equity">Equity (Owner's capital)</option>
+            <option value="Revenue">Revenue (Sales)</option>
+            <option value="Expense">Expense (COGS, Rent, Utilities)</option>
+        </select>
+
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;text-transform:none;">
+            <input type="checkbox" @bind="_editor.IsActive" /> Active
+        </label>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+            <button class="btn" @onclick="Close">Cancel</button>
+            @if (!_editor.IsNew)
+            {
+                <button class="btn btn-danger" @onclick="DeleteAccount">Deactivate</button>
+            }
+            <button class="btn btn-primary" @onclick="Save">Save</button>
+        </div>
+    </div>
+}
+
+<style>
+    .coa-table { width:100%; }
+    .form-label   { display:block; font-size:12px; color:#6b7280; text-transform:uppercase;
+                    letter-spacing:.04em; margin:14px 0 4px; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9998; }
+    .modal-card     { position:fixed; top:8%; left:50%; transform:translateX(-50%);
+                      background:#fff; border-radius:12px; padding:24px;
+                      width:min(92vw, 460px); z-index:9999; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .status-chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .status-on   { background:#dcfce7; color:#15803d; }
+    .status-off  { background:#fef3c7; color:#a16207; }
+
+    .type-chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .type-asset     { background:#dbeafe; color:#1d4ed8; }
+    .type-liability { background:#fee2e2; color:#b91c1c; }
+    .type-equity    { background:#e0e7ff; color:#4338ca; }
+    .type-revenue   { background:#dcfce7; color:#15803d; }
+    .type-expense   { background:#fef3c7; color:#a16207; }
+</style>
+
+@code {
+    List<AcctRow>? _accounts;
+    Editor?       _editor;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/accounts");
+            using var doc = JsonDocument.Parse(json);
+            _accounts = new();
+            foreach (var a in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                _accounts.Add(new AcctRow
+                {
+                    Id          = a.GetProperty("id").GetGuid(),
+                    Code        = a.GetProperty("code").GetString() ?? "",
+                    Name        = a.GetProperty("name").GetString() ?? "",
+                    AccountType = a.GetProperty("accountType").GetString() ?? "",
+                    IsActive    = a.GetProperty("isActive").GetBoolean()
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    void OpenCreate() => _editor = new Editor { IsNew = true, IsActive = true, AccountType = "Expense" };
+    void OpenEdit(AcctRow a) => _editor = new Editor
+    {
+        Id          = a.Id,
+        Code        = a.Code,
+        Name        = a.Name,
+        AccountType = a.AccountType,
+        IsActive    = a.IsActive
+    };
+    void Close() => _editor = null;
+
+    async Task Save()
+    {
+        if (_editor == null) return;
+        if (string.IsNullOrWhiteSpace(_editor.Code) || string.IsNullOrWhiteSpace(_editor.Name))
+        {
+            Toast.Show("Code and Name are required.");
+            return;
+        }
+        var body = new
+        {
+            code        = _editor.Code,
+            name        = _editor.Name,
+            accountType = _editor.AccountType,
+            isActive    = _editor.IsActive
+        };
+        var resp = _editor.IsNew
+            ? await Http.PostAsJsonAsync("api/accounts", body)
+            : await Http.PutAsJsonAsync($"api/accounts/{_editor.Id}", body);
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Save failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        Close();
+        await Load();
+        Toast.Show("Saved.");
+    }
+
+    async Task DeleteAccount()
+    {
+        if (_editor == null || _editor.IsNew) return;
+        var resp = await Http.DeleteAsync($"api/accounts/{_editor.Id}");
+        if (!resp.IsSuccessStatusCode)
+        {
+            Toast.Show($"Failed: {await resp.Content.ReadAsStringAsync()}");
+            return;
+        }
+        Close();
+        await Load();
+        Toast.Show("Deactivated.");
+    }
+
+    class AcctRow
+    {
+        public Guid   Id          { get; set; }
+        public string Code        { get; set; } = "";
+        public string Name        { get; set; } = "";
+        public string AccountType { get; set; } = "";
+        public bool   IsActive    { get; set; }
+    }
+    class Editor
+    {
+        public bool   IsNew       { get; set; }
+        public Guid?  Id          { get; set; }
+        public string Code        { get; set; } = "";
+        public string Name        { get; set; } = "";
+        public string AccountType { get; set; } = "Expense";
+        public bool   IsActive    { get; set; } = true;
+    }
+}

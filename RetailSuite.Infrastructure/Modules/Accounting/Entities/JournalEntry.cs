@@ -23,4 +23,11 @@ public class JournalEntry : TenantEntity
     {
         _lines.Add(line);
     }
+
+    /// <summary>
+    /// Flag this entry as a manual adjustment (as opposed to one auto-posted by a
+    /// business action like a POS sale). Manual entries are highlighted in the GL
+    /// explorer so auditors can filter them.
+    /// </summary>
+    public void MarkManual() => IsManual = true;
 }

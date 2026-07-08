@@ -1,0 +1,208 @@
+@page "/accounting/post-journal"
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ACCOUNTING" />
+
+<a href="/accounting/journal-entries" style="font-size:13px;color:#6b7280;">← Back to journal</a>
+
+<h3 style="margin:12px 0 6px;">Post manual journal entry</h3>
+<p style="color:#6b7280;font-size:13px;margin:0 0 16px;">
+    Use this for adjustments — depreciation, corrections, opening balances, expense accruals.
+    Debits must equal credits.
+</p>
+
+<div class="card">
+    <div class="form-grid">
+        <div>
+            <label class="form-label">Description *</label>
+            <input class="input full" @bind="_description"
+                   placeholder="e.g. Depreciation for June 2026" />
+        </div>
+        <div>
+            <label class="form-label">Reference (optional)</label>
+            <input class="input full" @bind="_referenceId"
+                   placeholder="e.g. ADJ-2026-06-01" />
+        </div>
+    </div>
+
+    <h5 style="margin-top:18px;">Lines</h5>
+    <table class="table lines-table">
+        <thead>
+            <tr>
+                <th style="width:45%;">Account</th>
+                <th class="num" style="width:20%;">Debit</th>
+                <th class="num" style="width:20%;">Credit</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < _lines.Count; i++)
+            {
+                var idx = i;
+                <tr>
+                    <td>
+                        <select class="input full" @bind="_lines[idx].AccountId">
+                            <option value="">— Pick account —</option>
+                            @if (_accounts != null)
+                            {
+                                @foreach (var a in _accounts)
+                                {
+                                    <option value="@a.Id">@a.Code — @a.Name (@a.AccountType)</option>
+                                }
+                            }
+                        </select>
+                    </td>
+                    <td class="num">
+                        <input class="input" type="number" step="0.01" @bind="_lines[idx].DebitAmount"
+                               style="width:100%;text-align:right;" />
+                    </td>
+                    <td class="num">
+                        <input class="input" type="number" step="0.01" @bind="_lines[idx].CreditAmount"
+                               style="width:100%;text-align:right;" />
+                    </td>
+                    <td>
+                        <button class="btn btn-danger" style="padding:2px 8px;font-size:12px;"
+                                @onclick="() => RemoveLine(idx)">×</button>
+                    </td>
+                </tr>
+            }
+            <tr style="border-top:2px solid #0f172a;">
+                <td style="text-align:right;font-weight:700;">Totals:</td>
+                <td class="num"><strong>Rs @TotalDebit.ToString("N2")</strong></td>
+                <td class="num"><strong>Rs @TotalCredit.ToString("N2")</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="@(IsBalanced ? "balanced" : "unbalanced")">
+                        @(IsBalanced ? "✓ Balanced" : "✗ Not balanced — difference: Rs " + (TotalDebit - TotalCredit).ToString("N2"))
+                    </span>
+                </td>
+                <td colspan="3" style="text-align:right;">
+                    <button class="btn" style="padding:4px 12px;font-size:12px;"
+                            @onclick="AddLine">+ Add line</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn" @onclick="Reset">Reset</button>
+        <button class="btn btn-primary"
+                disabled="@(_posting || !IsBalanced || string.IsNullOrWhiteSpace(_description))"
+                @onclick="Post">
+            @(_posting ? "Posting…" : "Post journal")
+        </button>
+    </div>
+</div>
+
+<style>
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .form-label { display:block; font-size:12px; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+    .lines-table .num { text-align:right; }
+    .balanced   { color:#15803d; font-weight:700; }
+    .unbalanced { color:#b91c1c; font-weight:700; }
+</style>
+
+@code {
+    List<AcctOption>? _accounts;
+    string _description = "";
+    string _referenceId = "";
+    List<Line> _lines = new()
+    {
+        new Line(), new Line() // start with two blank lines
+    };
+    bool _posting;
+
+    decimal TotalDebit  => _lines.Sum(l => l.DebitAmount);
+    decimal TotalCredit => _lines.Sum(l => l.CreditAmount);
+    bool    IsBalanced  => TotalDebit > 0 && TotalDebit == TotalCredit;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var json = await Http.GetStringAsync("api/accounts?active=true");
+            using var doc = JsonDocument.Parse(json);
+            _accounts = new();
+            foreach (var a in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                _accounts.Add(new AcctOption
+                {
+                    Id          = a.GetProperty("id").GetGuid(),
+                    Code        = a.GetProperty("code").GetString() ?? "",
+                    Name        = a.GetProperty("name").GetString() ?? "",
+                    AccountType = a.GetProperty("accountType").GetString() ?? ""
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Failed to load accounts: {ex.Message}"); }
+    }
+
+    void AddLine() => _lines.Add(new Line());
+    void RemoveLine(int idx)
+    {
+        if (_lines.Count > 2) _lines.RemoveAt(idx);
+    }
+
+    void Reset()
+    {
+        _description = "";
+        _referenceId = "";
+        _lines = new() { new Line(), new Line() };
+    }
+
+    async Task Post()
+    {
+        _posting = true;
+        try
+        {
+            var payload = new
+            {
+                description = _description,
+                referenceId = string.IsNullOrWhiteSpace(_referenceId) ? null : _referenceId,
+                lines       = _lines
+                    .Where(l => !string.IsNullOrEmpty(l.AccountId) && (l.DebitAmount > 0 || l.CreditAmount > 0))
+                    .Select(l => new
+                    {
+                        accountId    = Guid.Parse(l.AccountId),
+                        debitAmount  = l.DebitAmount,
+                        creditAmount = l.CreditAmount
+                    })
+                    .ToList()
+            };
+
+            var resp = await Http.PostAsJsonAsync("api/gl/journal-entries", payload);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Toast.Show($"Post failed: {await resp.Content.ReadAsStringAsync()}");
+                return;
+            }
+            var body = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            var newId = doc.RootElement.GetProperty("data").GetProperty("posted").GetGuid();
+            Toast.Show("Journal posted.");
+            Nav.NavigateTo($"/accounting/journal-entry/{newId}");
+        }
+        finally { _posting = false; }
+    }
+
+    class AcctOption
+    {
+        public Guid   Id { get; set; }
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string AccountType { get; set; } = "";
+    }
+    class Line
+    {
+        public string  AccountId    { get; set; } = "";
+        public decimal DebitAmount  { get; set; }
+        public decimal CreditAmount { get; set; }
+    }
+}

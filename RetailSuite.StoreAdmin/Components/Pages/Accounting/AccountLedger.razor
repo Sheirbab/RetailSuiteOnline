@@ -1,0 +1,202 @@
+@page "/accounting/account/{Id:guid}"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ACCOUNTING" />
+
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div>
+        <a href="/accounting/chart-of-accounts" style="font-size:13px;color:#6b7280;">← Chart of Accounts</a>
+        @if (_data != null)
+        {
+            <h3 style="margin:6px 0 0;">
+                <span style="font-family:monospace;color:#6b7280;">@_data.Account.Code</span>
+                &nbsp;@_data.Account.Name
+            </h3>
+            <p style="margin:2px 0 0;color:#6b7280;font-size:13px;">
+                Type: <strong>@_data.Account.AccountType</strong> · Natural side: <strong>@_data.Account.Normal</strong>
+            </p>
+        }
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <label style="font-size:12px;color:#6b7280;">From</label>
+        <input type="date" @bind="From" @bind:event="onchange"
+               style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <label style="font-size:12px;color:#6b7280;">To</label>
+        <input type="date" @bind="To" @bind:event="onchange"
+               style="padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" />
+        <button class="btn btn-primary" @onclick="Load" style="padding:6px 14px;">Refresh</button>
+    </div>
+</div>
+
+@if (_data == null)
+{
+    <div class="spinner"></div>
+}
+else
+{
+    <div class="card" style="margin-bottom:14px;">
+        <div class="kpi-grid">
+            <div class="kpi">
+                <div class="kpi-label">Opening balance</div>
+                <div class="kpi-value">Rs @_data.OpeningBalance.ToString("N2")</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Closing balance</div>
+                <div class="kpi-value">Rs @_data.ClosingBalance.ToString("N2")</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Movements</div>
+                <div class="kpi-value">@_data.Rows.Count</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <table class="table gl-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Reference</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                    <th class="num">Running</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!_data.Rows.Any())
+                {
+                    <tr><td colspan="7" style="color:#9ca3af;">No activity in this range.</td></tr>
+                }
+                else
+                {
+                    <tr class="opening-row">
+                        <td>@_data.From</td>
+                        <td colspan="4" style="font-style:italic;color:#6b7280;">Opening balance</td>
+                        <td class="num"><strong>Rs @_data.OpeningBalance.ToString("N2")</strong></td>
+                        <td></td>
+                    </tr>
+                    @foreach (var r in _data.Rows)
+                    {
+                        <tr>
+                            <td>@r.Date.ToString("dd MMM yyyy")</td>
+                            <td>@r.Description</td>
+                            <td style="font-family:monospace;font-size:12px;color:#6b7280;">@r.ReferenceId</td>
+                            <td class="num">@(r.DebitAmount == 0 ? "—" : "Rs " + r.DebitAmount.ToString("N2"))</td>
+                            <td class="num">@(r.CreditAmount == 0 ? "—" : "Rs " + r.CreditAmount.ToString("N2"))</td>
+                            <td class="num">Rs @r.RunningBalance.ToString("N2")</td>
+                            <td style="text-align:right;">
+                                <a class="btn" style="padding:2px 10px;font-size:12px;"
+                                   href="@($"/accounting/journal-entry/{r.JournalEntryId}")">→ Entry</a>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="closing-row">
+                        <td>@_data.To</td>
+                        <td colspan="4" style="font-style:italic;color:#0f172a;font-weight:700;">Closing balance</td>
+                        <td class="num"><strong>Rs @_data.ClosingBalance.ToString("N2")</strong></td>
+                        <td></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .kpi { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; }
+    .kpi-label { font-size:12px; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; }
+    .kpi-value { font-size:20px; font-weight:700; color:#0f172a; margin-top:4px; }
+
+    .gl-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .opening-row td, .closing-row td { background:#f9fafb; }
+</style>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    DateTime From { get; set; } = DateTime.Today.AddMonths(-3);
+    DateTime To   { get; set; } = DateTime.Today;
+
+    LedgerData? _data;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var url = $"api/gl/accounts/{Id}/ledger?from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            var acct = d.GetProperty("account");
+
+            _data = new LedgerData
+            {
+                Account = new AcctInfo
+                {
+                    Id          = acct.GetProperty("id").GetGuid(),
+                    Code        = acct.GetProperty("code").GetString() ?? "",
+                    Name        = acct.GetProperty("name").GetString() ?? "",
+                    AccountType = acct.GetProperty("accountType").GetString() ?? "",
+                    Normal      = acct.GetProperty("normal").GetString() ?? ""
+                },
+                From           = d.GetProperty("from").GetString() ?? "",
+                To             = d.GetProperty("to").GetString() ?? "",
+                OpeningBalance = d.GetProperty("openingBalance").GetDecimal(),
+                ClosingBalance = d.GetProperty("closingBalance").GetDecimal(),
+                Rows           = new()
+            };
+            foreach (var r in d.GetProperty("rows").EnumerateArray())
+            {
+                _data.Rows.Add(new LedgerRow
+                {
+                    Date           = r.GetProperty("date").GetDateTime(),
+                    JournalEntryId = r.GetProperty("journalEntryId").GetGuid(),
+                    ReferenceId    = r.TryGetProperty("referenceId", out var rid) && rid.ValueKind == JsonValueKind.String ? rid.GetString() : null,
+                    Description    = r.GetProperty("description").GetString() ?? "",
+                    DebitAmount    = r.GetProperty("debitAmount").GetDecimal(),
+                    CreditAmount   = r.GetProperty("creditAmount").GetDecimal(),
+                    RunningBalance = r.GetProperty("runningBalance").GetDecimal()
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    class LedgerData
+    {
+        public AcctInfo Account { get; set; } = new();
+        public string From { get; set; } = "";
+        public string To   { get; set; } = "";
+        public decimal OpeningBalance { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public List<LedgerRow> Rows { get; set; } = new();
+    }
+    class AcctInfo
+    {
+        public Guid   Id { get; set; }
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string AccountType { get; set; } = "";
+        public string Normal { get; set; } = "";
+    }
+    class LedgerRow
+    {
+        public DateTime Date { get; set; }
+        public Guid     JournalEntryId { get; set; }
+        public string?  ReferenceId { get; set; }
+        public string   Description { get; set; } = "";
+        public decimal  DebitAmount { get; set; }
+        public decimal  CreditAmount { get; set; }
+        public decimal  RunningBalance { get; set; }
+    }
+}

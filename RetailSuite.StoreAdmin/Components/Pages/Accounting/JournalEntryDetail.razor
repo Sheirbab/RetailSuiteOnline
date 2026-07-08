@@ -1,0 +1,131 @@
+@page "/accounting/journal-entry/{Id:guid}"
+@inject HttpClient Http
+@inject ToastService Toast
+@using System.Text.Json
+
+<PermissionGuard Code="ACCOUNTING" />
+
+<a href="/accounting/journal-entries" style="font-size:13px;color:#6b7280;">← Back to journal</a>
+
+@if (_data == null)
+{
+    <div class="spinner" style="margin-top:14px;"></div>
+}
+else
+{
+    <div style="margin:12px 0;">
+        <h3 style="margin:0 0 4px;">@_data.Description</h3>
+        <p style="margin:0;color:#6b7280;font-size:13px;">
+            @_data.CreatedAt.ToString("dd MMM yyyy HH:mm:ss")
+            @if (!string.IsNullOrEmpty(_data.ReferenceId))
+            {
+                <span> · Reference: <span style="font-family:monospace;">@_data.ReferenceId</span></span>
+            }
+            @if (_data.IsManual)
+            {
+                <span> · <span class="chip manual">Manual adjustment</span></span>
+            }
+        </p>
+    </div>
+
+    <div class="card">
+        <table class="table je-detail">
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var l in _data.Lines)
+                {
+                    <tr>
+                        <td>
+                            <span style="font-family:monospace;color:#6b7280;">@l.AccountCode</span>
+                            &nbsp;@l.AccountName
+                            &nbsp;<a href="@($"/accounting/account/{l.AccountId}")" style="font-size:12px;">↗</a>
+                        </td>
+                        <td class="num">@(l.DebitAmount == 0 ? "—" : "Rs " + l.DebitAmount.ToString("N2"))</td>
+                        <td class="num">@(l.CreditAmount == 0 ? "—" : "Rs " + l.CreditAmount.ToString("N2"))</td>
+                    </tr>
+                }
+                <tr style="border-top:2px solid #0f172a;font-weight:700;">
+                    <td style="text-align:right;">Totals:</td>
+                    <td class="num">Rs @_data.TotalDebit.ToString("N2")</td>
+                    <td class="num">Rs @_data.TotalCredit.ToString("N2")</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .je-detail .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .chip { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+    .chip.manual { background:#fef3c7; color:#a16207; }
+</style>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    JeDetail? _data;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Load();
+    }
+
+    async Task Load()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"api/gl/journal-entries/{Id}");
+            using var doc = JsonDocument.Parse(json);
+            var d = doc.RootElement.GetProperty("data");
+            _data = new JeDetail
+            {
+                Id          = d.GetProperty("id").GetGuid(),
+                CreatedAt   = d.GetProperty("createdAt").GetDateTime(),
+                ReferenceId = d.TryGetProperty("referenceId", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null,
+                Description = d.GetProperty("description").GetString() ?? "",
+                IsManual    = d.GetProperty("isManual").GetBoolean(),
+                TotalDebit  = d.GetProperty("totalDebit").GetDecimal(),
+                TotalCredit = d.GetProperty("totalCredit").GetDecimal(),
+                Lines       = new()
+            };
+            foreach (var l in d.GetProperty("lines").EnumerateArray())
+            {
+                _data.Lines.Add(new JeLine
+                {
+                    AccountId    = l.GetProperty("accountId").GetGuid(),
+                    AccountCode  = l.GetProperty("accountCode").GetString() ?? "",
+                    AccountName  = l.GetProperty("accountName").GetString() ?? "",
+                    DebitAmount  = l.GetProperty("debitAmount").GetDecimal(),
+                    CreditAmount = l.GetProperty("creditAmount").GetDecimal()
+                });
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex) { Toast.Show($"Load failed: {ex.Message}"); }
+    }
+
+    class JeDetail
+    {
+        public Guid    Id { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string? ReferenceId { get; set; }
+        public string  Description { get; set; } = "";
+        public bool    IsManual { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalCredit { get; set; }
+        public List<JeLine> Lines { get; set; } = new();
+    }
+    class JeLine
+    {
+        public Guid    AccountId { get; set; }
+        public string  AccountCode { get; set; } = "";
+        public string  AccountName { get; set; } = "";
+        public decimal DebitAmount { get; set; }
+        public decimal CreditAmount { get; set; }
+    }
+}
