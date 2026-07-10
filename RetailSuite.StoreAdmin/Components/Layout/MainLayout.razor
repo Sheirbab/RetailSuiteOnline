@@ -24,85 +24,138 @@ else
 
         <div class="sidebar-backdrop @( _sidebarOpen ? "open" : "")" @onclick="() => _sidebarOpen = false"></div>
 
-        <div class="sidebar @( _sidebarOpen ? "open" : "")" @onclick="OnSidebarClick">
+        <div class="sidebar @( _sidebarOpen ? "open" : "")">
             <h2>RetailSuite</h2>
 
             @if (Auth.IsSuperAdmin)
             {
-                <span class="nav-section-label">Platform</span>
+                <span style="font-size:11px;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em;margin:8px 0 4px;display:block;">Platform</span>
                 <NavLink href="/admin/tenants" style="color:#fbbf24;">🏢 Tenant Management</NavLink>
-                <hr class="nav-divider" />
+                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
             }
             else
             {
-                <!-- Dashboard (always visible, no group) -->
                 <NavLink href="/" Match="NavLinkMatch.All">📊 Dashboard</NavLink>
 
-                <!-- ============ Selling ============ -->
-                @if (Auth.Can("POS") || Auth.Can("PRODUCTS") || Auth.Can("INVENTORY_VIEW")
-                  || Auth.Can("INVENTORY_TRANSFER") || Auth.Can("ORDERS_VIEW")
-                  || Auth.Can("CUSTOMERS") || Auth.Can("BARCODES"))
+                <!-- Selling -->
+                @if (Auth.Can("POS") || Auth.Can("ORDERS_VIEW") || Auth.Can("CUSTOMERS"))
                 {
-                    <NavGroup Title="Selling" Icon="🛒" IsOpen="@IsOpen("selling")" OnToggle='@(() => Toggle("selling"))'>
-                        @if (Auth.Can("POS"))                { <NavLink href="/pos">POS Terminal</NavLink> }
-                        @if (Auth.Can("PRODUCTS"))           { <NavLink href="/products">Products</NavLink> }
-                        @if (Auth.Can("INVENTORY_VIEW"))     { <NavLink href="/inventory">Inventory</NavLink> }
-                        @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
-                        @if (Auth.Can("ORDERS_VIEW"))        { <NavLink href="/orders">Orders</NavLink> }
-                        @if (Auth.Can("CUSTOMERS"))          { <NavLink href="/customers">Customers</NavLink> }
-                        @if (Auth.Can("BARCODES"))           { <NavLink href="/barcodes/print">Print barcodes</NavLink> }
-                    </NavGroup>
+                    <button type="button" @onclick='@(() => Toggle("selling"))' style="@HeaderStyle(IsOpen("selling"))">
+                        <span style="width:20px;text-align:center;">🛒</span>
+                        <span>Selling</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("selling") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("selling"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            @if (Auth.Can("POS"))         { <NavLink href="/pos">POS Terminal</NavLink> }
+                            @if (Auth.Can("ORDERS_VIEW")) { <NavLink href="/orders">Orders</NavLink> }
+                            @if (Auth.Can("CUSTOMERS"))   { <NavLink href="/customers">Customers</NavLink> }
+                        </div>
+                    }
                 }
 
-                <!-- ============ Procurement ============ -->
+                <!-- Catalog -->
+                @if (Auth.Can("PRODUCTS") || Auth.Can("INVENTORY_VIEW")
+                  || Auth.Can("INVENTORY_TRANSFER") || Auth.Can("BARCODES"))
+                {
+                    <button type="button" @onclick='@(() => Toggle("catalog"))' style="@HeaderStyle(IsOpen("catalog"))">
+                        <span style="width:20px;text-align:center;">📚</span>
+                        <span>Catalog</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("catalog") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("catalog"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            @if (Auth.Can("PRODUCTS"))           { <NavLink href="/products">Products</NavLink> }
+                            @if (Auth.Can("INVENTORY_VIEW"))     { <NavLink href="/inventory">Inventory</NavLink> }
+                            @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
+                            @if (Auth.Can("BARCODES"))           { <NavLink href="/barcodes/print">Print barcodes</NavLink> }
+                        </div>
+                    }
+                }
+
+                <!-- Procurement -->
                 @if (Auth.Can("SUPPLIERS") || Auth.Can("RECEIVING_ORDERS")
                   || Auth.Can("BULK_RECEIVE") || Auth.Can("SUPPLIER_RETURNS"))
                 {
-                    <NavGroup Title="Procurement" Icon="📦" IsOpen="@IsOpen("procurement")" OnToggle='@(() => Toggle("procurement"))'>
-                        @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
-                        @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
-                        @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
-                        @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
-                    </NavGroup>
+                    <button type="button" @onclick='@(() => Toggle("procurement"))' style="@HeaderStyle(IsOpen("procurement"))">
+                        <span style="width:20px;text-align:center;">📦</span>
+                        <span>Procurement</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("procurement") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("procurement"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
+                            @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
+                            @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
+                            @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
+                        </div>
+                    }
                 }
 
-                <!-- ============ Reports ============ -->
+                <!-- Reports -->
                 @if (Auth.Can("REPORTS"))
                 {
-                    <NavGroup Title="Reports" Icon="📈" IsOpen="@IsOpen("reports")" OnToggle='@(() => Toggle("reports"))'>
-                        <NavLink href="/reports">Sales &amp; inventory</NavLink>
-                    </NavGroup>
+                    <button type="button" @onclick='@(() => Toggle("reports"))' style="@HeaderStyle(IsOpen("reports"))">
+                        <span style="width:20px;text-align:center;">📈</span>
+                        <span>Reports</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("reports") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("reports"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            <NavLink href="/reports">Sales &amp; inventory</NavLink>
+                        </div>
+                    }
                 }
 
-                <!-- ============ Accounting ============ -->
+                <!-- Accounting -->
                 @if (Auth.Can("ACCOUNTING"))
                 {
-                    <NavGroup Title="Accounting" Icon="💰" IsOpen="@IsOpen("accounting")" OnToggle='@(() => Toggle("accounting"))'>
-                        <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
-                        <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
-                        <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
-                        <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
-                    </NavGroup>
+                    <button type="button" @onclick='@(() => Toggle("accounting"))' style="@HeaderStyle(IsOpen("accounting"))">
+                        <span style="width:20px;text-align:center;">💰</span>
+                        <span>Accounting</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("accounting") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("accounting"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
+                            <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
+                            <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
+                            <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
+                        </div>
+                    }
                 }
 
-                <!-- ============ Settings ============ -->
+                <!-- Settings -->
                 @if (Auth.Can("LOCATIONS") || Auth.Can("SHIPPING") || Auth.Can("TAX_SETTINGS")
                   || Auth.Can("SUBSCRIPTION") || Auth.Can("CATEGORIES") || Auth.Can("BRANDS")
                   || Auth.Can("ATTRIBUTES") || Auth.IsAdmin)
                 {
-                    <NavGroup Title="Settings" Icon="⚙️" IsOpen="@IsOpen("settings")" OnToggle='@(() => Toggle("settings"))'>
-                        @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
-                        @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
-                        @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
-                        @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
-                        @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
-                        @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax &amp; FBR</NavLink> }
-                        @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
-                        @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users &amp; permissions</NavLink> }
-                    </NavGroup>
+                    <button type="button" @onclick='@(() => Toggle("settings"))' style="@HeaderStyle(IsOpen("settings"))">
+                        <span style="width:20px;text-align:center;">⚙️</span>
+                        <span>Settings</span>
+                        <span style="margin-left:auto;font-size:10px;color:#9ca3af;transform:@(IsOpen("settings") ? "rotate(90deg)" : "none");display:inline-block;">›</span>
+                    </button>
+                    @if (IsOpen("settings"))
+                    {
+                        <div style="padding-left:10px;padding-bottom:4px;">
+                            @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
+                            @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
+                            @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
+                            @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
+                            @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
+                            @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax &amp; FBR</NavLink> }
+                            @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
+                            @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users &amp; permissions</NavLink> }
+                        </div>
+                    }
                 }
 
-                <hr class="nav-divider" />
+                <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
                 <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>
             }
         </div>
@@ -135,92 +188,32 @@ else
     </div>
 }
 
-<style>
-    /* Nav group styling */
-    .nav-section-label {
-        font-size: 11px; text-transform: uppercase; color: #9ca3af;
-        letter-spacing: .05em; margin: 8px 0 4px; display: block;
-    }
-    .nav-divider {
-        border: none; border-top: 1px solid #374151; margin: 12px 0;
-    }
-    .nav-group-header {
-        display: flex; align-items: center; gap: 8px; cursor: pointer;
-        padding: 8px 10px; margin: 4px 0; border-radius: 6px;
-        color: #e5e7eb; font-weight: 500; font-size: 14px;
-        user-select: none; transition: background .12s;
-    }
-    .nav-group-header:hover { background: #374151; }
-    .nav-group-header .caret {
-        margin-left: auto; font-size: 10px; color: #9ca3af;
-        transition: transform .18s;
-    }
-    .nav-group-header .caret.open { transform: rotate(90deg); color: #e5e7eb; }
-    .nav-group-body {
-        padding-left: 10px; overflow: hidden;
-        max-height: 0; opacity: 0;
-        transition: max-height .22s ease-out, opacity .18s ease-out;
-    }
-    .nav-group-body.open {
-        max-height: 700px; opacity: 1;
-    }
-</style>
-
 @code {
     private bool _checked;
     private bool _sidebarOpen;
-    private HashSet<string> _openGroups = new();
+
+    private HashSet<string> _openGroups = new()
+    {
+        "selling", "catalog", "procurement", "reports", "accounting", "settings"
+    };
 
     private bool IsOpen(string key) => _openGroups.Contains(key);
+
     private void Toggle(string key)
     {
         if (_openGroups.Contains(key)) _openGroups.Remove(key);
         else                            _openGroups.Add(key);
     }
 
-    /// <summary>
-    /// Auto-open the group that contains the current route so the user always
-    /// sees where they are without hunting through collapsed sections.
-    /// </summary>
-    private void AutoOpenCurrentGroup()
-    {
-        var uri = new Uri(Nav.Uri).AbsolutePath.ToLowerInvariant();
-
-        void Ensure(string key) { if (!_openGroups.Contains(key)) _openGroups.Add(key); }
-
-        if (uri is "/pos" or "/products" or "/inventory" or "/orders" or "/customers"
-            || uri.StartsWith("/pos/") || uri.StartsWith("/products/")
-            || uri.StartsWith("/inventory/") || uri.StartsWith("/orders/")
-            || uri.StartsWith("/customers/") || uri.StartsWith("/barcodes/"))
-            Ensure("selling");
-
-        if (uri.StartsWith("/suppliers") || uri.StartsWith("/receiving-orders")
-            || uri.StartsWith("/inventory/bulk-receive") || uri.StartsWith("/supplier-returns"))
-            Ensure("procurement");
-
-        if (uri.StartsWith("/reports"))
-            Ensure("reports");
-
-        if (uri.StartsWith("/accounting"))
-            Ensure("accounting");
-
-        if (uri.StartsWith("/settings") || uri.StartsWith("/locations"))
-            Ensure("settings");
-    }
-
-    private void OnSidebarClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
-    {
-        if (_sidebarOpen) _sidebarOpen = false;
-    }
+    private string HeaderStyle(bool open) =>
+        "display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;margin:4px 0;"
+        + "border-radius:6px;color:#e5e7eb;font-weight:500;font-size:14px;"
+        + "user-select:none;background:" + (open ? "#374151" : "transparent") + ";"
+        + "border:none;width:100%;text-align:left;";
 
     protected override void OnInitialized()
     {
         Auth.OnChange += StateHasChanged;
-        Nav.LocationChanged += (_, _) =>
-        {
-            AutoOpenCurrentGroup();
-            InvokeAsync(StateHasChanged);
-        };
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -233,7 +226,6 @@ else
         if (!Auth.IsAuthenticated)
             Nav.NavigateTo("/login", replace: true);
 
-        AutoOpenCurrentGroup();
         StateHasChanged();
     }
 
