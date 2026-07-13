@@ -77,6 +77,12 @@ public static class DemoDataSeeder
         tshirt.AddVariant(tshirtSmall);
         tshirt.AddVariant(tshirtMedium);
         tshirt.AddVariant(tshirtLarge);
+        // Attach variants to the DbSet explicitly. Without this, EF InMemory
+        // (used by integration tests) sometimes marks these variants as
+        // Modified rather than Added when a later SaveChanges runs change
+        // detection, causing DbUpdateConcurrencyException. SQL Server tolerates
+        // the pure navigation-add pattern but InMemory does not.
+        context.ProductVariants.AddRange(tshirtSmall, tshirtMedium, tshirtLarge);
 
         // Jeans
         var jeans = new Product("Blue Denim Jeans", "Classic blue denim jeans for all occasions") { TenantId = demoTenant.Id };
@@ -98,6 +104,7 @@ public static class DemoDataSeeder
         jeans.AddVariant(jeansSmall);
         jeans.AddVariant(jeansMedium);
         jeans.AddVariant(jeansLarge);
+        context.ProductVariants.AddRange(jeansSmall, jeansMedium, jeansLarge);
 
         // Shirt
         var shirt = new Product("Formal Shirt", "Professional formal shirt for business wear") { TenantId = demoTenant.Id };
@@ -119,6 +126,7 @@ public static class DemoDataSeeder
         shirt.AddVariant(shirtSmall);
         shirt.AddVariant(shirtMedium);
         shirt.AddVariant(shirtLarge);
+        context.ProductVariants.AddRange(shirtSmall, shirtMedium, shirtLarge);
 
         // SHOES PRODUCTS
         // Running Shoes
@@ -146,6 +154,7 @@ public static class DemoDataSeeder
         runningShoes.AddVariant(runshoesSize7);
         runningShoes.AddVariant(runshoesSize8);
         runningShoes.AddVariant(runshoesSize9);
+        context.ProductVariants.AddRange(runshoesSize6, runshoesSize7, runshoesSize8, runshoesSize9);
 
         // Casual Sneakers
         var sneakers = new Product("Casual Sneakers", "Trendy everyday casual sneakers for comfort and style") { TenantId = demoTenant.Id };
@@ -172,6 +181,7 @@ public static class DemoDataSeeder
         sneakers.AddVariant(sneakersSize7);
         sneakers.AddVariant(sneakersSize8);
         sneakers.AddVariant(sneakersSize9);
+        context.ProductVariants.AddRange(sneakersSize6, sneakersSize7, sneakersSize8, sneakersSize9);
 
         // Formal Shoes
         var formalShoes = new Product("Formal Dress Shoes", "Premium leather formal shoes for business and formal occasions") { TenantId = demoTenant.Id };
@@ -193,8 +203,9 @@ public static class DemoDataSeeder
         formalShoes.AddVariant(formalSize7);
         formalShoes.AddVariant(formalSize8);
         formalShoes.AddVariant(formalSize9);
+        context.ProductVariants.AddRange(formalSize7, formalSize8, formalSize9);
 
-        context.SaveChanges();
+        await context.SaveChangesAsync();
 
         // Associate products with categories using correct constructor
         var garmentsPC = new ProductCategory(tshirt.Id, garmentsCategory.Id);
