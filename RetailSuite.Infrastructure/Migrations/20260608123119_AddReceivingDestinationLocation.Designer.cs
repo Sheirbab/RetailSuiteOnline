@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RetailSuite.Infrastructure;
 
@@ -11,9 +12,11 @@ using RetailSuite.Infrastructure;
 namespace RetailSuite.Infrastructure.Migrations
 {
     [DbContext(typeof(RetailDbContext))]
-    partial class RetailDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260608123119_AddReceivingDestinationLocation")]
+    partial class AddReceivingDestinationLocation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -419,24 +422,10 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime?>("EmailVerifiedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("FullName")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsEmailVerified")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<bool>("MustChangePassword")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
@@ -456,37 +445,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasIndex("Email");
 
                     b.ToTable("Users", (string)null);
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Identity.Entities.UserPermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "Code")
-                        .IsUnique();
-
-                    b.ToTable("UserPermissions", (string)null);
                 });
 
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", b =>
@@ -634,72 +592,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasFilter("[IsDefault] = 1");
 
                     b.ToTable("Locations", (string)null);
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Payments.Entities.OrderPaymentIntent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("AmountDue")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("FailedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("FailureReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("PaidAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("ProviderTxnId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("QrPayload")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("Provider", "ProviderTxnId");
-
-                    b.ToTable("OrderPaymentIntents", (string)null);
                 });
 
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Receiving.Entities.ReceivingOrder", b =>
@@ -1110,9 +1002,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("AutoPayEnabled")
-                        .HasColumnType("bit");
-
                     b.Property<bool>("AutoRenew")
                         .HasColumnType("bit");
 
@@ -1125,24 +1014,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("CardBrand")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<int?>("CardExpMonth")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CardExpYear")
-                        .HasColumnType("int");
-
-                    b.Property<string>("CardHolderName")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("CardLast4")
-                        .HasMaxLength(4)
-                        .HasColumnType("nvarchar(4)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1154,10 +1025,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("GatewayCustomerId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -1166,10 +1033,6 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.Property<DateTime>("NextBillingAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("PaymentMethodType")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("PlanCode")
                         .IsRequired()
@@ -1576,115 +1439,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.ToTable("Tenants", (string)null);
                 });
 
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
-                    b.Property<Guid>("DestinationLocationId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<DateTime?>("ReceivedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("SourceLocationId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("TotalValue")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("TransferNumber")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DestinationLocationId");
-
-                    b.HasIndex("SourceLocationId");
-
-                    b.HasIndex("TenantId", "Status");
-
-                    b.HasIndex("TenantId", "TransferNumber")
-                        .IsUnique();
-
-                    b.ToTable("InventoryTransfers", (string)null);
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransferItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("InventoryTransferId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<Guid>("ProductVariantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Sku")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("UnitCost")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InventoryTransferId");
-
-                    b.HasIndex("ProductVariantId");
-
-                    b.ToTable("InventoryTransferItems", (string)null);
-                });
-
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Wallet.Entities.CustomerOtpToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1796,11 +1550,6 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -1926,50 +1675,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.ToTable("Payments", (string)null);
                 });
 
-            modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Brand", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("LogoUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId", "Slug")
-                        .IsUnique();
-
-                    b.ToTable("Brands", (string)null);
-                });
-
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1978,9 +1683,6 @@ namespace RetailSuite.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -1998,20 +1700,12 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ParentCategoryId");
-
-                    b.HasIndex("TenantId", "Slug")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "ParentCategoryId", "SortOrder");
 
                     b.ToTable("Categories", (string)null);
                 });
@@ -2022,15 +1716,13 @@ namespace RetailSuite.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("BrandId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(500)
@@ -2047,38 +1739,10 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<string>("ShortDescription")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
-
-                    b.Property<string>("Specs")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Tags")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("UnitOfMeasure")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("PCS");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("BrandId");
-
-                    b.HasIndex("TenantId", "Slug")
-                        .IsUnique();
 
                     b.ToTable("Products", (string)null);
                 });
@@ -2146,9 +1810,14 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ProductId1")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("ProductId", "CategoryId");
 
                     b.HasIndex("CategoryId");
+
+                    b.HasIndex("ProductId1");
 
                     b.ToTable("ProductCategories", (string)null);
                 });
@@ -2206,7 +1875,7 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal>("AverageCost")
-                        .HasColumnType("decimal(18,4)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Barcode")
                         .HasColumnType("nvarchar(max)");
@@ -2394,9 +2063,7 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<decimal>("PaidAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,2)")
-                        .HasDefaultValue(0m);
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("PaymentMethodCode")
                         .HasMaxLength(50)
@@ -2545,15 +2212,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Identity.Entities.UserPermission", b =>
-                {
-                    b.HasOne("RetailSuite.Infrastructure.Modules.Identity.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Inventory.Entities.InventoryItem", b =>
                 {
                     b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
@@ -2574,15 +2232,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
                         .WithMany()
                         .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Payments.Entities.OrderPaymentIntent", b =>
-                {
-                    b.HasOne("RetailSuite.Modules.Orders.Entities.Order", null)
-                        .WithMany()
-                        .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2692,30 +2341,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
-                {
-                    b.HasOne("RetailSuite.Infrastructure.Modules.Locations.Entities.Location", null)
-                        .WithMany()
-                        .HasForeignKey("SourceLocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransferItem", b =>
-                {
-                    b.HasOne("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", null)
-                        .WithMany("Items")
-                        .HasForeignKey("InventoryTransferId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductVariant", null)
-                        .WithMany()
-                        .HasForeignKey("ProductVariantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("RetailSuite.Modules.Accounting.Entities.JournalEntryLine", b =>
                 {
                     b.HasOne("RetailSuite.Modules.Accounting.Entities.JournalEntry", null)
@@ -2742,14 +2367,6 @@ namespace RetailSuite.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
-            modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.Product", b =>
-                {
-                    b.HasOne("RetailSuite.Modules.Catalog.Entities.Brand", null)
-                        .WithMany()
-                        .HasForeignKey("BrandId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
             modelBuilder.Entity("RetailSuite.Modules.Catalog.Entities.ProductAttributeValue", b =>
                 {
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.ProductAttribute", null)
@@ -2768,10 +2385,15 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", "Product")
-                        .WithMany("Categories")
+                        .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", null)
+                        .WithMany("Categories")
+                        .HasForeignKey("ProductId1")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 
@@ -2848,11 +2470,6 @@ namespace RetailSuite.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("RetailSuite.Infrastructure.Modules.SupplierReturns.Entities.SupplierReturn", b =>
-                {
-                    b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("RetailSuite.Infrastructure.Modules.Transfers.Entities.InventoryTransfer", b =>
                 {
                     b.Navigation("Items");
                 });

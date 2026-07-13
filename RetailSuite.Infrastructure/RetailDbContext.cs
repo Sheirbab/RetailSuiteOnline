@@ -319,6 +319,13 @@ public class RetailDbContext : DbContext
             b.Property(v => v.TaxRate)
                 .HasColumnType("decimal(5,4)")
                 .HasDefaultValue(0m);
+
+            // AverageCost is the rolling weighted-average cost of the variant's
+            // inventory. Explicit precision so SQL Server doesn't silently
+            // truncate high-value items (18 total digits, 4 decimal places —
+            // matches InventoryItem.AverageCost's precision).
+            b.Property(v => v.AverageCost)
+                .HasColumnType("decimal(18,4)");
         });
 
         modelBuilder.Entity<Category>(b =>
@@ -351,13 +358,24 @@ public class RetailDbContext : DbContext
             b.ToTable("ProductCategories");
             b.HasKey(pc => new { pc.ProductId, pc.CategoryId });
 
+            // Wire to Product.Categories (the reverse navigation) explicitly.
+            // Without this, EF sees Product.Categories un-configured, creates a
+            // second relationship for it, and stamps a shadow "ProductId1" FK
+            // on ProductCategory. Same reasoning for Category.
             b.HasOne(pc => pc.Product)
-                .WithMany()
+                .WithMany(p => p.Categories)
                 .HasForeignKey(pc => pc.ProductId);
 
             b.HasOne(pc => pc.Category)
                 .WithMany()
                 .HasForeignKey(pc => pc.CategoryId);
+
+            // Mirror the tenant + soft-delete filter from the parent Product,
+            // so this junction row is hidden whenever the parent Product is.
+            // Fixes the 'required end of a relationship has a filter' warning.
+            b.HasQueryFilter(pc =>
+                (CurrentTenantId == null || pc.Product.TenantId == CurrentTenantId)
+                && !pc.Product.IsDeleted);
         });
 
         modelBuilder.Entity<ProductAttribute>(b =>
@@ -398,6 +416,14 @@ public class RetailDbContext : DbContext
             b.HasOne(v => v.ProductAttributeValue)
                 .WithMany()
                 .HasForeignKey(v => v.ProductAttributeValueId);
+
+            // Mirror the tenant + soft-delete filter from the parent ProductVariant,
+            // so this junction row is hidden whenever the parent variant is.
+            // Fixes the 'required end of a relationship has a filter' warning
+            // for ProductAttributeValue → VariantAttributeValue.
+            b.HasQueryFilter(v =>
+                (CurrentTenantId == null || v.ProductVariant.TenantId == CurrentTenantId)
+                && !v.ProductVariant.IsDeleted);
         });
 
         // =====================================================
@@ -567,6 +593,13 @@ public class RetailDbContext : DbContext
                 .HasColumnType("decimal(18,2)");
 
             b.Property(o => o.TaxAmount)
+                .HasColumnType("decimal(18,2)")
+                .HasDefaultValue(0m);
+
+            // Running total of what the customer has paid on this order
+            // (POS = one lump; layaway = several payments). Explicit precision
+            // so SQL Server doesn't silently truncate.
+            b.Property(o => o.PaidAmount)
                 .HasColumnType("decimal(18,2)")
                 .HasDefaultValue(0m);
 

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RetailSuite.Infrastructure;
 
@@ -11,9 +12,11 @@ using RetailSuite.Infrastructure;
 namespace RetailSuite.Infrastructure.Migrations
 {
     [DbContext(typeof(RetailDbContext))]
-    partial class RetailDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260623121103_AddBrandAndProductCatalogColumns")]
+    partial class AddBrandAndProductCatalogColumns
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1797,11 +1800,6 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -2146,9 +2144,14 @@ namespace RetailSuite.Infrastructure.Migrations
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ProductId1")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("ProductId", "CategoryId");
 
                     b.HasIndex("CategoryId");
+
+                    b.HasIndex("ProductId1");
 
                     b.ToTable("ProductCategories", (string)null);
                 });
@@ -2206,7 +2209,7 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal>("AverageCost")
-                        .HasColumnType("decimal(18,4)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Barcode")
                         .HasColumnType("nvarchar(max)");
@@ -2394,9 +2397,7 @@ namespace RetailSuite.Infrastructure.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<decimal>("PaidAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,2)")
-                        .HasDefaultValue(0m);
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("PaymentMethodCode")
                         .HasMaxLength(50)
@@ -2768,10 +2769,15 @@ namespace RetailSuite.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", "Product")
-                        .WithMany("Categories")
+                        .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("RetailSuite.Modules.Catalog.Entities.Product", null)
+                        .WithMany("Categories")
+                        .HasForeignKey("ProductId1")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 
