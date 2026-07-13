@@ -14,11 +14,11 @@ namespace RetailSuite.Api.Controllers;
 /// The General Ledger explorer. Read-only reports over the journal + accounts,
 /// plus a manual-entry post endpoint for adjustments.
 ///
-/// - GET /trial-balance?asOf=              — trial balance at a point in time
-/// - GET /accounts/{id}/ledger?from=&to=   — one account's transactions with running balance
-/// - GET /journal-entries?from=&to=&page=  — browse journal entries
-/// - GET /journal-entries/{id}             — one journal entry with its lines
-/// - POST /journal-entries                 — post a manual journal entry (admin only)
+/// - GET /trial-balance?asOf=                        — trial balance at a point in time
+/// - GET /accounts/{id}/ledger?from=&amp;to=           — one account's transactions with running balance
+/// - GET /journal-entries?from=&amp;to=&amp;page=       — browse journal entries
+/// - GET /journal-entries/{id}                       — one journal entry with its lines
+/// - POST /journal-entries                           — post a manual journal entry (admin only)
 /// </summary>
 [ApiController]
 [Route("api/gl")]

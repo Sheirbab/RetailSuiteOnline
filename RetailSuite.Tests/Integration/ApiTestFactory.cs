@@ -22,11 +22,19 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                // Program.cs throws at startup if ConnectionStrings:Default is missing.
+                // The value is a placeholder — we swap the DbContext to InMemory below,
+                // so no SQL connection is actually opened.
+                ["ConnectionStrings:Default"] = "Server=(localdb)\\MSSQLLocalDB;Database=Tests_Ignored;Trusted_Connection=True;",
                 ["Jwt:Key"] = "THIS_IS_A_LONG_ENOUGH_TEST_SECRET_KEY_1234567890",
                 ["Jwt:Issuer"] = "RetailSuite.Tests",
                 ["Jwt:Audience"] = "RetailSuite.Tests",
                 ["Payments:Provider"] = "Fake",
-                ["Email:Host"] = string.Empty
+                ["Email:Host"] = string.Empty,
+                // Non-default super-admin password so the Production secrets validator
+                // (if it ever runs in tests) doesn't refuse to start.
+                ["SuperAdmin:Password"] = "Tests_Only_NotAdmin@12345",
+                ["SuperAdmin:Email"]    = "superadmin@retailsuite.test"
             });
         });
 

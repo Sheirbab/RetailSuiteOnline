@@ -131,6 +131,13 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                         "POS sale"));
                 }
 
+                // 2a. Flush the item-loop mutations to the store BEFORE the rollup
+                //     query. On EF InMemory, uncommitted tracked-entity changes are
+                //     NOT visible to LINQ queries, so SumAsync would see the pre-sale
+                //     stock. On SQL Server (inside the surrounding transaction)
+                //     read-your-writes hides the bug, but the flush is cheap either way.
+                await _db.SaveChangesAsync();
+
                 // 2b. Recompute the rollup denormalised onto ProductVariant.StockQuantity
                 //     across all locations for every variant touched in this sale.
                 var touchedVariantIds = request.Items.Select(i => i.ProductVariantId).Distinct().ToList();

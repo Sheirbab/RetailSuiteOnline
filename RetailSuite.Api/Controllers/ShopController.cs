@@ -726,14 +726,6 @@ public class ShopController : ControllerBase
         }));
     }
 
-    // ============================================================
-    //  Category descendant helper
-    // ============================================================
-    /// <summary>
-    /// Returns every descendant category id under <paramref name="rootId"/> (not including the root itself).
-    /// One round-trip — loads the parent/child map for the tenant and walks it in memory.
-    /// Category trees are small enough that a recursive CTE isn't worth the complexity.
-    /// </summary>
     /// <summary>Parses a comma-separated list of GUIDs from a query param. Skips invalid entries.</summary>
     private static List<Guid> ParseGuidList(string? csv)
     {

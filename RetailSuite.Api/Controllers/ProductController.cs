@@ -252,6 +252,14 @@ public class ProductsController : ControllerBase
         variant.SetBarcode(request.SKU);
 
         product.AddVariant(variant);
+        // Add to the DbSet explicitly so EF unambiguously tracks the entity as
+        // Added. Without this, on EF InMemory the change tracker sometimes flags
+        // the variant as Modified (because its Id was already set by the
+        // BaseEntity property initializer), which throws DbUpdateConcurrencyException
+        // on SaveChanges. SQL Server tolerates the pure navigation-add pattern
+        // but InMemory does not — the generate-variants endpoint uses the same
+        // belt-and-braces pattern for the same reason.
+        _db.ProductVariants.Add(variant);
         await _db.SaveChangesAsync();
 
         return Ok(new ApiResponse<Guid>(true, "Variant added.", variant.Id));

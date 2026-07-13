@@ -4,6 +4,7 @@ using Moq;
 using RetailSuite.Infrastructure;
 using RetailSuite.Infrastructure.Modules.Inventory.Entities;
 using RetailSuite.Infrastructure.Modules.Inventory.Services;
+using RetailSuite.Infrastructure.Modules.Locations.Entities;
 using RetailSuite.Modules.Catalog.Entities;
 using RetailSuite.Shared;
 
@@ -23,11 +24,24 @@ public class InventoryServiceTests
         return new RetailDbContext(options, tenantContext.Object);
     }
 
+    /// <summary>
+    /// InventoryService.ResolveLocationAsync requires exactly one default location
+    /// per tenant. Every inventory test needs one seeded before it can call receive/adjust.
+    /// </summary>
+    private static async Task<Location> SeedDefaultLocationAsync(RetailDbContext db, Guid tenantId)
+    {
+        var loc = new Location(tenantId, code: "MAIN", name: "Main Branch", isDefault: true);
+        db.Locations.Add(loc);
+        await db.SaveChangesAsync();
+        return loc;
+    }
+
     [Fact]
     public async Task ReceiveStockAsync_IncreasesStockOnce_AndSyncsVariantSnapshot()
     {
         var tenantId = Guid.NewGuid();
         await using var db = CreateInMemoryDb(tenantId);
+        await SeedDefaultLocationAsync(db, tenantId);
         var service = new InventoryService(db, Mock.Of<ILogger<InventoryService>>());
 
         var product = new Product("Test Product", null);
@@ -51,6 +65,7 @@ public class InventoryServiceTests
     {
         var tenantId = Guid.NewGuid();
         await using var db = CreateInMemoryDb(tenantId);
+        await SeedDefaultLocationAsync(db, tenantId);
         var service = new InventoryService(db, Mock.Of<ILogger<InventoryService>>());
 
         var product = new Product("Test Product", null);

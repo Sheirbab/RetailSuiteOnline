@@ -403,9 +403,18 @@ try
 
     // ---------------------------------------------------------------
     // Seed demo data (idempotent — no-op if demo tenant exists)
+    //
+    // Skipped under the integration-test host (env = "Testing"):
+    // - Tests create their own tenants via /api/auth/signup, so the demo tenant
+    //   is dead weight.
+    // - The seeder adds ~20 variants / inventory rows via navigation-collection
+    //   pattern that produces a DbUpdateConcurrencyException on EF InMemory
+    //   during graph traversal at SaveChanges. Fine on SQL Server (production),
+    //   noise in tests.
     // ---------------------------------------------------------------
-    await using (var scope = app.Services.CreateAsyncScope())
+    if (!app.Environment.IsEnvironment("Testing"))
     {
+        await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<RetailDbContext>();
         await DemoDataSeeder.SeedDemoDataAsync(db);
     }
@@ -443,8 +452,13 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application failed to start.");
-    if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing")
-        throw;
+    // Always rethrow. Swallowing here was masking startup failures under the
+    // test host (WebApplicationFactory sets the environment on the builder,
+    // NOT on the OS-level ASPNETCORE_ENVIRONMENT env var — so the previous
+    // "if Testing then throw" guard never fired, and tests just saw the
+    // opaque 'server has not been started' error). In production the process
+    // must die on startup failure too, so unconditional rethrow is correct.
+    throw;
 }
 finally
 {
