@@ -27,3 +27,45 @@ RetailSuite.Api/logs/
 .claude/worktrees/agitated-engelbart-5b1655/.claude/
 RetailSuite.Api/wwwroot/
 outputs/
+
+# =====================================================================
+# Secrets, credentials, and local overrides — NEVER commit these
+# =====================================================================
+
+# Personal / project secret notes
+Secret Info.txt
+Secret Info.txt.bak
+Secret*.txt
+Secret*.md
+DEMO_USER_CREDENTIALS.md
+credentials.*
+credentials/
+*.credentials
+*.pfx
+*.key
+*.pem
+
+# Environment files
+.env
+.env.*
+*.env
+
+# User-specific ASP.NET secrets (dotnet user-secrets ID lives here)
+appsettings.Development.local.json
+appsettings.*.local.json
+
+# Publish profiles (may contain deployment usernames/passwords)
+*.pubxml
+*.pubxml.user
+publish/
+Properties/PublishProfiles/*.pubxml
+Properties/PublishProfiles/*.pubxml.user
+
+# Editor / OS
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.idea/
+.DS_Store
+Thumbs.db
