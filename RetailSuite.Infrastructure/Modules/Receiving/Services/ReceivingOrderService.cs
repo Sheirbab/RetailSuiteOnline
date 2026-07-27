@@ -105,7 +105,20 @@ public class ReceivingOrderService : IReceivingOrderService
         decimal unitCost,
         string? notes)
     {
-        var order = await LoadOrderWithItemsAsync(tenantId, orderId);
+        if (expectedQty <= 0)
+            throw new BusinessRuleException("Expected quantity must be positive.");
+        if (unitCost < 0)
+            throw new BusinessRuleException("Unit cost cannot be negative.");
+
+        var order = await _db.ReceivingOrders
+            .IgnoreQueryFilters()
+            .Where(o => o.Id == orderId && o.TenantId == tenantId && !o.IsDeleted)
+            .Select(o => new { o.Id, o.Status })
+            .FirstOrDefaultAsync()
+            ?? throw new NotFoundException("ReceivingOrder", orderId);
+
+        if (order.Status != ReceivingStatus.Draft)
+            throw new BusinessRuleException("Only Draft orders can be modified.");
 
         var variant = await _db.ProductVariants
             .IgnoreQueryFilters()
@@ -114,11 +127,39 @@ public class ReceivingOrderService : IReceivingOrderService
             .FirstOrDefaultAsync()
             ?? throw new NotFoundException("ProductVariant", variantId);
 
-        var line = new ReceivingOrderItem(
-            tenantId, order.Id, variant.Id, variant.SKU, expectedQty, unitCost, notes);
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var line = new ReceivingOrderItem(
+                    tenantId, order.Id, variant.Id, variant.SKU, expectedQty, unitCost, notes);
 
-        order.AddItem(line);
-        await _db.SaveChangesAsync();
+                _db.ReceivingOrderItems.Add(line);
+                await _db.SaveChangesAsync();
+
+                var expectedAmount = expectedQty * unitCost;
+                var updated = await _db.ReceivingOrders
+                    .IgnoreQueryFilters()
+                    .Where(o => o.Id == orderId
+                             && o.TenantId == tenantId
+                             && !o.IsDeleted
+                             && o.Status == ReceivingStatus.Draft)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(o => o.ExpectedTotal, o => o.ExpectedTotal + expectedAmount));
+
+                if (updated != 1)
+                    throw new BusinessRuleException("Receiving order was changed before the line could be added. Reload and try again.");
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     public async Task RemoveLineAsync(Guid tenantId, Guid orderId, Guid lineId)
@@ -142,71 +183,79 @@ public class ReceivingOrderService : IReceivingOrderService
         if (receivedQty <= 0)
             throw new BusinessRuleException("Received quantity must be positive.");
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            var order = await LoadOrderWithItemsAsync(tenantId, orderId);
-            var line  = order.Items.FirstOrDefault(i => i.Id == lineId)
-                ?? throw new NotFoundException("ReceivingOrderItem", lineId);
+            using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var order = await LoadOrderWithItemsAsync(tenantId, orderId);
+                var line  = order.Items.FirstOrDefault(i => i.Id == lineId)
+                    ?? throw new NotFoundException("ReceivingOrderItem", lineId);
 
-            // 1. Record receipt on the order (domain validates state + quantities).
-            order.RecordReceipt(lineId, receivedQty);
-            if (!string.IsNullOrWhiteSpace(notes)) line.SetNotes(notes);
+                // 1. Record receipt on the order (domain validates state + quantities).
+                order.RecordReceipt(lineId, receivedQty);
+                if (!string.IsNullOrWhiteSpace(notes)) line.SetNotes(notes);
 
-            // 2. Apply inventory side-effect — this also writes an InventoryTransaction.
-            //    Stock lands in the PO's destination location.
-            await _inventory.ReceiveStockAsync(
-                productVariantId: line.ProductVariantId,
-                quantity:         receivedQty,
-                unitCost:         line.UnitCost,
-                referenceId:      $"PO:{order.OrderNumber}",
-                locationId:       order.DestinationLocationId);
+                // 2. Apply inventory side-effect — this also writes an InventoryTransaction.
+                //    Stock lands in the PO's destination location.
+                await _inventory.ReceiveStockAsync(
+                    productVariantId: line.ProductVariantId,
+                    quantity:         receivedQty,
+                    unitCost:         line.UnitCost,
+                    referenceId:      $"PO:{order.OrderNumber}",
+                    locationId:       order.DestinationLocationId);
 
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
 
-            _logger.LogInformation(
-                "Receipt recorded: Order={Order}, Variant={Variant}, Qty={Qty}",
-                order.OrderNumber, line.ProductVariantId, receivedQty);
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+                _logger.LogInformation(
+                    "Receipt recorded: Order={Order}, Variant={Variant}, Qty={Qty}",
+                    order.OrderNumber, line.ProductVariantId, receivedQty);
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     public async Task ReceiveBatchAsync(Guid tenantId, Guid orderId, IEnumerable<(Guid LineId, int Qty)> receipts)
     {
-        using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            var order = await LoadOrderWithItemsAsync(tenantId, orderId);
-
-            foreach (var (lineId, qty) in receipts)
+            using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                if (qty <= 0) continue;
-                var line = order.Items.FirstOrDefault(i => i.Id == lineId)
-                    ?? throw new NotFoundException("ReceivingOrderItem", lineId);
+                var order = await LoadOrderWithItemsAsync(tenantId, orderId);
 
-                order.RecordReceipt(lineId, qty);
+                foreach (var (lineId, qty) in receipts)
+                {
+                    if (qty <= 0) continue;
+                    var line = order.Items.FirstOrDefault(i => i.Id == lineId)
+                        ?? throw new NotFoundException("ReceivingOrderItem", lineId);
 
-                await _inventory.ReceiveStockAsync(
-                    productVariantId: line.ProductVariantId,
-                    quantity:         qty,
-                    unitCost:         line.UnitCost,
-                    referenceId:      $"PO:{order.OrderNumber}",
-                    locationId:       order.DestinationLocationId);
+                    order.RecordReceipt(lineId, qty);
+
+                    await _inventory.ReceiveStockAsync(
+                        productVariantId: line.ProductVariantId,
+                        quantity:         qty,
+                        unitCost:         line.UnitCost,
+                        referenceId:      $"PO:{order.OrderNumber}",
+                        locationId:       order.DestinationLocationId);
+                }
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
             }
-
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     public async Task CloseAsync(Guid tenantId, Guid orderId)

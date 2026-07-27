@@ -377,6 +377,13 @@ public class ShopController : ControllerBase
         if (request.StoreCreditApply > 0 && walletCustomerId == null)
             return BadRequest(ApiResponse<object>.Fail("Wallet sign-in required to redeem store credit."));
 
+        Order? order = null;
+        decimal shippingFee = 0;
+        decimal amountDue = 0;
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
         using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
@@ -391,7 +398,7 @@ public class ShopController : ControllerBase
                 ?? (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty
                     ? request.CustomerId.Value
                     : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId));
-            var order = new Order(orderNumber, customerId);
+            order = new Order(orderNumber, customerId);
             order.SetChannel("Online");
             order.SetGuestContact(request.GuestName.Trim(), request.GuestPhone.Trim(), request.GuestEmail?.Trim());
             order.SetPaymentMethod(request.PaymentMethod.Trim());
@@ -424,7 +431,7 @@ public class ShopController : ControllerBase
             }
 
             // ---- 3. Shipping
-            var shippingFee = shipping.FeeFor(order.TotalAmount);
+            shippingFee = shipping.FeeFor(order.TotalAmount);
             var addressJson = shipping.IsPickup
                 ? "null"
                 : JsonSerializer.Serialize(request.ShippingAddress);
@@ -470,7 +477,7 @@ public class ShopController : ControllerBase
 
             // Amount the customer still owes (= TotalAmount - StoreCreditRedeemed - LoyaltyRedeemedRupees).
             // For online checkout this is what shows up in AR and on the payment QR / COD slip.
-            var amountDue   = order.AmountDueAfterRedemptions;
+            amountDue       = order.AmountDueAfterRedemptions;
             // Proportional split of tax across what the customer actually owes, mirroring POS.
             var dueRatio    = order.TotalAmount > 0
                 ? Math.Min(1m, amountDue / order.TotalAmount)
@@ -501,27 +508,34 @@ public class ShopController : ControllerBase
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+        });
 
-            // ---- 5b. Payment intent for QR-based providers (EasyPaisa / JazzCash).
-            //         Intent amount must reflect the net amount owed AFTER wallet redemption.
-            //         If wallet fully covers the order, no QR is needed.
-            OrderPaymentIntent? paymentIntent = null;
-            var providerLower = (order.PaymentMethodCode ?? "").ToLowerInvariant();
-            if (providerLower is "easypaisa" or "jazzcash" && amountDue > 0)
-            {
-                paymentIntent = await _paymentService.CreateIntentAsync(
-                    order.Id, order.PaymentMethodCode!, amountDue);
-            }
+        // ---- 5b. Payment intent for QR-based providers (EasyPaisa / JazzCash).
+        //         Intent amount must reflect the net amount owed AFTER wallet redemption.
+        //         If wallet fully covers the order, no QR is needed.
+        OrderPaymentIntent? paymentIntent = null;
+        var providerLower = (order!.PaymentMethodCode ?? "").ToLowerInvariant();
+        if (providerLower is "easypaisa" or "jazzcash" && amountDue > 0)
+        {
+            paymentIntent = await _paymentService.CreateIntentAsync(
+                order.Id, order.PaymentMethodCode!, amountDue);
+        }
 
-            // ---- 6. Email confirmation (best-effort)
-            if (!string.IsNullOrWhiteSpace(order.GuestEmail))
-            {
-                var totalLine    = $"<p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>";
-                var shippingLine = order.ShippingAmount > 0
-                    ? $"<p><strong>Shipping:</strong> Rs {order.ShippingAmount:N2} ({shipping.Name})</p>"
-                    : $"<p><strong>Shipping:</strong> Free ({shipping.Name})</p>";
+        // ---- 6. Email confirmation (best-effort)
+        if (!string.IsNullOrWhiteSpace(order.GuestEmail))
+        {
+            var totalLine    = $"<p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>";
+            var shippingLine = order.ShippingAmount > 0
+                ? $"<p><strong>Shipping:</strong> Rs {order.ShippingAmount:N2} ({shipping.Name})</p>"
+                : $"<p><strong>Shipping:</strong> Free ({shipping.Name})</p>";
 
-                var body = $@"
+            var body = $@"
                     <h2>Order confirmation — {order.OrderNumber}</h2>
                     <p>Thank you for your order, {System.Net.WebUtility.HtmlEncode(order.GuestName)}.</p>
                     {totalLine}
@@ -530,42 +544,36 @@ public class ShopController : ControllerBase
                     <p>Track your order at our store using order number <strong>{order.OrderNumber}</strong>
                     and the phone number <strong>{order.GuestPhone}</strong>.</p>";
 
-                try
-                {
-                    await _email.SendAsync(order.GuestEmail, $"Order confirmed — {order.OrderNumber}", body);
-                }
-                catch { /* email is best-effort */ }
-            }
-
-            return Ok(ApiResponse<object>.Ok(new
+            try
             {
-                order.OrderNumber,
-                order.TotalAmount,
-                ShippingFee     = shippingFee,
-                PaymentMethod   = order.PaymentMethodCode,
-                ShippingMethod  = shipping.Name,
-                IsPickup        = shipping.IsPickup,
-                ExpectedDelivery = shipping.Eta,
-                StoreCreditRedeemed = order.StoreCreditRedeemed,
-                AmountDue       = amountDue,
-                // Present only for QR-based providers AND when the customer still owes
-                // something after wallet redemption.
-                Payment = paymentIntent == null ? null : new
-                {
-                    IntentId  = paymentIntent.Id,
-                    Provider  = paymentIntent.Provider,
-                    AmountDue = paymentIntent.AmountDue,
-                    QrPayload = paymentIntent.QrPayload,
-                    ExpiresAt = paymentIntent.ExpiresAt,
-                    QrImageUrl = $"/api/payments/qr/{paymentIntent.Id}.png"
-                }
-            }));
+                await _email.SendAsync(order.GuestEmail, $"Order confirmed — {order.OrderNumber}", body);
+            }
+            catch { /* email is best-effort */ }
         }
-        catch
+
+        return Ok(ApiResponse<object>.Ok(new
         {
-            await tx.RollbackAsync();
-            throw;
-        }
+            order.OrderNumber,
+            order.TotalAmount,
+            ShippingFee     = shippingFee,
+            PaymentMethod   = order.PaymentMethodCode,
+            ShippingMethod  = shipping.Name,
+            IsPickup        = shipping.IsPickup,
+            ExpectedDelivery = shipping.Eta,
+            StoreCreditRedeemed = order.StoreCreditRedeemed,
+            AmountDue       = amountDue,
+            // Present only for QR-based providers AND when the customer still owes
+            // something after wallet redemption.
+            Payment = paymentIntent == null ? null : new
+            {
+                IntentId  = paymentIntent.Id,
+                Provider  = paymentIntent.Provider,
+                AmountDue = paymentIntent.AmountDue,
+                QrPayload = paymentIntent.QrPayload,
+                ExpiresAt = paymentIntent.ExpiresAt,
+                QrImageUrl = $"/api/payments/qr/{paymentIntent.Id}.png"
+            }
+        }));
     }
 
     // ============================================================

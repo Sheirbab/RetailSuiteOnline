@@ -78,14 +78,21 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 // Resolve the selling location once for this sale.
                 var sellingLocationId = await ResolveSellingLocationAsync(tenantId, request.LocationId);
 
+                Order? order = null;
+                decimal totalCogs = 0;
+                decimal amountDueResult = 0;
+
+                var strategy = _db.Database.CreateExecutionStrategy();
+                await strategy.ExecuteAsync(async () =>
+                {
                 using var transaction = await _db.Database.BeginTransactionAsync();
 
                 // 1. Order header
                 var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
-                var order = new Order(orderNumber, customerId);
+                order = new Order(orderNumber, customerId);
                 order.SetCashier(cashierId);
 
-                decimal totalCogs = 0;
+                totalCogs = 0;
 
                 // 2. Cart lines — decrement stock at the selling location, write inventory ledger, add to order
                 foreach (var lineReq in request.Items)
@@ -297,6 +304,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                amountDueResult = amountDue;
+                });
+
                 // 10. Email receipt if customer email known (best-effort, outside the txn)
                 string? receiptEmail = null;
                 if (hasRealCustomer)
@@ -308,20 +318,20 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 if (!string.IsNullOrWhiteSpace(receiptEmail))
                 {
                     var body = $@"
-<h2>Receipt — {order.OrderNumber}</h2>
+<h2>Receipt — {order!.OrderNumber}</h2>
 <p>Thank you for your purchase!</p>
 <p><strong>Items total:</strong> Rs {(order.TotalAmount + order.OrderDiscountAmount):N2}</p>
 @if(order.OrderDiscountAmount > 0)<p><strong>Discount:</strong> &minus; Rs {order.OrderDiscountAmount:N2}</p>
 <p><strong>Tax:</strong> Rs {order.TaxAmount:N2}</p>
 <p><strong>Total:</strong> Rs {order.TotalAmount:N2}</p>
-<p><strong>Paid in cash:</strong> Rs {amountDue:N2}</p>
+<p><strong>Paid in cash:</strong> Rs {amountDueResult:N2}</p>
 @if(order.StoreCreditRedeemed > 0)<p><strong>Store credit used:</strong> Rs {order.StoreCreditRedeemed:N2}</p>
 @if(order.LoyaltyRedeemedRupees > 0)<p><strong>Loyalty redeemed:</strong> Rs {order.LoyaltyRedeemedRupees:N2} ({order.LoyaltyPointsRedeemed} pts)</p>
 <p><strong>Date:</strong> {DateTime.UtcNow:dd MMM yyyy HH:mm} UTC</p>";
                     await _emailService.SendAsync(receiptEmail, $"Receipt: {order.OrderNumber}", body);
                 }
 
-                return order.Id;
+                return order!.Id;
 
             }
             catch (Exception e)

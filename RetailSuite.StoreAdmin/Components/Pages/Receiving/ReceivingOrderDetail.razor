@@ -661,7 +661,7 @@ else if (order != null)
     {
         try
         {
-            var json = await Http.GetStringAsync("api/inventory/all?page=1&pageSize=500");
+            var json = await Http.GetStringAsync("api/receiving-orders/variants");
             variants = new List<VariantRow>();
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("items", out var items)
@@ -679,7 +679,11 @@ else if (order != null)
                 }
             }
         }
-        catch { variants = new(); }
+        catch (Exception ex)
+        {
+            variants = new();
+            Toast.Show($"Could not load variants: {ex.Message}");
+        }
     }
 
     void PickVariant(VariantRow v)
@@ -719,7 +723,7 @@ else if (order != null)
         }
         else
         {
-            Toast.Show("Failed to add line.");
+            Toast.Show($"Failed to add line: {await ReadApiMessageAsync(resp)}");
         }
     }
 
@@ -794,6 +798,34 @@ else if (order != null)
             _                   => ("#e5e7eb", "#374151")
         };
         return $"<span style=\"background:{bg};color:{fg};font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;\">{status}</span>";
+    }
+
+    static async Task<string> ReadApiMessageAsync(HttpResponseMessage response)
+    {
+        var raw = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(raw))
+            return $"{(int)response.StatusCode} {response.ReasonPhrase}";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("message", out var message)
+                && message.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(message.GetString()))
+            {
+                return message.GetString()!;
+            }
+            if (root.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(error.GetString()))
+            {
+                return error.GetString()!;
+            }
+        }
+        catch { /* Response was not JSON; fall back to raw body. */ }
+
+        return raw;
     }
 
     static OrderDto? ParseOrder(string json)

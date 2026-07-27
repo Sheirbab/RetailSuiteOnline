@@ -67,27 +67,33 @@ public class StaffController : ControllerBase
         var tempPassword = GenerateTempPassword();
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(tempPassword);
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-
-        var user = new User(tenantId, request.Email, passwordHash, UserRole.Staff);
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-
-        // Create a Customer profile for the staff member so they appear in the tenant
-        var profile = new Customer(user.Id, request.FirstName, request.LastName, request.Email, request.Phone);
-        profile.TenantId = tenantId;
-        _db.Customers.Add(profile);
-        await _db.SaveChangesAsync();
-
-        await tx.CommitAsync();
-
-        return Ok(new ApiResponse<object>(true, "Staff member created.", new
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var result = await strategy.ExecuteAsync(async () =>
         {
-            UserId       = user.Id,
-            Email        = request.Email,
-            FullName     = $"{request.FirstName} {request.LastName}",
-            TempPassword = tempPassword
-        }));
+            using var tx = await _db.Database.BeginTransactionAsync();
+
+            var user = new User(tenantId, request.Email, passwordHash, UserRole.Staff);
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+
+            // Create a Customer profile for the staff member so they appear in the tenant
+            var profile = new Customer(user.Id, request.FirstName, request.LastName, request.Email, request.Phone);
+            profile.TenantId = tenantId;
+            _db.Customers.Add(profile);
+            await _db.SaveChangesAsync();
+
+            await tx.CommitAsync();
+
+            return Ok(new ApiResponse<object>(true, "Staff member created.", new
+            {
+                UserId       = user.Id,
+                Email        = request.Email,
+                FullName     = $"{request.FirstName} {request.LastName}",
+                TempPassword = tempPassword
+            }));
+        });
+
+        return result;
     }
 
     /// <summary>

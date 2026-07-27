@@ -97,41 +97,47 @@ public class TenantsController : ControllerBase
         if (await _db.Tenants.AnyAsync(t => t.Subdomain == request.Subdomain))
             return Conflict(ApiResponse<object>.Fail("Subdomain is already taken."));
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var result = await strategy.ExecuteAsync(async () =>
         {
-            // 1. Create Tenant
-            var tenant = new Tenant(request.TenantName.Trim(), request.Subdomain.Trim().ToLowerInvariant());
-            _db.Tenants.Add(tenant);
-            await _db.SaveChangesAsync();
-
-            // 2. Generate temp password and create Admin user
-            var tempPassword = GenerateTempPassword();
-            var hash         = BCrypt.Net.BCrypt.HashPassword(tempPassword);
-            var adminUser    = new User(tenant.Id, request.AdminEmail.Trim().ToLowerInvariant(), hash, UserRole.Admin);
-            _db.Users.Add(adminUser);
-            await _db.SaveChangesAsync();
-
-            // 3. Seed per-tenant defaults (Chart of Accounts, shipping methods,
-            //    empty tax settings, default Main Branch location).
-            await TenantDefaultsSeeder.SeedAsync(_db, tenant.Id);
-
-            await tx.CommitAsync();
-
-            return Ok(ApiResponse<object>.Ok(new
+            using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                TenantId     = tenant.Id,
-                TenantName   = tenant.Name,
-                Subdomain    = tenant.Subdomain,
-                AdminEmail   = adminUser.Email,
-                TempPassword = tempPassword
-            }));
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+                // 1. Create Tenant
+                var tenant = new Tenant(request.TenantName.Trim(), request.Subdomain.Trim().ToLowerInvariant());
+                _db.Tenants.Add(tenant);
+                await _db.SaveChangesAsync();
+
+                // 2. Generate temp password and create Admin user
+                var tempPassword = GenerateTempPassword();
+                var hash         = BCrypt.Net.BCrypt.HashPassword(tempPassword);
+                var adminUser    = new User(tenant.Id, request.AdminEmail.Trim().ToLowerInvariant(), hash, UserRole.Admin);
+                _db.Users.Add(adminUser);
+                await _db.SaveChangesAsync();
+
+                // 3. Seed per-tenant defaults (Chart of Accounts, shipping methods,
+                //    empty tax settings, default Main Branch location).
+                await TenantDefaultsSeeder.SeedAsync(_db, tenant.Id);
+
+                await tx.CommitAsync();
+
+                return Ok(ApiResponse<object>.Ok(new
+                {
+                    TenantId     = tenant.Id,
+                    TenantName   = tenant.Name,
+                    Subdomain    = tenant.Subdomain,
+                    AdminEmail   = adminUser.Email,
+                    TempPassword = tempPassword
+                }));
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+
+        return result;
     }
 
     // ---------------------------------------------------------------

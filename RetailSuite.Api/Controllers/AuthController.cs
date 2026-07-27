@@ -69,12 +69,19 @@ public class AuthController : ControllerBase
         if (await _Db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == subdomain))
             return BadRequest(new ApiResponse<string>(false, "Subdomain already taken.", null));
 
+        Tenant? tenant = null;
+        User? user = null;
+        string? plaintextTokenResult = null;
+
+        var strategy = _Db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
         using var transaction = await _Db.Database.BeginTransactionAsync();
 
         try
         {
             // 1. Create Tenant — starts as PendingVerification.
-            var tenant = new Tenant(
+            tenant = new Tenant(
                 request.TenantName.Trim(),
                 subdomain,
                 billingEmail: string.IsNullOrWhiteSpace(request.BillingEmail) ? email : request.BillingEmail.Trim().ToLowerInvariant(),
@@ -85,7 +92,7 @@ public class AuthController : ControllerBase
 
             // 2. Create Admin User — unverified.
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-            var user = new User(tenant.Id, email, passwordHash, UserRole.Admin);
+            user = new User(tenant.Id, email, passwordHash, UserRole.Admin);
             _Db.Users.Add(user);
             await _Db.SaveChangesAsync();
 
@@ -145,34 +152,36 @@ public class AuthController : ControllerBase
             }
 
             await transaction.CommitAsync();
-
-            // 6. Fire verification email — best-effort, outside the transaction.
-            var verifyUrl = BuildVerificationUrl(plaintextToken);
-            await _notifications.SendVerifyEmailAsync(
-                toAddress: user.Email,
-                recipientName: user.Email,
-                tenantName: tenant.Name,
-                verificationUrl: verifyUrl,
-                expiryHours: _verifyOptions.TokenTtlHours,
-                tenantId: tenant.Id,
-                userId: user.Id);
-
-            // 7. Return a JWT scoped as "unverified" — user can call /verify-email and /resend-verification
-            //    but anything behind [Authorize(Policy="RequireVerifiedEmail")] will return 403.
-            var token = GenerateJwt(user);
-            return Ok(new ApiResponse<object>(true, "Account created. Please check your email to verify.", new
-            {
-                Token              = token,
-                RequiresVerification = true,
-                TenantId           = tenant.Id,
-                Subdomain          = tenant.Subdomain
-            }));
+            plaintextTokenResult = plaintextToken;
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+        });
+
+        // 6. Fire verification email — best-effort, outside the transaction.
+        var verifyUrl = BuildVerificationUrl(plaintextTokenResult!);
+        await _notifications.SendVerifyEmailAsync(
+            toAddress: user!.Email,
+            recipientName: user.Email,
+            tenantName: tenant!.Name,
+            verificationUrl: verifyUrl,
+            expiryHours: _verifyOptions.TokenTtlHours,
+            tenantId: tenant.Id,
+            userId: user.Id);
+
+        // 7. Return a JWT scoped as "unverified" — user can call /verify-email and /resend-verification
+        //    but anything behind [Authorize(Policy="RequireVerifiedEmail")] will return 403.
+        var token = GenerateJwt(user);
+        return Ok(new ApiResponse<object>(true, "Account created. Please check your email to verify.", new
+        {
+            Token              = token,
+            RequiresVerification = true,
+            TenantId           = tenant.Id,
+            Subdomain          = tenant.Subdomain
+        }));
     }
 
     // -------------------------------------------------------------
@@ -199,31 +208,35 @@ public class AuthController : ControllerBase
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == user.TenantId);
 
-        using var tx = await _Db.Database.BeginTransactionAsync();
-        try
+        var strategy = _Db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            user.MarkEmailVerified();
-            await _tokenService.MarkUsedAsync(token);
-
-            // Move tenant out of PendingVerification on first successful verify.
-            // If the subscription is in Trialing, mirror that on the Tenant; otherwise Active.
-            if (tenant != null && tenant.Status == TenantStatus.PendingVerification)
+            using var tx = await _Db.Database.BeginTransactionAsync();
+            try
             {
-                var activeSub = await _subs.GetActiveAsync(tenant.Id);
-                var newStatus = activeSub?.Status == SubscriptionStatus.Trialing
-                    ? TenantStatus.Trialing
-                    : TenantStatus.Active;
-                tenant.SetStatus(newStatus);
-            }
+                user.MarkEmailVerified();
+                await _tokenService.MarkUsedAsync(token);
 
-            await _Db.SaveChangesAsync();
-            await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+                // Move tenant out of PendingVerification on first successful verify.
+                // If the subscription is in Trialing, mirror that on the Tenant; otherwise Active.
+                if (tenant != null && tenant.Status == TenantStatus.PendingVerification)
+                {
+                    var activeSub = await _subs.GetActiveAsync(tenant.Id);
+                    var newStatus = activeSub?.Status == SubscriptionStatus.Trialing
+                        ? TenantStatus.Trialing
+                        : TenantStatus.Active;
+                    tenant.SetStatus(newStatus);
+                }
+
+                await _Db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
 
         // Welcome email — best-effort.
         if (tenant != null)

@@ -164,25 +164,29 @@ public class InventoryController : ControllerBase
         if (request?.Items == null || request.Items.Count == 0)
             return BadRequest(new { error = "Items must not be empty." });
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            foreach (var line in request.Items)
+            using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                if (line.Quantity <= 0) continue;
-                await _inventoryService.ReceiveStockAsync(
-                    line.ProductVariantId,
-                    line.Quantity,
-                    line.UnitCost,
-                    request.ReferenceId);
+                foreach (var line in request.Items)
+                {
+                    if (line.Quantity <= 0) continue;
+                    await _inventoryService.ReceiveStockAsync(
+                        line.ProductVariantId,
+                        line.Quantity,
+                        line.UnitCost,
+                        request.ReferenceId);
+                }
+                await tx.CommitAsync();
             }
-            await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
 
         return Ok(new { Received = request.Items.Count, Reference = request.ReferenceId });
     }

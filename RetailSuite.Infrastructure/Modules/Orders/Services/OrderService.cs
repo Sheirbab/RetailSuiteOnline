@@ -51,70 +51,74 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         {
             _logger.LogInformation("Order {OrderId} confirmed", orderId);
 
-            using var transaction = await _db.Database.BeginTransactionAsync();
-
-            var order = await _db.Orders
-                .Include(o => o.Items)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-
-            if (order == null)
-                throw new Exception("Order not found.");
-
-            if (order.Status != OrderStatus.Draft)
-                throw new Exception("Only draft orders can be confirmed.");
-
-            foreach (var item in order.Items)
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                await _inventoryService.AdjustStockAsync(
-                    item.ProductVariantId,
-                    -item.Quantity,
-                    InventoryTransactionType.Sale,
-                    order.Id.ToString(),
-                    "Order confirmation");
-            }
+                using var transaction = await _db.Database.BeginTransactionAsync();
 
-            // ---------------------------------------------------
-            // Accounting Integration
-            // ---------------------------------------------------
+                var order = await _db.Orders
+                    .Include(o => o.Items)
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
 
-            // Fetch required accounts
-            var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
-            var revenueAccount = await _db.Accounts.FirstAsync(a => a.Code == "4000");
-            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-            var cogsAccount = await _db.Accounts.FirstAsync(a => a.Code == "5000");
+                if (order == null)
+                    throw new Exception("Order not found.");
 
-            decimal totalCogs = 0;
+                if (order.Status != OrderStatus.Draft)
+                    throw new Exception("Only draft orders can be confirmed.");
 
-            foreach (var item in order.Items)
-            {
+                foreach (var item in order.Items)
+                {
+                    await _inventoryService.AdjustStockAsync(
+                        item.ProductVariantId,
+                        -item.Quantity,
+                        InventoryTransactionType.Sale,
+                        order.Id.ToString(),
+                        "Order confirmation");
+                }
 
-                var inventoryItem = await _db.InventoryItems.FirstOrDefaultAsync(i => i.ProductVariantId == item.ProductVariantId);
-                // This is the "sale"
-                var costAmount = inventoryItem?.IssueStock(item.Quantity) ?? 0;
+                // ---------------------------------------------------
+                // Accounting Integration
+                // ---------------------------------------------------
 
-                totalCogs += costAmount;
+                // Fetch required accounts
+                var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
+                var revenueAccount = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+                var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
+                var cogsAccount = await _db.Accounts.FirstAsync(a => a.Code == "5000");
 
-                //var variant = await _db.ProductVariants.FirstAsync(v => v.Id == item.ProductVariantId);
+                decimal totalCogs = 0;
 
-                // totalCogs += variant.CostPrice * item.Quantity;
-            }
-            await _accountingService.CreateJournalEntryAsync(
-                                                           order.Id.ToString(),
-                                                           $"Sale Order {order.OrderNumber}",
-                                                           new List<(Guid, decimal, decimal)>
-                                                           {
-                                                        (arAccount.Id, order.TotalAmount, 0),
-                                                        (revenueAccount.Id, 0, order.TotalAmount),
-                                                        (cogsAccount.Id, totalCogs, 0),
-                                                        (inventoryAccount.Id, 0, totalCogs)
-                                                           });
-            order.Confirm();
+                foreach (var item in order.Items)
+                {
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+                    var inventoryItem = await _db.InventoryItems.FirstOrDefaultAsync(i => i.ProductVariantId == item.ProductVariantId);
+                    // This is the "sale"
+                    var costAmount = inventoryItem?.IssueStock(item.Quantity) ?? 0;
+
+                    totalCogs += costAmount;
+
+                    //var variant = await _db.ProductVariants.FirstAsync(v => v.Id == item.ProductVariantId);
+
+                    // totalCogs += variant.CostPrice * item.Quantity;
+                }
+                await _accountingService.CreateJournalEntryAsync(
+                                                               order.Id.ToString(),
+                                                               $"Sale Order {order.OrderNumber}",
+                                                               new List<(Guid, decimal, decimal)>
+                                                               {
+                                                            (arAccount.Id, order.TotalAmount, 0),
+                                                            (revenueAccount.Id, 0, order.TotalAmount),
+                                                            (cogsAccount.Id, totalCogs, 0),
+                                                            (inventoryAccount.Id, 0, totalCogs)
+                                                               });
+                order.Confirm();
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            });
 
             // Best-effort notification — never throws.
-            await _notifications.SendOrderConfirmedAsync(order.Id);
+            await _notifications.SendOrderConfirmedAsync(orderId);
         }
 
         // ---------------------------------------
@@ -122,100 +126,101 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         // ---------------------------------------
         public async Task CancelOrderAsync(Guid orderId)
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
-
-            var order = await _db.Orders
-                .Include(o => o.Items)
-                .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-
-            if (order == null)
-                throw new Exception("Order not found.");
-
-            if (order.Status == OrderStatus.Cancelled)
-                throw new Exception("Already cancelled.");
-
-            // Draft → just cancel
-            if (order.Status == OrderStatus.Draft)
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                order.Cancel();
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
+                using var transaction = await _db.Database.BeginTransactionAsync();
 
-                // Best-effort notification — never throws.
-                await _notifications.SendOrderCancelledAsync(order.Id);
-                return;
-            }
+                var order = await _db.Orders
+                    .Include(o => o.Items)
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
 
-            // ===============================
-            // Reverse Inventory + Accounting
-            // ===============================
+                if (order == null)
+                    throw new Exception("Order not found.");
 
-            decimal totalCogs = 0;
+                if (order.Status == OrderStatus.Cancelled)
+                    throw new Exception("Already cancelled.");
 
-            foreach (var item in order.Items)
-            {
-                var inventoryItem = await _db.InventoryItems
-                    .FirstAsync(i => i.ProductVariantId == item.ProductVariantId);
-
-                // Restore stock
-                inventoryItem.ReceiveStock(item.Quantity, inventoryItem.AverageCost);
-
-                totalCogs += inventoryItem.AverageCost * item.Quantity;
-
-                _db.InventoryTransactions.Add(
-                    new InventoryTransaction(
-                        inventoryItem.Id,
-                        item.ProductVariantId,
-                        inventoryItem.LocationId,
-                        item.Quantity,
-                        InventoryTransactionType.AdjustmentIncrease,
-                        order.Id.ToString(),
-                        "Order cancellation"));
-            }
-
-            // Get accounts
-            var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
-            var revenueAccount = await _db.Accounts.FirstAsync(a => a.Code == "4000");
-            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-            var cogsAccount = await _db.Accounts.FirstAsync(a => a.Code == "5000");
-            var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-
-            // Reverse sale entry
-            await _accountingService.CreateJournalEntryAsync(
-                order.Id.ToString(),
-                $"Cancellation Order {order.OrderNumber}",
-                new List<(Guid, decimal, decimal)>
+                // Draft → just cancel
+                if (order.Status == OrderStatus.Draft)
                 {
-            (revenueAccount.Id, order.TotalAmount, 0),
-            (arAccount.Id, 0, order.TotalAmount),
+                    order.Cancel();
+                    await _db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return;
+                }
 
-            (inventoryAccount.Id, totalCogs, 0),
-            (cogsAccount.Id, 0, totalCogs)
-                });
+                // ===============================
+                // Reverse Inventory + Accounting
+                // ===============================
 
-            // Reverse payments if exist
-            foreach (var payment in order.Payments)
-            {
+                decimal totalCogs = 0;
+
+                foreach (var item in order.Items)
+                {
+                    var inventoryItem = await _db.InventoryItems
+                        .FirstAsync(i => i.ProductVariantId == item.ProductVariantId);
+
+                    // Restore stock
+                    inventoryItem.ReceiveStock(item.Quantity, inventoryItem.AverageCost);
+
+                    totalCogs += inventoryItem.AverageCost * item.Quantity;
+
+                    _db.InventoryTransactions.Add(
+                        new InventoryTransaction(
+                            inventoryItem.Id,
+                            item.ProductVariantId,
+                            inventoryItem.LocationId,
+                            item.Quantity,
+                            InventoryTransactionType.AdjustmentIncrease,
+                            order.Id.ToString(),
+                            "Order cancellation"));
+                }
+
+                // Get accounts
+                var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
+                var revenueAccount = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+                var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
+                var cogsAccount = await _db.Accounts.FirstAsync(a => a.Code == "5000");
+                var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+
+                // Reverse sale entry
                 await _accountingService.CreateJournalEntryAsync(
                     order.Id.ToString(),
-                    $"Payment reversal for Order {order.OrderNumber}",
+                    $"Cancellation Order {order.OrderNumber}",
                     new List<(Guid, decimal, decimal)>
                     {
-                (arAccount.Id, payment.Amount, 0),
-                (cashAccount.Id, 0, payment.Amount)
+                (revenueAccount.Id, order.TotalAmount, 0),
+                (arAccount.Id, 0, order.TotalAmount),
+
+                (inventoryAccount.Id, totalCogs, 0),
+                (cogsAccount.Id, 0, totalCogs)
                     });
 
-                order.RegisterPayment(-payment.Amount);
-            }
+                // Reverse payments if exist
+                foreach (var payment in order.Payments)
+                {
+                    await _accountingService.CreateJournalEntryAsync(
+                        order.Id.ToString(),
+                        $"Payment reversal for Order {order.OrderNumber}",
+                        new List<(Guid, decimal, decimal)>
+                        {
+                    (arAccount.Id, payment.Amount, 0),
+                    (cashAccount.Id, 0, payment.Amount)
+                        });
 
-            order.Cancel();
+                    order.RegisterPayment(-payment.Amount);
+                }
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+                order.Cancel();
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            });
 
             // Best-effort notification — never throws.
-            await _notifications.SendOrderCancelledAsync(order.Id);
+            await _notifications.SendOrderCancelledAsync(orderId);
         }
         public async Task<Guid> CreateDraftAsync(CreateOrderRequest request)
         {
@@ -286,82 +291,89 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
         // ---------------------------------------
         public async Task<decimal> ProcessReturnAsync(Guid orderId, ReturnOrderRequest request)
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
-
-            var order = await _db.Orders
-                .Include(o => o.Items)
-                .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-
-            if (order == null)
-                throw new NotFoundException("Order", orderId);
-
-            if (order.Status != OrderStatus.Completed && order.Status != OrderStatus.Confirmed)
-                throw new BusinessRuleException("Only confirmed or completed orders can be returned.");
-
-            // Build map of items to return (fall back to full order if no items specified)
-            var returnLines = request.Items.Any()
-                ? request.Items
-                : order.Items.Select(i => new ReturnLineItem
-                    { ProductVariantId = i.ProductVariantId, Quantity = i.Quantity }).ToList();
-
+            Order? order = null;
             decimal totalReturnValue = 0;
-            decimal totalCogsRestored = 0;
 
-            // Get accounts
-            var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-            var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
-            var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
-            var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
-
-            foreach (var line in returnLines)
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                var orderItem = order.Items.FirstOrDefault(i => i.ProductVariantId == line.ProductVariantId);
-                if (orderItem == null)
-                    throw new BusinessRuleException($"Variant {line.ProductVariantId} was not in the original order.");
+                using var transaction = await _db.Database.BeginTransactionAsync();
 
-                if (line.Quantity <= 0 || line.Quantity > orderItem.Quantity)
-                    throw new BusinessRuleException($"Invalid return quantity for variant {line.ProductVariantId}.");
+                order = await _db.Orders
+                    .Include(o => o.Items)
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
 
-                var inventoryItem = await _db.InventoryItems
-                    .FirstAsync(i => i.ProductVariantId == line.ProductVariantId);
+                if (order == null)
+                    throw new NotFoundException("Order", orderId);
 
-                var costRestored = inventoryItem.AverageCost * line.Quantity;
+                if (order.Status != OrderStatus.Completed && order.Status != OrderStatus.Confirmed)
+                    throw new BusinessRuleException("Only confirmed or completed orders can be returned.");
 
-                // Restore stock
-                inventoryItem.ReceiveStock(line.Quantity, inventoryItem.AverageCost);
-                totalCogsRestored += costRestored;
+                // Build map of items to return (fall back to full order if no items specified)
+                var returnLines = request.Items.Any()
+                    ? request.Items
+                    : order.Items.Select(i => new ReturnLineItem
+                        { ProductVariantId = i.ProductVariantId, Quantity = i.Quantity }).ToList();
 
-                var lineValue = orderItem.UnitPrice * line.Quantity;
-                totalReturnValue += lineValue;
+                totalReturnValue = 0;
+                decimal totalCogsRestored = 0;
 
-                _db.InventoryTransactions.Add(new InventoryTransaction(
-                    inventoryItem.Id,
-                    line.ProductVariantId,
-                    inventoryItem.LocationId,
-                    line.Quantity,
-                    InventoryTransactionType.AdjustmentIncrease,
-                    order.Id.ToString(),
-                    $"Return for order {order.OrderNumber}"));
-            }
+                // Get accounts
+                var cashAccount      = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+                var revenueAccount   = await _db.Accounts.FirstAsync(a => a.Code == "4000");
+                var inventoryAccount = await _db.Accounts.FirstAsync(a => a.Code == "1100");
+                var cogsAccount      = await _db.Accounts.FirstAsync(a => a.Code == "5000");
 
-            // Reversal journal entry: reverse revenue + COGS
-            await _accountingService.CreateJournalEntryAsync(
-                order.Id.ToString(),
-                $"Return for Order {order.OrderNumber}",
-                new List<(Guid, decimal, decimal)>
+                foreach (var line in returnLines)
                 {
-                    (revenueAccount.Id,   totalReturnValue,  0),               // DR Revenue
-                    (cashAccount.Id,      0,                 totalReturnValue), // CR Cash (refund)
-                    (inventoryAccount.Id, totalCogsRestored, 0),               // DR Inventory
-                    (cogsAccount.Id,      0,                 totalCogsRestored) // CR COGS
-                });
+                    var orderItem = order.Items.FirstOrDefault(i => i.ProductVariantId == line.ProductVariantId);
+                    if (orderItem == null)
+                        throw new BusinessRuleException($"Variant {line.ProductVariantId} was not in the original order.");
 
-            // Reduce paid amount
-            order.ApplyReturn(totalReturnValue);
+                    if (line.Quantity <= 0 || line.Quantity > orderItem.Quantity)
+                        throw new BusinessRuleException($"Invalid return quantity for variant {line.ProductVariantId}.");
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+                    var inventoryItem = await _db.InventoryItems
+                        .FirstAsync(i => i.ProductVariantId == line.ProductVariantId);
+
+                    var costRestored = inventoryItem.AverageCost * line.Quantity;
+
+                    // Restore stock
+                    inventoryItem.ReceiveStock(line.Quantity, inventoryItem.AverageCost);
+                    totalCogsRestored += costRestored;
+
+                    var lineValue = orderItem.UnitPrice * line.Quantity;
+                    totalReturnValue += lineValue;
+
+                    _db.InventoryTransactions.Add(new InventoryTransaction(
+                        inventoryItem.Id,
+                        line.ProductVariantId,
+                        inventoryItem.LocationId,
+                        line.Quantity,
+                        InventoryTransactionType.AdjustmentIncrease,
+                        order.Id.ToString(),
+                        $"Return for order {order.OrderNumber}"));
+                }
+
+                // Reversal journal entry: reverse revenue + COGS
+                await _accountingService.CreateJournalEntryAsync(
+                    order.Id.ToString(),
+                    $"Return for Order {order.OrderNumber}",
+                    new List<(Guid, decimal, decimal)>
+                    {
+                        (revenueAccount.Id,   totalReturnValue,  0),               // DR Revenue
+                        (cashAccount.Id,      0,                 totalReturnValue), // CR Cash (refund)
+                        (inventoryAccount.Id, totalCogsRestored, 0),               // DR Inventory
+                        (cogsAccount.Id,      0,                 totalCogsRestored) // CR COGS
+                    });
+
+                // Reduce paid amount
+                order.ApplyReturn(totalReturnValue);
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            });
 
             // ---------------------------------------
             // Gateway refunds — best-effort, post-commit
@@ -369,10 +381,10 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
             // The ledger has already booked the refund; calling the gateway is what actually
             // moves money back to the customer. Run after the DB transaction so a gateway
             // hiccup doesn't roll back the inventory + accounting work we just did.
-            await IssueGatewayRefundsAsync(order, totalReturnValue);
+            await IssueGatewayRefundsAsync(order!, totalReturnValue);
 
             // Best-effort notification — never throws.
-            await _notifications.SendReturnProcessedAsync(order.Id, totalReturnValue);
+            await _notifications.SendReturnProcessedAsync(order!.Id, totalReturnValue);
 
             return totalReturnValue;
         }

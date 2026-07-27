@@ -32,78 +32,87 @@ public class PaymentService
     {
         _logger.LogInformation("Processing payment for Order {OrderId}: {Amount:C} via {PaymentMethod}", orderId, amount, method);
 
-        using var transaction = await _db.Database.BeginTransactionAsync();
-
-        var order = await _db.Orders
-            .FirstOrDefaultAsync(o => o.Id == orderId);
-
-        if (order == null)
+        Payment? payment = null;
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            _logger.LogWarning("Payment processing failed: Order {OrderId} not found", orderId);
-            throw new Exception("Order not found.");
-        }
+            using var transaction = await _db.Database.BeginTransactionAsync();
 
-        if (order.Status == OrderStatus.Cancelled)
-        {
-            _logger.LogWarning("Payment processing failed: Order {OrderId} is cancelled", orderId);
-            throw new Exception("Cannot pay a cancelled order.");
-        }
+            var order = await _db.Orders
+                .FirstOrDefaultAsync(o => o.Id == orderId);
 
-        order.RegisterPayment(amount);
-
-        var payment = new Payment(orderId, amount, method);
-        _db.Payments.Add(payment);
-
-        var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-        var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
-
-        await _accountingService.CreateJournalEntryAsync(
-            orderId.ToString(),
-            $"Payment for Order {order.OrderNumber}",
-            new List<(Guid, decimal, decimal)>
+            if (order == null)
             {
-            (cashAccount.Id, amount, 0),
-            (arAccount.Id, 0, amount)
-            });
+                _logger.LogWarning("Payment processing failed: Order {OrderId} not found", orderId);
+                throw new Exception("Order not found.");
+            }
 
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
+            if (order.Status == OrderStatus.Cancelled)
+            {
+                _logger.LogWarning("Payment processing failed: Order {OrderId} is cancelled", orderId);
+                throw new Exception("Cannot pay a cancelled order.");
+            }
 
-        _logger.LogInformation("Payment {PaymentId} successfully recorded for Order {OrderId}", payment.Id, orderId);
+            order.RegisterPayment(amount);
+
+            payment = new Payment(orderId, amount, method);
+            _db.Payments.Add(payment);
+
+            var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+            var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
+
+            await _accountingService.CreateJournalEntryAsync(
+                orderId.ToString(),
+                $"Payment for Order {order.OrderNumber}",
+                new List<(Guid, decimal, decimal)>
+                {
+                (cashAccount.Id, amount, 0),
+                (arAccount.Id, 0, amount)
+                });
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        });
+
+        _logger.LogInformation("Payment {PaymentId} successfully recorded for Order {OrderId}", payment!.Id, orderId);
 
         // Best-effort notification — never throws.
         await _notifications.SendPaymentReceivedAsync(payment.Id);
     }
     public async Task DeletePaymentAsync(Guid paymentId)
     {
-        using var transaction = await _db.Database.BeginTransactionAsync();
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync();
 
-        var payment = await _db.Payments
-            .FirstOrDefaultAsync(p => p.Id == paymentId);
+            var payment = await _db.Payments
+                .FirstOrDefaultAsync(p => p.Id == paymentId);
 
-        if (payment == null)
-            throw new Exception("Payment not found.");
+            if (payment == null)
+                throw new Exception("Payment not found.");
 
-        var order = await _db.Orders
-            .FirstAsync(o => o.Id == payment.OrderId);
+            var order = await _db.Orders
+                .FirstAsync(o => o.Id == payment.OrderId);
 
-        order.RegisterPayment(-payment.Amount); // reduce paid amount
+            order.RegisterPayment(-payment.Amount); // reduce paid amount
 
-        var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
-        var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
+            var cashAccount = await _db.Accounts.FirstAsync(a => a.Code == "1000");
+            var arAccount = await _db.Accounts.FirstAsync(a => a.Code == "1200");
 
-        await _accountingService.CreateJournalEntryAsync(
-            payment.OrderId.ToString(),
-            $"Payment reversal",
-            new List<(Guid, decimal, decimal)>
-            {
-            (arAccount.Id, payment.Amount, 0),
-            (cashAccount.Id, 0, payment.Amount)
-            });
+            await _accountingService.CreateJournalEntryAsync(
+                payment.OrderId.ToString(),
+                $"Payment reversal",
+                new List<(Guid, decimal, decimal)>
+                {
+                (arAccount.Id, payment.Amount, 0),
+                (cashAccount.Id, 0, payment.Amount)
+                });
 
-        _db.Payments.Remove(payment);
+            _db.Payments.Remove(payment);
 
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        });
     }
 }

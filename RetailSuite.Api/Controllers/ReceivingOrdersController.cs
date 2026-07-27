@@ -62,6 +62,28 @@ public class ReceivingOrdersController : ControllerBase
     }
 
     // -------------------------------------------------------------
+    // GET /api/receiving-orders/variants
+    // -------------------------------------------------------------
+    [HttpGet("variants")]
+    public async Task<IActionResult> ListVariants()
+    {
+        var rows = await _db.ProductVariants
+            .Include(v => v.Product)
+            .Where(v => v.IsActive)
+            .OrderBy(v => v.SKU)
+            .Select(v => new
+            {
+                v.Id,
+                ProductName = v.Product.Name,
+                Sku = v.SKU,
+                v.AverageCost
+            })
+            .ToListAsync();
+
+        return Ok(new { Items = rows });
+    }
+
+    // -------------------------------------------------------------
     // GET /api/receiving-orders/{id}
     // -------------------------------------------------------------
     [HttpGet("{id:guid}")]

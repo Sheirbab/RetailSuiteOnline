@@ -20,29 +20,37 @@ public class CustomerService
     /// </summary>
     public async Task<Guid> RegisterAsync(RegisterCustomerRequest request, string passwordHash, Guid tenantId)
     {
-        using var transaction = await _db.Database.BeginTransactionAsync();
+        Guid newCustomerId = Guid.Empty;
 
-        var user = new User(tenantId, request.Email, passwordHash, Model.UserRole.Customer);
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync();
 
-        var customer = new Entities.Customer(
-            user.Id,
-            request.FirstName,
-            request.LastName,
-            request.Email,
-            request.Phone);
+            var user = new User(tenantId, request.Email, passwordHash, Model.UserRole.Customer);
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
 
-        // TenantId is set automatically by SaveChangesAsync override when TenantContext is available.
-        // Explicit assignment as safety net.
-        customer.TenantId = tenantId;
+            var customer = new Entities.Customer(
+                user.Id,
+                request.FirstName,
+                request.LastName,
+                request.Email,
+                request.Phone);
 
-        _db.Customers.Add(customer);
-        await _db.SaveChangesAsync();
+            // TenantId is set automatically by SaveChangesAsync override when TenantContext is available.
+            // Explicit assignment as safety net.
+            customer.TenantId = tenantId;
 
-        await transaction.CommitAsync();
+            _db.Customers.Add(customer);
+            await _db.SaveChangesAsync();
 
-        return customer.Id;
+            await transaction.CommitAsync();
+
+            newCustomerId = customer.Id;
+        });
+
+        return newCustomerId;
     }
 
     /// <summary>Returns all customers for the current tenant.</summary>
