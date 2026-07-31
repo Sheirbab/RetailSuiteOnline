@@ -1,7 +1,7 @@
-@page "/shop"
+@page "/store/{TenantSlug}"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject HttpClient Http
-@inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject ApiUrlService Api
@@ -102,7 +102,7 @@
         }
 
         <div style="margin-top:14px;">
-            <a class="btn full" href="/shop/track" style="font-size:13px;text-align:center;">Track an order ↗</a>
+            <a class="btn full" href="@($"/store/{TenantSlug}/track")" style="font-size:13px;text-align:center;">Track an order ↗</a>
         </div>
     </div>
 
@@ -220,7 +220,7 @@
     {
         try
         {
-            var url = $"api/shop/filters";
+            var url = ShopApi("filters");
             if (_selectedCategoryId.HasValue) url += $"?categoryId={_selectedCategoryId}";
             var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
@@ -283,7 +283,7 @@
     {
         try
         {
-            var json = await Http.GetStringAsync("api/shop/categories");
+            var json = await Http.GetStringAsync(ShopApi("categories"));
             using var doc = JsonDocument.Parse(json);
             var data = doc.RootElement.GetProperty("data");
 
@@ -349,7 +349,7 @@
         StateHasChanged();
         try
         {
-            var url = "api/shop/products?page=1&pageSize=60";
+            var url = ShopApi("products?page=1&pageSize=60");
             if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
             if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
             if (_selectedBrandIds.Any())
@@ -425,7 +425,7 @@
         _searchTimer.Start();
     }
 
-    void GoToProduct(Guid id) => Nav.NavigateTo($"/shop/product/{id}");
+    void GoToProduct(Guid id) => Nav.NavigateTo($"/store/{TenantSlug}/product/{id}");
 
     public class CategoryNode
     {

@@ -1,4 +1,5 @@
-@page "/inventory/bulk-receive"
+@page "/{TenantSlug}/admin/inventory/bulk-receive"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json
@@ -9,7 +10,7 @@
 <p style="color:#6b7785;margin-top:0;margin-bottom:16px;font-size:13px;">
     Quick "truck-arrived" entry. Scan or type SKU → quantity → unit cost. No purchase order needed.<br/>
     Each line is added to inventory in one transaction. To track variances against expected quantities, use
-    <a href="/receiving-orders">Receiving orders</a> instead.
+    <a href="@($"/{TenantSlug}/admin/receiving-orders")">Receiving orders</a> instead.
 </p>
 
 <div class="card" style="margin-bottom:14px;">

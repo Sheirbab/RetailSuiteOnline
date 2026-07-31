@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using RetailSuite.StoreAdmin.Components.Pages;
 
 namespace RetailSuite.StoreAdmin.Components.Pages.Reports;
 
@@ -12,7 +13,7 @@ namespace RetailSuite.StoreAdmin.Components.Pages.Reports;
 /// generic methods like LoadAsync&lt;T&gt; without confusing Razor's HTML parser
 /// (which mistakes &lt;T?&gt; for an unclosed tag inside @code).
 /// </summary>
-public partial class Reports : ComponentBase
+public partial class Reports : AdminPageBase
 {
     // Http / JS / Toast are injected via @inject in Reports.razor — the Razor
     // compiler generates [Inject] properties on the same partial class, so we

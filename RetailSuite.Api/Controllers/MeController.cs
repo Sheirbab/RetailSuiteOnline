@@ -43,6 +43,10 @@ public class MeController : ControllerBase
         if (user == null) return NotFound(ApiResponse<object>.Fail("User not found."));
 
         var perms = await _users.GetPermissionsAsync(tenantId, userId);
+        var tenantSubdomain = await _db.Tenants
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.Subdomain)
+            .FirstOrDefaultAsync();
 
         return Ok(ApiResponse<object>.Ok(new
         {
@@ -52,7 +56,8 @@ public class MeController : ControllerBase
             Role               = user.Role.ToString(),
             user.IsActive,
             user.MustChangePassword,
-            Permissions        = perms
+            Permissions        = perms,
+            TenantSubdomain    = tenantSubdomain
         }));
     }
 

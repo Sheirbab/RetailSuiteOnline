@@ -59,7 +59,7 @@
         await Auth.InitializeAsync();
 
         if (Auth.IsAuthenticated)
-            Nav.NavigateTo("/", replace: true);
+            Nav.NavigateTo(Auth.LandingUrl, replace: true);
     }
 
     async Task LogIn()
@@ -74,7 +74,7 @@
         if (success)
         {
             // First-login users must change their temp password before reaching the dashboard.
-            Nav.NavigateTo(Auth.MustChangePassword ? "/change-password" : "/", replace: true);
+            Nav.NavigateTo(Auth.MustChangePassword ? "/change-password" : Auth.LandingUrl, replace: true);
         }
         else
             _error = error;

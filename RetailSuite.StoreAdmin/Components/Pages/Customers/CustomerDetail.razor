@@ -1,4 +1,5 @@
-@page "/customers/{Id:guid}"
+@page "/{TenantSlug}/admin/customers/{Id:guid}"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @inject NavigationManager Nav
@@ -8,7 +9,7 @@
 
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
     <h3 style="margin:0;">@(customer?.FullName ?? "Customer")</h3>
-    <a class="btn" href="/customers">&larr; Back to customers</a>
+    <a class="btn" href="@($"/{TenantSlug}/admin/customers")">&larr; Back to customers</a>
 </div>
 
 @if (isLoading)

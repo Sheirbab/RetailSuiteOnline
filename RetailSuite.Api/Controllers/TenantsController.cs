@@ -94,6 +94,9 @@ public class TenantsController : ControllerBase
             string.IsNullOrWhiteSpace(request.AdminEmail))
             return BadRequest(ApiResponse<object>.Fail("TenantName, Subdomain and AdminEmail are required."));
 
+        if (RetailSuite.Api.MultiTenancy.ReservedSubdomains.IsReserved(request.Subdomain))
+            return BadRequest(ApiResponse<object>.Fail("This subdomain is reserved."));
+
         if (await _db.Tenants.AnyAsync(t => t.Subdomain == request.Subdomain))
             return Conflict(ApiResponse<object>.Fail("Subdomain is already taken."));
 

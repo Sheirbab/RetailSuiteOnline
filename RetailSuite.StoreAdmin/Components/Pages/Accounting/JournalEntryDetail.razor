@@ -1,11 +1,12 @@
-@page "/accounting/journal-entry/{Id:guid}"
+@page "/{TenantSlug}/admin/accounting/journal-entry/{Id:guid}"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json
 
 <PermissionGuard Code="ACCOUNTING" />
 
-<a href="/accounting/journal-entries" style="font-size:13px;color:#6b7280;">← Back to journal</a>
+<a href="@($"/{TenantSlug}/admin/accounting/journal-entries")" style="font-size:13px;color:#6b7280;">← Back to journal</a>
 
 @if (_data == null)
 {
@@ -44,7 +45,7 @@ else
                         <td>
                             <span style="font-family:monospace;color:#6b7280;">@l.AccountCode</span>
                             &nbsp;@l.AccountName
-                            &nbsp;<a href="@($"/accounting/account/{l.AccountId}")" style="font-size:12px;">↗</a>
+                            &nbsp;<a href="@($"/{TenantSlug}/admin/accounting/account/{l.AccountId}")" style="font-size:12px;">↗</a>
                         </td>
                         <td class="num">@(l.DebitAmount == 0 ? "—" : "Rs " + l.DebitAmount.ToString("N2"))</td>
                         <td class="num">@(l.CreditAmount == 0 ? "—" : "Rs " + l.CreditAmount.ToString("N2"))</td>

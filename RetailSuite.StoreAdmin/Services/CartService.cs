@@ -1,7 +1,8 @@
-/// <summary>In-memory shopping cart — singleton scoped to the browser session via Blazor Server circuit.</summary>
+/// <summary>In-memory shopping cart — scoped per Blazor Server circuit (one per browser session).</summary>
 public class CartService
 {
     private readonly List<CartItem> _items = new();
+    private string? _tenantSlug;
 
     public IReadOnlyList<CartItem> Items => _items;
 
@@ -9,6 +10,20 @@ public class CartService
     public decimal TotalAmount => _items.Sum(i => i.LineTotal);
 
     public event Action? OnChange;
+
+    /// <summary>
+    /// Call on entering any storefront page. If the shopper navigated from one tenant's
+    /// store to a different tenant's store within the same session, clears the cart so
+    /// items never cross between stores.
+    /// </summary>
+    public void EnsureTenant(string tenantSlug)
+    {
+        if (string.IsNullOrWhiteSpace(tenantSlug)) return;
+        var normalized = tenantSlug.Trim().ToLowerInvariant();
+        if (_tenantSlug != null && !string.Equals(_tenantSlug, normalized, StringComparison.Ordinal))
+            Clear();
+        _tenantSlug = normalized;
+    }
 
     public void AddItem(CartItem item)
     {

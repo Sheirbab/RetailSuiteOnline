@@ -1,4 +1,5 @@
-@page "/products/{ProductId:guid}/images"
+@page "/{TenantSlug}/admin/products/{ProductId:guid}/images"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @inject NavigationManager Nav
@@ -10,7 +11,7 @@
 
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
     <h3 style="margin:0;">Product images</h3>
-    <a class="btn" href="/products">&larr; Back to products</a>
+    <a class="btn" href="@($"/{TenantSlug}/admin/products")">&larr; Back to products</a>
 </div>
 
 @if (!string.IsNullOrEmpty(_error))

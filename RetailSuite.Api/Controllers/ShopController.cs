@@ -26,10 +26,15 @@ namespace RetailSuite.Api.Controllers;
 /// <summary>
 /// Public storefront endpoints (no auth required). Returns sanitised data only —
 /// never raw entities. Used by the /shop Blazor pages and any future PWA / mobile client.
+/// Every route is scoped under {tenantSlug} (the tenant's Subdomain value used as a path
+/// segment) — <see cref="RetailSuite.Api.MultiTenancy.ResolveShopTenantFilter"/> resolves it
+/// to a TenantId before the action runs, so all EF Core tenant-scoped queries below are
+/// correctly scoped to that one store rather than leaking data across tenants.
 /// </summary>
 [ApiController]
-[Route("api/shop")]
+[Route("api/shop/{tenantSlug}")]
 [AllowAnonymous]
+[ServiceFilter(typeof(RetailSuite.Api.MultiTenancy.ResolveShopTenantFilter))]
 public class ShopController : ControllerBase
 {
     private readonly RetailDbContext _db;
@@ -69,7 +74,7 @@ public class ShopController : ControllerBase
     /// Returns categories with a product count so the UI can show "(12)".
     /// </summary>
     [HttpGet("categories")]
-    public async Task<IActionResult> Categories()
+    public async Task<IActionResult> Categories(string tenantSlug)
     {
         // Count distinct products per category via the join table.
         var counts = await _db.ProductCategories
@@ -134,6 +139,7 @@ public class ShopController : ControllerBase
     /// </summary>
     [HttpGet("products")]
     public async Task<IActionResult> Products(
+        string tenantSlug,
         [FromQuery] Guid? categoryId,
         [FromQuery] string? search,
         [FromQuery] string? brandIds,
@@ -233,14 +239,14 @@ public class ShopController : ControllerBase
     // ============================================================
     /// <summary>Product detail with active variants — used by the storefront product page.</summary>
     [HttpGet("products/{id:guid}")]
-    public async Task<IActionResult> ProductDetail(Guid id) => await BuildProductDetailAsync(p => p.Id == id);
+    public async Task<IActionResult> ProductDetail(string tenantSlug, Guid id) => await BuildProductDetailAsync(p => p.Id == id);
 
     /// <summary>
-    /// Slug-based lookup for the storefront — e.g. /api/shop/products/by-slug/blue-cotton-shirt.
+    /// Slug-based lookup for the storefront — e.g. /api/shop/{tenantSlug}/products/by-slug/blue-cotton-shirt.
     /// Used by /shop/p/{slug} so URLs are SEO friendly and shareable.
     /// </summary>
     [HttpGet("products/by-slug/{slug}")]
-    public async Task<IActionResult> ProductDetailBySlug(string slug)
+    public async Task<IActionResult> ProductDetailBySlug(string tenantSlug, string slug)
         => await BuildProductDetailAsync(p => p.Slug == slug);
 
     private async Task<IActionResult> BuildProductDetailAsync(System.Linq.Expressions.Expression<Func<Product, bool>> filter)
@@ -304,7 +310,7 @@ public class ShopController : ControllerBase
     /// the computed fee per method (accounting for free-over-threshold rules).
     /// </summary>
     [HttpGet("shipping-methods")]
-    public async Task<IActionResult> ShippingMethods([FromQuery] decimal subtotal = 0m)
+    public async Task<IActionResult> ShippingMethods(string tenantSlug, [FromQuery] decimal subtotal = 0m)
     {
         var rows = await _db.ShippingMethods
             .Where(s => s.IsActive)
@@ -334,7 +340,7 @@ public class ShopController : ControllerBase
     /// returns the cash, admin marks the order paid via the existing /api/payments endpoint.
     /// </remarks>
     [HttpPost("checkout")]
-    public async Task<IActionResult> Checkout([FromBody] GuestCheckoutRequest request)
+    public async Task<IActionResult> Checkout(string tenantSlug, [FromBody] GuestCheckoutRequest request)
     {
         if (request.Items == null || request.Items.Count == 0)
             return BadRequest(ApiResponse<object>.Fail("Cart is empty."));
@@ -399,6 +405,9 @@ public class ShopController : ControllerBase
                     ? request.CustomerId.Value
                     : await TenantDefaultsSeeder.GetWalkInCustomerIdAsync(_db, tenantId));
             order = new Order(orderNumber, customerId);
+            // Stamp TenantId immediately — the invoice stamper (below) needs it to compute
+            // the invoice sequence; the SaveChangesAsync belt-and-braces stamp runs too late.
+            order.TenantId = tenantId;
             order.SetChannel("Online");
             order.SetGuestContact(request.GuestName.Trim(), request.GuestPhone.Trim(), request.GuestEmail?.Trim());
             order.SetPaymentMethod(request.PaymentMethod.Trim());
@@ -584,7 +593,7 @@ public class ShopController : ControllerBase
     /// we match both to prevent enumeration. Returns status + fulfillment progress.
     /// </summary>
     [HttpGet("orders/{orderNumber}")]
-    public async Task<IActionResult> Track(string orderNumber, [FromQuery] string phone)
+    public async Task<IActionResult> Track(string tenantSlug, string orderNumber, [FromQuery] string phone)
     {
         if (string.IsNullOrWhiteSpace(orderNumber) || string.IsNullOrWhiteSpace(phone))
             return BadRequest(ApiResponse<object>.Fail("Order number and phone are required."));
@@ -645,6 +654,7 @@ public class ShopController : ControllerBase
     // ============================================================
     [HttpGet("filters")]
     public async Task<IActionResult> Filters(
+        string tenantSlug,
         [FromQuery] Guid? categoryId,
         [FromQuery] string? search)
     {

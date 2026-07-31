@@ -1,4 +1,5 @@
-@page "/settings/users"
+@page "/{TenantSlug}/admin/settings/users"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject ToastService Toast
@@ -60,7 +61,7 @@ else
                         </td>
                         <td style="text-align:right;white-space:nowrap;">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/settings/users/{u.Id}")">Edit</a>
+                               href="@($"/{TenantSlug}/admin/settings/users/{u.Id}")">Edit</a>
                         </td>
                     </tr>
                 }

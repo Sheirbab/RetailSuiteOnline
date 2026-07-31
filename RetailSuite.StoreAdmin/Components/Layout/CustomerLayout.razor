@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @inject CartService Cart
+@inject StorefrontContext Store
 @inject NavigationManager Nav
 @inject AuthService Auth
 @inject HttpClient Http
@@ -11,18 +12,18 @@
 <div class="shop-layout">
     <header class="shop-header">
         <div class="shop-header-inner">
-            <a href="/shop" class="shop-brand">🛍 RetailSuite Store</a>
+            <a href="@StorePath("")" class="shop-brand">🛍 RetailSuite Store</a>
             <nav class="shop-nav">
-                <a href="/shop">Shop</a>
-                <a href="/shop/track">Track order</a>
-                <a href="/wallet" class="wallet-link">
+                <a href="@StorePath("")">Shop</a>
+                <a href="@StorePath("track")">Track order</a>
+                <a href="@StorePath("wallet")" class="wallet-link">
                     💳 Wallet
                     @if (_walletBalance.HasValue && _walletBalance.Value > 0)
                     {
                         <span class="wallet-balance">Rs @_walletBalance.Value.ToString("N0")</span>
                     }
                 </a>
-                <a href="/cart" class="cart-link">
+                <a href="@StorePath("cart")" class="cart-link">
                     🛒 Cart
                     @if (Cart.TotalCount > 0)
                     {
@@ -58,9 +59,13 @@
     const string WALLET_TOKEN_KEY = "wallet_token";
     decimal? _walletBalance;
 
+    string StorePath(string relative) =>
+        string.IsNullOrEmpty(relative) ? $"/store/{Store.TenantSlug}" : $"/store/{Store.TenantSlug}/{relative}";
+
     protected override void OnInitialized()
     {
         Cart.OnChange += StateHasChanged;
+        Store.OnChange += StateHasChanged;
     }
 
     // Restore the Bearer token from localStorage so shop-page API calls succeed.
@@ -95,5 +100,6 @@
     public void Dispose()
     {
         Cart.OnChange -= StateHasChanged;
+        Store.OnChange -= StateHasChanged;
     }
 }

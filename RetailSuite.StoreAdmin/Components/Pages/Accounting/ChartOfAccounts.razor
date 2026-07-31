@@ -1,4 +1,5 @@
-@page "/accounting/chart-of-accounts"
+@page "/{TenantSlug}/admin/accounting/chart-of-accounts"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json
@@ -58,7 +59,7 @@ else
                         </td>
                         <td style="text-align:right;white-space:nowrap;">
                             <a class="btn" style="padding:2px 10px;font-size:12px;"
-                               href="@($"/accounting/account/{a.Id}")">Ledger</a>
+                               href="@($"/{TenantSlug}/admin/accounting/account/{a.Id}")">Ledger</a>
                             <button class="btn" style="padding:2px 10px;font-size:12px;"
                                     @onclick="() => OpenEdit(a)">Edit</button>
                         </td>

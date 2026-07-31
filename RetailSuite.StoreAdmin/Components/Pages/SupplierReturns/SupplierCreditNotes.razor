@@ -1,4 +1,5 @@
-@page "/supplier-returns/credit-notes"
+@page "/{TenantSlug}/admin/supplier-returns/credit-notes"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject ToastService Toast
@@ -9,7 +10,7 @@
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
     <div>
         <a class="btn" style="font-size:12px;padding:3px 10px;margin-bottom:8px;"
-           href="/supplier-returns">← All returns</a>
+           href="@($"/{TenantSlug}/admin/supplier-returns")">← All returns</a>
         <h3 style="margin:0;">Supplier credit notes</h3>
         <p style="margin:4px 0 0;color:#6b7280;font-size:13px;">
             Running ledger of credits owed by suppliers. Issued automatically when a return is completed.

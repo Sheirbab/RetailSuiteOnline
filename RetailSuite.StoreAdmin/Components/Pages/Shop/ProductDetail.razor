@@ -1,8 +1,8 @@
-@page "/shop/product/{Id:guid}"
-@page "/shop/p/{Slug}"
+@page "/store/{TenantSlug}/product/{Id:guid}"
+@page "/store/{TenantSlug}/p/{Slug}"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject HttpClient Http
-@inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject ApiUrlService Api
@@ -98,7 +98,7 @@
 }
 else if (_product == null)
 {
-    <p>Product not found. <a href="/shop">← Back to shop</a></p>
+    <p>Product not found. <a href="@($"/store/{TenantSlug}")">← Back to shop</a></p>
 }
 else
 {
@@ -140,8 +140,8 @@ else
             {
                 var primary = _product.Categories.First();
                 <nav class="pd-crumb">
-                    <a href="/shop">Shop</a> <span>›</span>
-                    <a href="@($"/shop?categoryId={primary.Id}")">@primary.Name</a>
+                    <a href="@($"/store/{TenantSlug}")">Shop</a> <span>›</span>
+                    <a href="@($"/store/{TenantSlug}?categoryId={primary.Id}")">@primary.Name</a>
                 </nav>
             }
 
@@ -237,7 +237,7 @@ else
                 </button>
             </div>
 
-            <a href="/shop" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
+            <a href="@($"/store/{TenantSlug}")" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
         </div>
     </div>
 
@@ -311,8 +311,8 @@ else
         {
             // Two routes share this page — by-slug uses Slug, by-id uses Id.
             var url = !string.IsNullOrWhiteSpace(Slug)
-                ? $"api/shop/products/by-slug/{Slug}"
-                : $"api/shop/products/{Id}";
+                ? ShopApi($"products/by-slug/{Slug}")
+                : ShopApi($"products/{Id}");
             var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             var d = doc.RootElement.GetProperty("data");

@@ -1,4 +1,5 @@
-@page "/inventory/transfers"
+@page "/{TenantSlug}/admin/inventory/transfers"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject ToastService Toast
@@ -72,7 +73,7 @@ else
                         <td>@r.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</td>
                         <td style="text-align:right;">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/inventory/transfers/{r.Id}")">Open</a>
+                               href="@($"/{TenantSlug}/admin/inventory/transfers/{r.Id}")">Open</a>
                         </td>
                     </tr>
                 }
@@ -250,7 +251,7 @@ else
             using var doc = JsonDocument.Parse(json);
             var id = doc.RootElement.GetProperty("data").GetProperty("id").GetGuid();
             _showCreate = false;
-            Nav.NavigateTo($"/inventory/transfers/{id}");
+            Nav.NavigateTo($"/{TenantSlug}/admin/inventory/transfers/{id}");
         }
         finally { _creating = false; }
     }

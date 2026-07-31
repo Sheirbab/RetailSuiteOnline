@@ -1,5 +1,6 @@
-@page "/wallet"
+@page "/store/{TenantSlug}/wallet"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject ToastService Toast

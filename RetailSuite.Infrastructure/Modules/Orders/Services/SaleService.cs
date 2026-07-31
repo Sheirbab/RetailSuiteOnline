@@ -90,6 +90,9 @@ namespace RetailSuite.Infrastructure.Modules.Orders.Services
                 // 1. Order header
                 var orderNumber = $"POS-{DateTime.UtcNow.Ticks}";
                 order = new Order(orderNumber, customerId);
+                // Stamp TenantId immediately — StampAsync (below) needs it to compute the
+                // invoice sequence; the SaveChangesAsync belt-and-braces stamp runs too late.
+                order.TenantId = tenantId;
                 order.SetCashier(cashierId);
 
                 totalCogs = 0;

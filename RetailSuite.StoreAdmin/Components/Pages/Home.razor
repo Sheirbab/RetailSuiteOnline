@@ -1,7 +1,16 @@
-﻿@* @page "/" *@
+@page "/"
+@inject AuthService Auth
+@inject NavigationManager Nav
 
-<PageTitle>Home</PageTitle>
+<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f9fafb;">
+    <div class="spinner"></div>
+</div>
 
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.InitializeAsync();
+        Nav.NavigateTo(Auth.LandingUrl, replace: true);
+    }
+}

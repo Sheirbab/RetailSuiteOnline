@@ -1,4 +1,5 @@
-@page "/orders"
+@page "/{TenantSlug}/admin/orders"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json

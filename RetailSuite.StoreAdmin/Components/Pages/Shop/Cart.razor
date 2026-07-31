@@ -1,5 +1,6 @@
-@page "/cart"
+@page "/store/{TenantSlug}/cart"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject CartService CartSvc
 @inject NavigationManager Nav
 @inject ApiUrlService Api
@@ -10,7 +11,7 @@
 @if (!CartSvc.Items.Any())
 {
     <div class="card">
-        <p style="color:#9ca3af;">Your cart is empty. <a href="/shop">Browse products →</a></p>
+        <p style="color:#9ca3af;">Your cart is empty. <a href="@($"/store/{TenantSlug}")">Browse products →</a></p>
     </div>
 }
 else
@@ -78,5 +79,5 @@ else
         if (int.TryParse(e.Value?.ToString(), out var qty) && qty >= 1)
             CartSvc.UpdateQuantity(variantId, qty);
     }
-    void GoCheckout() => Nav.NavigateTo("/checkout");
+    void GoCheckout() => Nav.NavigateTo($"/store/{TenantSlug}/checkout");
 }

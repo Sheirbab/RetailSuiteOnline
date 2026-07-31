@@ -1,18 +1,20 @@
-@page "/products/{Id:guid}"
+@page "/{TenantSlug}/admin/products/{Id:guid}"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @inject NavigationManager Nav
 @inject ApiUrlService Api
+@inject AuthService Auth
 @using System.Text.Json
 
 <PermissionGuard Code="PRODUCTS" />
 
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-    <a class="btn" href="/products">&larr; Products</a>
+    <a class="btn" href="@($"/{TenantSlug}/admin/products")">&larr; Products</a>
     <h3 style="margin:0;flex:1;">@(_form?.Name ?? "Product")</h3>
-    @if (_form != null && !string.IsNullOrEmpty(_form.Slug))
+    @if (_form != null && !string.IsNullOrEmpty(_form.Slug) && !string.IsNullOrEmpty(Auth.TenantSubdomain))
     {
-        <a class="btn" target="_blank" href="@($"{Api.BaseUrl.Replace(":7001", ":7002")}/shop/product/{Id}")"
+        <a class="btn" target="_blank" href="@($"/store/{Auth.TenantSubdomain}/product/{Id}")"
            style="font-size:12px;" title="Open storefront page">View on storefront ↗</a>
     }
     <button class="btn btn-primary" disabled="@_saving" @onclick="Save">
@@ -125,7 +127,7 @@ else
             <p style="color:#6b7280;font-size:13px;margin-top:0;">
                 Variants are the SKUs customers actually buy (e.g. "Red Size M"). Set price, cost,
                 stock and tax per variant. Define attribute values first under
-                <a href="/settings/attributes">Settings → Attributes</a>.
+                <a href="@($"/{TenantSlug}/admin/settings/attributes")">Settings → Attributes</a>.
             </p>
 
             <!-- ============ Generate from attributes wizard ============ -->
@@ -226,7 +228,7 @@ else
             </p>
             @if (_categoryTree == null || _categoryTree.Count == 0)
             {
-                <p style="color:#9ca3af;">No categories defined yet. Go to <a href="/settings/categories">Settings → Categories</a> to add some.</p>
+                <p style="color:#9ca3af;">No categories defined yet. Go to <a href="@($"/{TenantSlug}/admin/settings/categories")">Settings → Categories</a> to add some.</p>
             }
             else
             {
@@ -252,7 +254,7 @@ else
                 Manage the photo gallery for this product. The primary image appears on cards;
                 additional images show in the storefront detail-page carousel.
             </p>
-            <a class="btn btn-primary" href="@($"/products/{Id}/images")">Open image manager →</a>
+            <a class="btn btn-primary" href="@($"/{TenantSlug}/admin/products/{Id}/images")">Open image manager →</a>
             break;
 
         case "SEO":
@@ -262,7 +264,7 @@ else
             </p>
             <label class="form-label">Storefront URL</label>
             <code style="display:block;padding:8px;background:#f1f5f9;border-radius:6px;">
-                /shop/product/@Id
+                /store/@(Auth.TenantSubdomain)/product/@Id
             </code>
             break;
     }

@@ -1,4 +1,5 @@
-@page "/customers"
+@page "/{TenantSlug}/admin/customers"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json
@@ -42,7 +43,7 @@ else
                         <td>@c.CreatedAt.ToString("dd MMM yyyy")</td>
                         <td style="text-align:right;">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/customers/{c.Id}")">Open</a>
+                               href="@($"/{TenantSlug}/admin/customers/{c.Id}")">Open</a>
                         </td>
                     </tr>
                 }

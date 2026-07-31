@@ -95,6 +95,8 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
     builder.Services.AddScoped<ITenantContext, TenantContext>();
+    builder.Services.AddMemoryCache();
+    builder.Services.AddScoped<RetailSuite.Api.MultiTenancy.ResolveShopTenantFilter>();
     builder.Services.AddScoped<InventoryService>();
     builder.Services.AddScoped<OrderService>();
     builder.Services.AddScoped<AccountingService>();

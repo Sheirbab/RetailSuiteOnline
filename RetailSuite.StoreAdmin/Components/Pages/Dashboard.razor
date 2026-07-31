@@ -1,4 +1,5 @@
-@page "/"
+@page "/{TenantSlug}/admin"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject AuthService Auth
 @using System.Text.Json
@@ -46,7 +47,7 @@ else
                 <div class="stat-value">@_lowStockCount</div>
                 @if (_lowStockCount > 0)
                 {
-                    <div class="stat-sub"><a href="/inventory">View inventory →</a></div>
+                    <div class="stat-sub"><a href="@($"/{TenantSlug}/admin/inventory")">View inventory →</a></div>
                 }
             </div>
         }
@@ -82,11 +83,11 @@ else
 
     @* Quick-action buttons — only show ones the user can actually access. *@
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        @if (Auth.Can("POS"))            { <a href="/pos"       class="btn btn-primary">Open POS Terminal</a> }
-        @if (Auth.Can("PRODUCTS"))       { <a href="/products"  class="btn">Manage Products</a> }
-        @if (Auth.Can("INVENTORY_VIEW")) { <a href="/inventory" class="btn">Inventory</a> }
-        @if (Auth.Can("ORDERS_VIEW"))    { <a href="/orders"    class="btn">Orders</a> }
-        @if (Auth.Can("CUSTOMERS"))      { <a href="/customers" class="btn">Customers</a> }
+        @if (Auth.Can("POS"))            { <a href="@($"/{TenantSlug}/admin/pos")"       class="btn btn-primary">Open POS Terminal</a> }
+        @if (Auth.Can("PRODUCTS"))       { <a href="@($"/{TenantSlug}/admin/products")"  class="btn">Manage Products</a> }
+        @if (Auth.Can("INVENTORY_VIEW")) { <a href="@($"/{TenantSlug}/admin/inventory")" class="btn">Inventory</a> }
+        @if (Auth.Can("ORDERS_VIEW"))    { <a href="@($"/{TenantSlug}/admin/orders")"    class="btn">Orders</a> }
+        @if (Auth.Can("CUSTOMERS"))      { <a href="@($"/{TenantSlug}/admin/customers")" class="btn">Customers</a> }
     </div>
 }
 

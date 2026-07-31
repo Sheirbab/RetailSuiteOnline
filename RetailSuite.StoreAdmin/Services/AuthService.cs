@@ -54,6 +54,17 @@ public class AuthService
     /// <summary>Permission codes loaded from /api/me — used to gate nav links and pages.</summary>
     public HashSet<string> Permissions { get; private set; } = new();
 
+    /// <summary>The current tenant's Subdomain (used as its storefront slug), loaded from /api/me.</summary>
+    public string? TenantSubdomain { get; private set; }
+
+    /// <summary>Where to send the user right after login / password change / hitting "/".</summary>
+    public string LandingUrl =>
+        IsSuperAdmin
+            ? "/admin/tenants"
+            : !string.IsNullOrEmpty(TenantSubdomain)
+                ? $"/{TenantSubdomain}/admin"
+                : "/login";
+
     /// <summary>True if the user has the given permission. Admins have everything implicitly.</summary>
     public bool Can(string permissionCode) => IsAdmin || Permissions.Contains(permissionCode);
 
@@ -161,6 +172,9 @@ public class AuthService
             var d = doc.RootElement.GetProperty("data");
 
             MustChangePassword = d.TryGetProperty("mustChangePassword", out var mc) && mc.GetBoolean();
+            TenantSubdomain = d.TryGetProperty("tenantSubdomain", out var ts) && ts.ValueKind == JsonValueKind.String
+                ? ts.GetString()
+                : null;
 
             Permissions = new();
             if (d.TryGetProperty("permissions", out var perms) && perms.ValueKind == JsonValueKind.Array)

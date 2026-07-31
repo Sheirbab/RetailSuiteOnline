@@ -1,4 +1,5 @@
-@page "/products"
+@page "/{TenantSlug}/admin/products"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @inject NavigationManager Nav
@@ -78,9 +79,9 @@ else if (products != null && Filtered().Any())
                         </td>
                         <td style="text-align:right;" @onclick:stopPropagation="true">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/products/{p.Id}")">Edit</a>
+                               href="@($"/{TenantSlug}/admin/products/{p.Id}")">Edit</a>
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/products/{p.Id}/images")">📷</a>
+                               href="@($"/{TenantSlug}/admin/products/{p.Id}/images")">📷</a>
                         </td>
                     </tr>
                 }
@@ -198,7 +199,7 @@ else
         StateHasChanged();
     }
 
-    void Open(Guid id) => Nav.NavigateTo($"/products/{id}");
+    void Open(Guid id) => Nav.NavigateTo($"/{TenantSlug}/admin/products/{id}");
 
     async Task CreateProduct()
     {
@@ -220,7 +221,7 @@ else
         Toast.Show("Product created.");
         showModal = false;
         newProductName = newProductDesc = null;
-        Nav.NavigateTo($"/products/{newId}");
+        Nav.NavigateTo($"/{TenantSlug}/admin/products/{newId}");
     }
 
     void CloseModal() => showModal = false;

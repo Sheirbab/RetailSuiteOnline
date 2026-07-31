@@ -35,7 +35,7 @@ else
             }
             else
             {
-                <NavLink href="/" Match="NavLinkMatch.All">📊 Dashboard</NavLink>
+                <NavLink href="@AP("")" Match="NavLinkMatch.All">📊 Dashboard</NavLink>
 
                 <!-- Selling -->
                 @if (Auth.Can("POS") || Auth.Can("ORDERS_VIEW") || Auth.Can("CUSTOMERS"))
@@ -48,9 +48,9 @@ else
                     @if (IsOpen("selling"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            @if (Auth.Can("POS"))         { <NavLink href="/pos">POS Terminal</NavLink> }
-                            @if (Auth.Can("ORDERS_VIEW")) { <NavLink href="/orders">Orders</NavLink> }
-                            @if (Auth.Can("CUSTOMERS"))   { <NavLink href="/customers">Customers</NavLink> }
+                            @if (Auth.Can("POS"))         { <NavLink href="@AP("pos")">POS Terminal</NavLink> }
+                            @if (Auth.Can("ORDERS_VIEW")) { <NavLink href="@AP("orders")">Orders</NavLink> }
+                            @if (Auth.Can("CUSTOMERS"))   { <NavLink href="@AP("customers")">Customers</NavLink> }
                         </div>
                     }
                 }
@@ -67,10 +67,10 @@ else
                     @if (IsOpen("catalog"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            @if (Auth.Can("PRODUCTS"))           { <NavLink href="/products">Products</NavLink> }
-                            @if (Auth.Can("INVENTORY_VIEW"))     { <NavLink href="/inventory">Inventory</NavLink> }
-                            @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="/inventory/transfers">Stock transfers</NavLink> }
-                            @if (Auth.Can("BARCODES"))           { <NavLink href="/barcodes/print">Print barcodes</NavLink> }
+                            @if (Auth.Can("PRODUCTS"))           { <NavLink href="@AP("products")">Products</NavLink> }
+                            @if (Auth.Can("INVENTORY_VIEW"))     { <NavLink href="@AP("inventory")">Inventory</NavLink> }
+                            @if (Auth.Can("INVENTORY_TRANSFER")) { <NavLink href="@AP("inventory/transfers")">Stock transfers</NavLink> }
+                            @if (Auth.Can("BARCODES"))           { <NavLink href="@AP("barcodes/print")">Print barcodes</NavLink> }
                         </div>
                     }
                 }
@@ -87,10 +87,10 @@ else
                     @if (IsOpen("procurement"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            @if (Auth.Can("SUPPLIERS"))        { <NavLink href="/suppliers">Suppliers</NavLink> }
-                            @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="/receiving-orders">Receiving orders</NavLink> }
-                            @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="/inventory/bulk-receive">Bulk receive</NavLink> }
-                            @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="/supplier-returns">Supplier returns</NavLink> }
+                            @if (Auth.Can("SUPPLIERS"))        { <NavLink href="@AP("suppliers")">Suppliers</NavLink> }
+                            @if (Auth.Can("RECEIVING_ORDERS")) { <NavLink href="@AP("receiving-orders")">Receiving orders</NavLink> }
+                            @if (Auth.Can("BULK_RECEIVE"))     { <NavLink href="@AP("inventory/bulk-receive")">Bulk receive</NavLink> }
+                            @if (Auth.Can("SUPPLIER_RETURNS")) { <NavLink href="@AP("supplier-returns")">Supplier returns</NavLink> }
                         </div>
                     }
                 }
@@ -106,7 +106,7 @@ else
                     @if (IsOpen("reports"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            <NavLink href="/reports">Sales &amp; inventory</NavLink>
+                            <NavLink href="@AP("reports")">Sales &amp; inventory</NavLink>
                         </div>
                     }
                 }
@@ -122,10 +122,10 @@ else
                     @if (IsOpen("accounting"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            <NavLink href="/accounting/trial-balance">Trial balance</NavLink>
-                            <NavLink href="/accounting/journal-entries">Journal entries</NavLink>
-                            <NavLink href="/accounting/chart-of-accounts">Chart of accounts</NavLink>
-                            <NavLink href="/accounting/post-journal">+ Post manual entry</NavLink>
+                            <NavLink href="@AP("accounting/trial-balance")">Trial balance</NavLink>
+                            <NavLink href="@AP("accounting/journal-entries")">Journal entries</NavLink>
+                            <NavLink href="@AP("accounting/chart-of-accounts")">Chart of accounts</NavLink>
+                            <NavLink href="@AP("accounting/post-journal")">+ Post manual entry</NavLink>
                         </div>
                     }
                 }
@@ -143,20 +143,23 @@ else
                     @if (IsOpen("settings"))
                     {
                         <div style="padding-left:10px;padding-bottom:4px;">
-                            @if (Auth.Can("CATEGORIES"))   { <NavLink href="/settings/categories">Categories</NavLink> }
-                            @if (Auth.Can("BRANDS"))       { <NavLink href="/settings/brands">Brands</NavLink> }
-                            @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="/settings/attributes">Attributes</NavLink> }
-                            @if (Auth.Can("LOCATIONS"))    { <NavLink href="/locations">Locations</NavLink> }
-                            @if (Auth.Can("SHIPPING"))     { <NavLink href="/settings/shipping-methods">Shipping methods</NavLink> }
-                            @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="/settings/tax">Tax &amp; FBR</NavLink> }
-                            @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="/settings/subscription">Subscription</NavLink> }
-                            @if (Auth.IsAdmin)             { <NavLink href="/settings/users">Users &amp; permissions</NavLink> }
+                            @if (Auth.Can("CATEGORIES"))   { <NavLink href="@AP("settings/categories")">Categories</NavLink> }
+                            @if (Auth.Can("BRANDS"))       { <NavLink href="@AP("settings/brands")">Brands</NavLink> }
+                            @if (Auth.Can("ATTRIBUTES"))   { <NavLink href="@AP("settings/attributes")">Attributes</NavLink> }
+                            @if (Auth.Can("LOCATIONS"))    { <NavLink href="@AP("locations")">Locations</NavLink> }
+                            @if (Auth.Can("SHIPPING"))     { <NavLink href="@AP("settings/shipping-methods")">Shipping methods</NavLink> }
+                            @if (Auth.Can("TAX_SETTINGS")) { <NavLink href="@AP("settings/tax")">Tax &amp; FBR</NavLink> }
+                            @if (Auth.Can("SUBSCRIPTION")) { <NavLink href="@AP("settings/subscription")">Subscription</NavLink> }
+                            @if (Auth.IsAdmin)             { <NavLink href="@AP("settings/users")">Users &amp; permissions</NavLink> }
                         </div>
                     }
                 }
 
                 <hr style="border:none;border-top:1px solid #374151;margin:12px 0;" />
-                <NavLink href="/shop" style="color:#6ee7b7;">🛍 Storefront</NavLink>
+                @if (!string.IsNullOrEmpty(Auth.TenantSubdomain))
+                {
+                    <NavLink href="@($"/store/{Auth.TenantSubdomain}")" style="color:#6ee7b7;">🛍 Storefront</NavLink>
+                }
             }
         </div>
 
@@ -198,6 +201,12 @@ else
     };
 
     private bool IsOpen(string key) => _openGroups.Contains(key);
+
+    /// <summary>Build a tenant-scoped admin path, e.g. AP("orders") -> "/demo-store/admin/orders".</summary>
+    private string AP(string relative) =>
+        string.IsNullOrEmpty(relative)
+            ? $"/{Auth.TenantSubdomain}/admin"
+            : $"/{Auth.TenantSubdomain}/admin/{relative}";
 
     private void Toggle(string key)
     {

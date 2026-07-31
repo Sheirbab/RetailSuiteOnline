@@ -1,4 +1,5 @@
-@page "/settings/categories"
+@page "/{TenantSlug}/admin/settings/categories"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @using System.Text.Json

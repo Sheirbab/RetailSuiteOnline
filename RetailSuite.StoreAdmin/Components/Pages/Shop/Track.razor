@@ -1,5 +1,6 @@
-@page "/shop/track"
+@page "/store/{TenantSlug}/track"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject HttpClient Http
 @using System.Text.Json
 @implements IDisposable
@@ -212,7 +213,7 @@
 
     async Task FetchOrderAsync()
     {
-        var url = $"api/shop/orders/{Uri.EscapeDataString(_orderNumber.Trim())}?phone={Uri.EscapeDataString(_phone.Trim())}";
+        var url = ShopApi($"orders/{Uri.EscapeDataString(_orderNumber.Trim())}?phone={Uri.EscapeDataString(_phone.Trim())}");
         var resp = await Http.GetAsync(url);
         if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
         {

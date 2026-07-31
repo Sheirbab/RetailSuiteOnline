@@ -1,4 +1,5 @@
-@page "/pos"
+@page "/{TenantSlug}/admin/pos"
+@inherits AdminPageBase
 @layout PosLayout
 @inject HttpClient Http
 @inject ToastService Toast
@@ -340,7 +341,7 @@
         <!-- Separator dot so admin / logout sit visually apart from the sale-flow actions -->
         <span style="opacity:.4;font-size:18px;">·</span>
 
-        <a class="icon-btn" href="/" title="Back to admin">⬅ Admin</a>
+        <a class="icon-btn" href="@($"/{TenantSlug}/admin")" title="Back to admin">⬅ Admin</a>
         <button class="icon-btn" @onclick="LogoutAsync" title="Sign out"
                 style="background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.35);">
             ⎋ Logout

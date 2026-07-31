@@ -1,4 +1,5 @@
-@page "/receiving-orders"
+@page "/{TenantSlug}/admin/receiving-orders"
+@inherits AdminPageBase
 @inject HttpClient Http
 @inject ToastService Toast
 @inject NavigationManager Nav
@@ -8,7 +9,7 @@
 
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
     <h3 style="margin:0;">Receiving orders</h3>
-    <a class="btn btn-primary" href="/receiving-orders/new">+ New order</a>
+    <a class="btn btn-primary" href="@($"/{TenantSlug}/admin/receiving-orders/new")">+ New order</a>
 </div>
 
 <div style="display:flex;gap:8px;margin-bottom:14px;">
@@ -63,7 +64,7 @@ else
                         <td>@o.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
                         <td style="text-align:right;">
                             <a class="btn" style="padding:4px 10px;font-size:12px;"
-                               href="@($"/receiving-orders/{o.Id}")">Open</a>
+                               href="@($"/{TenantSlug}/admin/receiving-orders/{o.Id}")">Open</a>
                         </td>
                     </tr>
                 }

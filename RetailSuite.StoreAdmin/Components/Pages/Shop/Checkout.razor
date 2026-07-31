@@ -1,7 +1,7 @@
-@page "/checkout"
+@page "/store/{TenantSlug}/checkout"
 @layout CustomerLayout
+@inherits StorefrontPageBase
 @inject HttpClient Http
-@inject CartService Cart
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject IJSRuntime JS
@@ -71,7 +71,7 @@
             }
         </p>
         <div style="display:flex;gap:8px;justify-content:center;">
-            <a class="btn" href="/shop/track">Track this order</a>
+            <a class="btn" href="@($"/store/{TenantSlug}/track")">Track this order</a>
             <button class="btn btn-primary" @onclick="GoShop">Continue shopping</button>
         </div>
     </div>
@@ -93,7 +93,7 @@ else
             <h4 style="margin-bottom:8px;">Your cart</h4>
             @if (!Cart.Items.Any())
             {
-                <p style="color:#9ca3af;">Cart is empty. <a href="/shop">Continue shopping</a>.</p>
+                <p style="color:#9ca3af;">Cart is empty. <a href="@($"/store/{TenantSlug}")">Continue shopping</a>.</p>
             }
             else
             {
@@ -363,7 +363,7 @@ else
         try
         {
             var subtotal = Cart.TotalAmount;
-            var json = await Http.GetStringAsync($"api/shop/shipping-methods?subtotal={subtotal}");
+            var json = await Http.GetStringAsync(ShopApi($"shipping-methods?subtotal={subtotal}"));
             using var doc = JsonDocument.Parse(json);
             _shippingMethods = new();
             if (doc.RootElement.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Array)
@@ -451,7 +451,7 @@ else
 
         try
         {
-            var resp = await Http.PostAsJsonAsync("api/shop/checkout", body);
+            var resp = await Http.PostAsJsonAsync(ShopApi("checkout"), body);
             if (!resp.IsSuccessStatusCode)
             {
                 var msg = await resp.Content.ReadAsStringAsync();
@@ -496,7 +496,7 @@ else
 
     void SelectPayment(string code) => _paymentMethod = code;
 
-    void GoShop() => Nav.NavigateTo("/shop");
+    void GoShop() => Nav.NavigateTo($"/store/{TenantSlug}");
 
     void StartStatusPolling()
     {

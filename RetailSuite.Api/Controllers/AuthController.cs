@@ -66,6 +66,9 @@ public class AuthController : ControllerBase
         var email     = request.Email.Trim().ToLowerInvariant();
         var subdomain = request.Subdomain.Trim().ToLowerInvariant();
 
+        if (RetailSuite.Api.MultiTenancy.ReservedSubdomains.IsReserved(subdomain))
+            return BadRequest(new ApiResponse<string>(false, "This subdomain is reserved.", null));
+
         if (await _Db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == subdomain))
             return BadRequest(new ApiResponse<string>(false, "Subdomain already taken.", null));
 
