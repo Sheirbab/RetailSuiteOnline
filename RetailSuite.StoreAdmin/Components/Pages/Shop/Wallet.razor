@@ -29,6 +29,10 @@
     .step-badge { display:inline-flex; align-items:center; justify-content:center;
                   width:26px; height:26px; border-radius:50%; background:#1d4ed8; color:#fff;
                   font-weight:700; font-size:13px; margin-right:8px; }
+
+    @@media (max-width: 480px) {
+        .wallet-grid { grid-template-columns: 1fr; }
+    }
 </style>
 
 <div class="wallet-shell">

@@ -7,10 +7,10 @@
 @inject ApiUrlService Api
 @using System.Text.Json
 
-<div style="display:flex;gap:20px;align-items:flex-start;">
+<div class="shop-home-layout">
 
     <!-- Categories sidebar -->
-    <div class="card" style="width:240px;flex-shrink:0;">
+    <div class="card shop-sidebar">
         <h4 style="margin-bottom:10px;">Categories</h4>
 
         <div class="cat-row @(_selectedCategoryId == null ? "selected" : "")"
@@ -126,10 +126,10 @@
     </style>
 
     <!-- Product grid -->
-    <div style="flex:1;">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+    <div style="flex:1;min-width:0;">
+        <div class="shop-grid-header">
             <h2 style="margin:0;flex:1;">@(_selectedCategoryName ?? "All products")</h2>
-            <input class="input" style="width:280px;" placeholder="Search..."
+            <input class="input shop-search-input" placeholder="Search..."
                    value="@_search"
                    @oninput="OnSearchChanged" />
         </div>

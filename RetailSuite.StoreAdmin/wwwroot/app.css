@@ -528,6 +528,41 @@ select.input { height: 38px; }
                 color: var(--color-text); line-height: 1.3; }
 .product-price { color: var(--color-primary-dark); font-size: 16px; font-weight: 700; }
 
+/* Shop home: categories sidebar + product grid. Uses real classes (not inline
+   styles) specifically so the mobile media query below can stack them —
+   inline styles can't be overridden by @media rules. */
+.shop-home-layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.shop-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+}
+
+.shop-grid-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+
+.shop-search-input {
+    width: 280px;
+    max-width: 100%;
+    flex: 1 1 200px;
+}
+
+/* Generic two-column info grid (order recipient/payment details, wallet stats). */
+.two-col-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+
 /* ===============================================================
    Responsive — tablet + mobile
    =============================================================== */
@@ -569,6 +604,14 @@ select.input { height: 38px; }
     /* Two-column grids stack */
     .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .product-img, .product-img-placeholder { height: 140px; }
+
+    /* Shop home: sidebar drops above the product grid instead of squeezing beside it */
+    .shop-home-layout { flex-direction: column; }
+    .shop-sidebar      { width: 100%; }
+    .shop-search-input { width: 100%; flex-basis: 100%; }
+
+    /* Recipient/payment/wallet-stat grids collapse to one column */
+    .two-col-grid { grid-template-columns: 1fr; }
 
     /* Storefront header content wraps; navigation chips stay scrollable */
     .shop-header { padding: 8px 16px; }
