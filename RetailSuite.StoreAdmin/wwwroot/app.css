@@ -419,7 +419,7 @@ select.input { height: 38px; }
     align-items: center;
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: 200; /* stays on top of the mobile categories drawer (z-index:150) */
     box-shadow: var(--shadow);
 }
 
@@ -658,7 +658,7 @@ select.input { height: 38px; }
         position: fixed;
         top: 68px;
         left: 14px;
-        z-index: 110; /* .shop-header is z-index:100 — this must render above it */
+        z-index: 210; /* must render above .shop-header (z-index:200) */
         box-shadow: var(--shadow);
     }
 
