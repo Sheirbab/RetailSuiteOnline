@@ -528,18 +528,24 @@ select.input { height: 38px; }
                 color: var(--color-text); line-height: 1.3; }
 .product-price { color: var(--color-primary-dark); font-size: 16px; font-weight: 700; }
 
-/* View + Add to cart side by side on each grid card. */
+/* View + Add to cart, stacked full-width on each grid card. (Side-by-side
+   with flex:1 overflowed on narrow cards — flex items don't shrink below
+   their text's natural width unless min-width:0 is set, so "Add to cart"
+   spilled past the card edge instead of wrapping or compressing.) */
 .product-actions {
     display: flex;
+    flex-direction: column;
     gap: 6px;
     margin-top: 8px;
 }
 .product-actions .btn {
-    flex: 1;
+    width: 100%;
     padding: 8px 6px;
     font-size: 13px;
     text-align: center;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Categories toggle — a nav-menu-style trigger for the sidebar drawer.
