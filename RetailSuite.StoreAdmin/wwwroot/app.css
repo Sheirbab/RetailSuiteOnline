@@ -658,7 +658,7 @@ select.input { height: 38px; }
         position: fixed;
         top: 68px;
         left: 14px;
-        z-index: 60;
+        z-index: 110; /* .shop-header is z-index:100 — this must render above it */
         box-shadow: var(--shadow);
     }
 
@@ -669,16 +669,20 @@ select.input { height: 38px; }
         position: fixed;
         top: 0;
         bottom: 0;
-        left: 0;
+        /* Off-screen by default. Using "left" (not transform:translateX) to
+           slide the drawer — animating position directly instead of a
+           transform, which reliably sidesteps compositor/transform quirks
+           we hit testing this on real devices. -300px safely clears the
+           280px max width regardless of viewport size. */
+        left: -300px;
         z-index: 150;
         width: min(280px, 82vw);
         max-width: 82vw;
         overflow-y: auto;
         border-radius: 0;
-        transform: translateX(-100%);
-        transition: transform .25s ease;
+        transition: left .25s ease;
     }
-    .shop-sidebar.open { transform: translateX(0); }
+    .shop-sidebar.open { left: 0; }
     .shop-sidebar-backdrop.open { display: block; }
 
     /* Recipient/payment/wallet-stat grids collapse to one column */
