@@ -542,11 +542,20 @@ select.input { height: 38px; }
     white-space: nowrap;
 }
 
-/* Categories toggle — a nav-menu-style show/hide trigger for the sidebar.
-   Hidden on desktop (sidebar is always visible there); only meaningful on
-   mobile, where .shop-sidebar.collapsed actually hides the panel. */
+/* Categories toggle — a nav-menu-style trigger for the sidebar drawer.
+   Hidden on desktop (sidebar is always visible there); on mobile it opens
+   a fixed, left-anchored drawer (see .shop-sidebar rules below) rather
+   than an inline block that scrolls away with the page. */
 .shop-cat-toggle {
     display: none;
+}
+
+.shop-sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(17,24,39,.45);
+    z-index: 140;
 }
 
 /* Shop home: categories sidebar + product grid. Uses real classes (not inline
@@ -626,22 +635,42 @@ select.input { height: 38px; }
     .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .product-img, .product-img-placeholder { height: 140px; }
 
-    /* Shop home: sidebar drops above the product grid instead of squeezing beside it */
+    /* Shop home: product grid takes the full width; the sidebar becomes a
+       left-anchored drawer (below) instead of an in-flow column. */
     .shop-home-layout { flex-direction: column; }
-    .shop-sidebar      { width: 100%; }
     .shop-search-input { width: 100%; flex-basis: 100%; }
 
-    /* Categories nav-menu toggle: shown only on mobile, collapses the sidebar
-       to a single button until tapped. */
+    /* Categories nav-menu toggle: a small sticky trigger that stays reachable
+       while scrolling — it does NOT scroll away with the product list. */
     .shop-cat-toggle {
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        justify-content: center;
         gap: 6px;
-        width: 100%;
+        position: sticky;
+        top: 8px;
+        z-index: 60;
         margin-bottom: 12px;
+        box-shadow: var(--shadow);
     }
-    .shop-sidebar.collapsed { display: none; }
+
+    /* Sidebar becomes a fixed, left-anchored drawer that overlays the page
+       and stays put while the page scrolls behind it — opened via .open,
+       closed by tapping the backdrop or the toggle again. */
+    .shop-sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 150;
+        width: min(280px, 82vw);
+        max-width: 82vw;
+        overflow-y: auto;
+        border-radius: 0;
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+    }
+    .shop-sidebar.open { transform: translateX(0); }
+    .shop-sidebar-backdrop.open { display: block; }
 
     /* Recipient/payment/wallet-stat grids collapse to one column */
     .two-col-grid { grid-template-columns: 1fr; }

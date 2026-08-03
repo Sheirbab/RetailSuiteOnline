@@ -11,10 +11,12 @@
     📂 Categories @(_categoriesOpen ? "▴" : "▾")
 </button>
 
+<div class="shop-sidebar-backdrop @(_categoriesOpen ? "open" : "")" @onclick="() => _categoriesOpen = false"></div>
+
 <div class="shop-home-layout">
 
     <!-- Categories sidebar -->
-    <div class="card shop-sidebar @(_categoriesOpen ? "" : "collapsed")">
+    <div class="card shop-sidebar @(_categoriesOpen ? "open" : "")">
         <h4 style="margin-bottom:10px;">Categories</h4>
 
         <div class="cat-row @(_selectedCategoryId == null ? "selected" : "")"
@@ -418,6 +420,7 @@
         _selectedBrandIds.Clear();
         _selectedAttrValueIds.Clear();
         _priceMin = _priceMax = null;
+        _categoriesOpen = false; // close the mobile drawer once a category is picked
         await LoadFilters();
         await LoadProducts();
     }

@@ -35,7 +35,7 @@ else
                         <td>
                             @if (!string.IsNullOrEmpty(item.ImageUrl))
                             {
-                                <img src="@Api.Absolute(item.ImageUrl)" style="width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:8px;" />
+                                <img src="@Api.Absolute(item.ImageUrl)" style="width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:8px;vertical-align:middle;" />
                             }
                             <strong>@item.ProductName</strong>
                         </td>
