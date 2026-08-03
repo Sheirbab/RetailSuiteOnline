@@ -224,7 +224,15 @@ public class ShopController : ControllerBase
                 p.ImageUrl,
                 MinPrice     = p.Variants.Where(v => v.IsActive).Min(v => (decimal?)v.Price) ?? 0m,
                 VariantCount = p.Variants.Count(v => v.IsActive),
-                BrandName    = _db.Brands.Where(b => b.Id == p.BrandId).Select(b => b.Name).FirstOrDefault()
+                BrandName    = _db.Brands.Where(b => b.Id == p.BrandId).Select(b => b.Name).FirstOrDefault(),
+                // Cheapest active variant — lets the storefront grid "Add to cart" quick-add
+                // without a trip to the product detail page. Products with more than one
+                // variant still show "View" only, since a real size/color choice is needed.
+                DefaultVariant = p.Variants
+                    .Where(v => v.IsActive)
+                    .OrderBy(v => v.Price)
+                    .Select(v => new { v.Id, v.SKU, v.StockQuantity })
+                    .FirstOrDefault()
             })
             .ToListAsync();
 

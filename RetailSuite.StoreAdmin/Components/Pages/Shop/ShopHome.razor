@@ -7,10 +7,14 @@
 @inject ApiUrlService Api
 @using System.Text.Json
 
+<button class="btn shop-cat-toggle" @onclick="() => _categoriesOpen = !_categoriesOpen">
+    📂 Categories @(_categoriesOpen ? "▴" : "▾")
+</button>
+
 <div class="shop-home-layout">
 
     <!-- Categories sidebar -->
-    <div class="card shop-sidebar">
+    <div class="card shop-sidebar @(_categoriesOpen ? "" : "collapsed")">
         <h4 style="margin-bottom:10px;">Categories</h4>
 
         <div class="cat-row @(_selectedCategoryId == null ? "selected" : "")"
@@ -176,11 +180,21 @@
                                     <span style="color:#9ca3af;">Price varies</span>
                                 }
                             </div>
-                            <button class="btn btn-primary" style="margin-top:8px;width:100%;"
-                                    @onclick:stopPropagation="true"
-                                    @onclick="() => GoToProduct(p.Id)">
-                                View
-                            </button>
+                            <div class="product-actions">
+                                <button class="btn" @onclick:stopPropagation="true"
+                                        @onclick="() => GoToProduct(p.Id)">
+                                    View
+                                </button>
+                                @if (p.DefaultVariantId.HasValue)
+                                {
+                                    <button class="btn btn-primary"
+                                            disabled="@(p.DefaultVariantStock <= 0)"
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => AddToCart(p)">
+                                        🛒 @(p.DefaultVariantStock <= 0 ? "Out of stock" : "Add to cart")
+                                    </button>
+                                }
+                            </div>
                         </div>
                     </div>
                 }
@@ -191,6 +205,7 @@
 
 @code {
     bool _loading = true;
+    bool _categoriesOpen;
     string _search = string.Empty;
     Guid? _selectedCategoryId;
     string? _selectedCategoryName;
@@ -368,7 +383,7 @@
             {
                 foreach (var p in items.EnumerateArray())
                 {
-                    _products.Add(new ProductRow
+                    var row = new ProductRow
                     {
                         Id               = p.GetProperty("id").GetGuid(),
                         Name             = p.GetProperty("name").GetString() ?? "",
@@ -376,7 +391,16 @@
                         BrandName        = p.TryGetProperty("brandName",        out var bn) && bn.ValueKind == JsonValueKind.String ? bn.GetString() : null,
                         ImageUrl         = p.TryGetProperty("imageUrl",         out var img) ? img.GetString() : null,
                         MinPrice         = p.TryGetProperty("minPrice",         out var mp) ? mp.GetDecimal() : 0m
-                    });
+                    };
+
+                    if (p.TryGetProperty("defaultVariant", out var dv) && dv.ValueKind == JsonValueKind.Object)
+                    {
+                        row.DefaultVariantId    = dv.GetProperty("id").GetGuid();
+                        row.DefaultVariantSku   = dv.TryGetProperty("sku", out var sku) ? sku.GetString() ?? "" : "";
+                        row.DefaultVariantStock = dv.TryGetProperty("stockQuantity", out var sq) ? sq.GetInt32() : 0;
+                    }
+
+                    _products.Add(row);
                 }
             }
         }
@@ -427,6 +451,23 @@
 
     void GoToProduct(Guid id) => Nav.NavigateTo($"/store/{TenantSlug}/product/{id}");
 
+    void AddToCart(ProductRow p)
+    {
+        if (!p.DefaultVariantId.HasValue || p.DefaultVariantStock <= 0) return;
+
+        Cart.AddItem(new CartItem
+        {
+            VariantId   = p.DefaultVariantId.Value,
+            ProductId   = p.Id,
+            ProductName = p.Name,
+            SKU         = p.DefaultVariantSku,
+            ImageUrl    = p.ImageUrl,
+            UnitPrice   = p.MinPrice,
+            Quantity    = 1
+        });
+        Toast.Show($"{p.Name} added to cart.");
+    }
+
     public class CategoryNode
     {
         public Guid    Id           { get; set; }
@@ -446,6 +487,12 @@
         public string? BrandName        { get; set; }
         public string? ImageUrl         { get; set; }
         public decimal MinPrice         { get; set; }
+
+        /// <summary>Cheapest active variant — lets the grid card add-to-cart directly.
+        /// Null only if the product somehow has zero active variants.</summary>
+        public Guid?   DefaultVariantId    { get; set; }
+        public string  DefaultVariantSku   { get; set; } = "";
+        public int     DefaultVariantStock { get; set; }
     }
 
     class Filters

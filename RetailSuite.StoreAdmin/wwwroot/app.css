@@ -528,6 +528,27 @@ select.input { height: 38px; }
                 color: var(--color-text); line-height: 1.3; }
 .product-price { color: var(--color-primary-dark); font-size: 16px; font-weight: 700; }
 
+/* View + Add to cart side by side on each grid card. */
+.product-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.product-actions .btn {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 13px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Categories toggle — a nav-menu-style show/hide trigger for the sidebar.
+   Hidden on desktop (sidebar is always visible there); only meaningful on
+   mobile, where .shop-sidebar.collapsed actually hides the panel. */
+.shop-cat-toggle {
+    display: none;
+}
+
 /* Shop home: categories sidebar + product grid. Uses real classes (not inline
    styles) specifically so the mobile media query below can stack them —
    inline styles can't be overridden by @media rules. */
@@ -609,6 +630,18 @@ select.input { height: 38px; }
     .shop-home-layout { flex-direction: column; }
     .shop-sidebar      { width: 100%; }
     .shop-search-input { width: 100%; flex-basis: 100%; }
+
+    /* Categories nav-menu toggle: shown only on mobile, collapses the sidebar
+       to a single button until tapped. */
+    .shop-cat-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+    .shop-sidebar.collapsed { display: none; }
 
     /* Recipient/payment/wallet-stat grids collapse to one column */
     .two-col-grid { grid-template-columns: 1fr; }
