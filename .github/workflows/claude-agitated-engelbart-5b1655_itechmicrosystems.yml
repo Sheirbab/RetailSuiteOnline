@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - claude/agitated-engelbart-5b1655
+    paths:
+      - 'ItechMicrosystems.Web/**'
+      - '.github/workflows/claude-agitated-engelbart-5b1655_itechmicrosystems.yml'
   workflow_dispatch:
 
 jobs:
@@ -24,10 +27,14 @@ jobs:
           dotnet-version: '8.x'
 
       - name: Build with dotnet
-        run: dotnet build --configuration Release
+        # This repo is a multi-project solution (API, StoreAdmin, tests, and
+        # this website) — the project path must be explicit, otherwise dotnet
+        # builds/publishes everything in RetailSuite.sln into one output
+        # folder and Azure ends up with the wrong app.
+        run: dotnet build ItechMicrosystems.Web/ItechMicrosystems.Web.csproj --configuration Release
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish ItechMicrosystems.Web/ItechMicrosystems.Web.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
