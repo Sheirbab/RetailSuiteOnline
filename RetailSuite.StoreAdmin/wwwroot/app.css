@@ -576,6 +576,13 @@ select.input { height: 38px; }
 .shop-sidebar {
     width: 240px;
     flex-shrink: 0;
+    /* Desktop: stays in view while the product grid scrolls, instead of
+       scrolling away with the page. --shop-header-height is measured in
+       app.js (the sticky header's height varies by content/viewport). */
+    position: sticky;
+    top: calc(var(--shop-header-height, 70px) + 16px);
+    max-height: calc(100vh - var(--shop-header-height, 70px) - 32px);
+    overflow-y: auto;
 }
 
 .shop-grid-header {
@@ -662,10 +669,14 @@ select.input { height: 38px; }
 
     /* Sidebar becomes a fixed, left-anchored drawer that overlays the page
        and stays put while the page scrolls behind it — opened via .open,
-       closed by tapping the backdrop or the toggle again. */
+       closed by tapping the backdrop or the toggle again. Starts below the
+       header (--shop-header-height, measured in app.js) instead of top:0 —
+       anchoring at 0 either covered the header or got covered by it,
+       depending on which one had the higher z-index. Starting below it
+       sidesteps the stacking conflict entirely. */
     .shop-sidebar {
         position: fixed;
-        top: 0;
+        top: var(--shop-header-height, 70px);
         bottom: 0;
         /* Off-screen by default. Using "left" (not transform:translateX) to
            slide the drawer — animating position directly instead of a
@@ -676,6 +687,7 @@ select.input { height: 38px; }
         z-index: 150;
         width: min(280px, 82vw);
         max-width: 82vw;
+        max-height: none;
         overflow-y: auto;
         border-radius: 0;
         transition: left .25s ease;

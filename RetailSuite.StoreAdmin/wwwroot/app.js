@@ -1,6 +1,36 @@
 // RetailSuite StoreAdmin — client-side helpers
 
 // ---------------------------------------------------------------------------
+// Storefront header height — exposed as --shop-header-height so the mobile
+// categories drawer and the desktop sticky sidebar can offset below the
+// header without a hardcoded guess. The header's rendered height varies by
+// device/font/text-wrap, which is what made fixed pixel offsets unreliable.
+// ---------------------------------------------------------------------------
+(function () {
+    let observed = false;
+    function updateShopHeaderHeight() {
+        const header = document.querySelector('.shop-header');
+        if (header) document.documentElement.style.setProperty('--shop-header-height', header.offsetHeight + 'px');
+        return header;
+    }
+    function tryObserve() {
+        const header = updateShopHeaderHeight();
+        if (header && !observed && window.ResizeObserver) {
+            new ResizeObserver(updateShopHeaderHeight).observe(header);
+            observed = true;
+        }
+    }
+    tryObserve();
+    document.addEventListener('DOMContentLoaded', tryObserve);
+    window.addEventListener('load', tryObserve);
+    window.addEventListener('resize', updateShopHeaderHeight);
+    // Blazor Server hydrates after the initial paint — a couple of delayed
+    // retries catch the header if it wasn't in the DOM yet on first attempt.
+    setTimeout(tryObserve, 300);
+    setTimeout(tryObserve, 1000);
+})();
+
+// ---------------------------------------------------------------------------
 // Barcode scanner support (POS page)
 // Keep focus on the hidden barcode input so physical scanners work
 // ---------------------------------------------------------------------------
