@@ -1,0 +1,77 @@
+@page
+@model ItechMicrosystems.Web.Pages.ContactModel
+@{
+    ViewData["Title"] = "Contact";
+    ViewData["Description"] = "Get in touch with ITECH MICROSYSTEMS to discuss your software or IT project.";
+}
+
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Contact</span>
+        <h1>Let's talk about your project</h1>
+        <p class="lead">Tell us what you're trying to solve — we'll get back to you with next steps.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="row g-5">
+            <div class="col-lg-5">
+                <h2>Contact details</h2>
+                <ul class="contact-details">
+                    <li>
+                        <span class="contact-label">Email</span>
+                        <a href="mailto:info@itechmicrosystems.com">info@itechmicrosystems.com</a>
+                    </li>
+                    <li>
+                        <span class="contact-label">Phone</span>
+                        <a href="tel:+923132472099">0313 2472099</a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="col-lg-7">
+                @if (Model.Submitted)
+                {
+                    <div class="alert alert-success" role="alert">
+                        Thanks — your message has been received. We'll get back to you soon.
+                    </div>
+                }
+
+                <form method="post" novalidate>
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                    <div class="mb-3">
+                        <label asp-for="Form.Name" class="form-label">Name</label>
+                        <input asp-for="Form.Name" class="form-control" placeholder="Your name" />
+                        <span asp-validation-for="Form.Name" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Form.Email" class="form-label">Email</label>
+                        <input asp-for="Form.Email" class="form-control" placeholder="you@company.com" />
+                        <span asp-validation-for="Form.Email" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Form.Phone" class="form-label">Phone <span class="text-muted">(optional)</span></label>
+                        <input asp-for="Form.Phone" class="form-control" placeholder="+92 XXX XXXXXXX" />
+                        <span asp-validation-for="Form.Phone" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Form.Message" class="form-label">Message</label>
+                        <textarea asp-for="Form.Message" class="form-control" rows="5" placeholder="Tell us about your project"></textarea>
+                        <span asp-validation-for="Form.Message" class="text-danger"></span>
+                    </div>
+
+                    <button type="submit" class="btn btn-cta btn-lg">Send message</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

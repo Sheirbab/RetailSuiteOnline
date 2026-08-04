@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.StoreAdmin", "R
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailSuite.Tests", "RetailSuite.Tests\RetailSuite.Tests.csproj", "{F889C492-DCF9-48E3-BB96-DC16649F4D2E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ItechMicrosystems.Web", "ItechMicrosystems.Web\ItechMicrosystems.Web.csproj", "{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -88,6 +90,18 @@ Global
 		{F889C492-DCF9-48E3-BB96-DC16649F4D2E}.Release|x64.Build.0 = Release|Any CPU
 		{F889C492-DCF9-48E3-BB96-DC16649F4D2E}.Release|x86.ActiveCfg = Release|Any CPU
 		{F889C492-DCF9-48E3-BB96-DC16649F4D2E}.Release|x86.Build.0 = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|x64.Build.0 = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Debug|x86.Build.0 = Debug|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|x64.ActiveCfg = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|x64.Build.0 = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|x86.ActiveCfg = Release|Any CPU
+		{2ED4CDDB-0843-4F08-89CC-3617F92F07A7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

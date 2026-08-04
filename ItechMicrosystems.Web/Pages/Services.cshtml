@@ -1,0 +1,95 @@
+@page
+@model ItechMicrosystems.Web.Pages.ServicesModel
+@{
+    ViewData["Title"] = "Services";
+    ViewData["Description"] = "Custom software development, web and mobile applications, systems integration, and IT support from ITECH MICROSYSTEMS.";
+}
+
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Services</span>
+        <h1>What we do</h1>
+        <p class="lead">Software and IT services scoped to what your organization actually needs — nothing more, nothing less.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="service-list">
+
+            <div class="service-row">
+                <div class="service-icon">🛠️</div>
+                <div>
+                    <h3>Custom Software Development</h3>
+                    <p>
+                        End-to-end design and development of business applications tailored to your
+                        processes — from internal tools that replace spreadsheets and manual workflows,
+                        to full multi-user systems for your teams.
+                    </p>
+                </div>
+            </div>
+
+            <div class="service-row">
+                <div class="service-icon">🌐</div>
+                <div>
+                    <h3>Web Application Development</h3>
+                    <p>
+                        Responsive, secure web applications — customer portals, dashboards, booking
+                        systems, and internal admin tools — built to work well on both desktop and mobile.
+                    </p>
+                </div>
+            </div>
+
+            <div class="service-row">
+                <div class="service-icon">📱</div>
+                <div>
+                    <h3>Mobile App Development</h3>
+                    <p>
+                        Mobile applications for your customers or field teams, built to fit naturally
+                        into how your organization already works.
+                    </p>
+                </div>
+            </div>
+
+            <div class="service-row">
+                <div class="service-icon">🧩</div>
+                <div>
+                    <h3>Systems Integration</h3>
+                    <p>
+                        Connect existing software, APIs, and data sources so information flows between
+                        systems automatically, reducing manual data entry and duplicate work.
+                    </p>
+                </div>
+            </div>
+
+            <div class="service-row">
+                <div class="service-icon">☁️</div>
+                <div>
+                    <h3>IT Consulting &amp; Infrastructure</h3>
+                    <p>
+                        Guidance on technology decisions, system architecture, and cloud or on-premise
+                        infrastructure — so your technology choices support growth instead of limiting it.
+                    </p>
+                </div>
+            </div>
+
+            <div class="service-row">
+                <div class="service-icon">🔧</div>
+                <div>
+                    <h3>Support &amp; Maintenance</h3>
+                    <p>
+                        Ongoing support after launch — monitoring, updates, bug fixes, and enhancements —
+                        so your systems keep running reliably as your business changes.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="cta-panel cta-panel-centered">
+            <h3>Not sure which service fits your needs?</h3>
+            <p>Tell us about your project and we'll help you figure out the right approach.</p>
+            <a class="btn btn-cta" asp-page="/Contact">Contact us</a>
+        </div>
+    </div>
+</section>

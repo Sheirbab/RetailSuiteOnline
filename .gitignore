@@ -23,6 +23,8 @@ RetailSuite.StoreAdmin/obj/
 RetailSuite.Infrastructure/Migrations/
 RetailSuite.Tests/bin/
 RetailSuite.Tests/obj/
+ItechMicrosystems.Web/bin/
+ItechMicrosystems.Web/obj/
 RetailSuite.Api/logs/
 .claude/worktrees/agitated-engelbart-5b1655/.claude/
 RetailSuite.Api/wwwroot/
