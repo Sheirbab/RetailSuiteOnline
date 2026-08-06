@@ -78,6 +78,7 @@ public class RetailDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<TenantVerificationToken> TenantVerificationTokens => Set<TenantVerificationToken>();
+    public DbSet<TenantAuditLog> TenantAuditLogs => Set<TenantAuditLog>();
 
     // -----------------------------
     // Subscriptions
@@ -186,6 +187,16 @@ public class RetailDbContext : DbContext
             b.HasIndex(x => x.Subdomain).IsUnique();
             b.Property(x => x.BillingEmail).HasMaxLength(250);
             b.Property(x => x.CountryCode).HasMaxLength(2).HasDefaultValue("PK");
+        });
+
+        modelBuilder.Entity<TenantAuditLog>(b =>
+        {
+            b.ToTable("TenantAuditLogs");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.PerformedByEmail).IsRequired().HasMaxLength(250);
+            b.Property(x => x.Action).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Details).IsRequired().HasMaxLength(1000);
+            b.HasIndex(x => x.TenantId);
         });
 
         modelBuilder.Entity<TenantVerificationToken>(b =>

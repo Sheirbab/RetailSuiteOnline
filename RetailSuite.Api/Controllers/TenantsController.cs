@@ -6,6 +6,7 @@ using RetailSuite.Infrastructure.Modules.Customer.Model;
 using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
 using RetailSuite.Shared;
 
 namespace RetailSuite.Api.Controllers;
@@ -15,13 +16,27 @@ namespace RetailSuite.Api.Controllers;
 [Authorize]
 public class TenantsController : ControllerBase
 {
-    private readonly RetailDbContext _db;
-    private readonly ITenantContext  _tenantContext;
+    private readonly RetailDbContext     _db;
+    private readonly ITenantContext      _tenantContext;
+    private readonly ICurrentUserContext _currentUser;
 
-    public TenantsController(RetailDbContext db, ITenantContext tenantContext)
+    public TenantsController(RetailDbContext db, ITenantContext tenantContext, ICurrentUserContext currentUser)
     {
         _db            = db;
         _tenantContext = tenantContext;
+        _currentUser   = currentUser;
+    }
+
+    private async Task LogAuditAsync(Guid tenantId, string action, string details)
+    {
+        var performerEmail = await _db.Users
+            .IgnoreQueryFilters()
+            .Where(u => u.Id == _currentUser.UserId)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync() ?? "unknown";
+
+        _db.TenantAuditLogs.Add(new TenantAuditLog(tenantId, _currentUser.UserId, performerEmail, action, details));
+        await _db.SaveChangesAsync();
     }
 
     // ---------------------------------------------------------------
@@ -55,17 +70,37 @@ public class TenantsController : ControllerBase
     // ---------------------------------------------------------------
     [HttpGet]
     [Authorize(Policy = "SuperAdminOnly")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] bool includeArchived = false)
     {
-        var tenants = await _db.Tenants
+        var query = _db.Tenants.AsQueryable();
+        if (!includeArchived)
+            query = query.Where(t => !t.IsArchived);
+
+        var tenants = await query
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
 
-        // Count users per tenant (ignore global filter — super admin sees all)
+        // Count users/products/orders per tenant in bulk (ignore global filter —
+        // super admin sees all) rather than per-row, to avoid N+1 queries here.
         var userCounts = await _db.Users
             .IgnoreQueryFilters()
-            .Where(u => u.TenantId != Guid.Empty)
+            .Where(u => u.TenantId != Guid.Empty && !u.IsDeleted)
             .GroupBy(u => u.TenantId)
+            .Select(g => new { TenantId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TenantId, x => x.Count);
+
+        var productCounts = await _db.Products
+            .IgnoreQueryFilters()
+            .Where(p => !p.IsDeleted)
+            .GroupBy(p => p.TenantId)
+            .Select(g => new { TenantId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TenantId, x => x.Count);
+
+        var orderCountSince = DateTime.UtcNow.AddDays(-30);
+        var orderCounts = await _db.Orders
+            .IgnoreQueryFilters()
+            .Where(o => !o.IsDeleted && o.CreatedAt >= orderCountSince)
+            .GroupBy(o => o.TenantId)
             .Select(g => new { TenantId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.TenantId, x => x.Count);
 
@@ -75,8 +110,14 @@ public class TenantsController : ControllerBase
             t.Name,
             t.Subdomain,
             t.Status,
+            t.BillingEmail,
+            t.CountryCode,
+            t.IsArchived,
+            t.ArchivedAt,
             t.CreatedAt,
-            UserCount = userCounts.TryGetValue(t.Id, out var c) ? c : 0
+            UserCount    = userCounts.TryGetValue(t.Id, out var uc) ? uc : 0,
+            ProductCount = productCounts.TryGetValue(t.Id, out var pc) ? pc : 0,
+            OrderCount30d = orderCounts.TryGetValue(t.Id, out var oc) ? oc : 0
         });
 
         return Ok(ApiResponse<object>.Ok(result));
@@ -144,7 +185,7 @@ public class TenantsController : ControllerBase
     }
 
     // ---------------------------------------------------------------
-    // PATCH /api/tenants/{id}/status  — SuperAdmin: activate / deactivate
+    // PATCH /api/tenants/{id}/status  — SuperAdmin: set tenant lifecycle status
     // ---------------------------------------------------------------
     [HttpPatch("{id:guid}/status")]
     [Authorize(Policy = "SuperAdminOnly")]
@@ -154,13 +195,233 @@ public class TenantsController : ControllerBase
         if (tenant == null)
             return NotFound(ApiResponse<object>.Fail("Tenant not found."));
 
-        if (request.Status != "Active" && request.Status != "Inactive")
-            return BadRequest(ApiResponse<object>.Fail("Status must be 'Active' or 'Inactive'."));
+        if (!TenantStatus.ManuallyAssignable.Contains(request.Status))
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Status must be one of: {string.Join(", ", TenantStatus.ManuallyAssignable)}."));
 
+        var previousStatus = tenant.Status;
         tenant.SetStatus(request.Status);
         await _db.SaveChangesAsync();
 
+        if (previousStatus != request.Status)
+            await LogAuditAsync(tenant.Id, "StatusChanged", $"{previousStatus} -> {request.Status}");
+
         return Ok(ApiResponse<object>.Ok(new { tenant.Id, tenant.Status }));
+    }
+
+    // ---------------------------------------------------------------
+    // PATCH /api/tenants/{id}  — SuperAdmin: edit tenant details
+    // ---------------------------------------------------------------
+    [HttpPatch("{id:guid}")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTenantRequest request)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Subdomain))
+            return BadRequest(ApiResponse<object>.Fail("Name and Subdomain are required."));
+
+        var subdomain = request.Subdomain.Trim().ToLowerInvariant();
+
+        if (RetailSuite.Api.MultiTenancy.ReservedSubdomains.IsReserved(subdomain))
+            return BadRequest(ApiResponse<object>.Fail("This subdomain is reserved."));
+
+        if (await _db.Tenants.AnyAsync(t => t.Id != id && t.Subdomain == subdomain))
+            return Conflict(ApiResponse<object>.Fail("Subdomain is already taken."));
+
+        var changes = new List<string>();
+        if (tenant.Name != request.Name.Trim()) changes.Add($"Name: '{tenant.Name}' -> '{request.Name.Trim()}'");
+        if (tenant.Subdomain != subdomain) changes.Add($"Subdomain: '{tenant.Subdomain}' -> '{subdomain}'");
+        var newBillingEmail = string.IsNullOrWhiteSpace(request.BillingEmail) ? null : request.BillingEmail.Trim();
+        if (tenant.BillingEmail != newBillingEmail) changes.Add($"BillingEmail: '{tenant.BillingEmail}' -> '{newBillingEmail}'");
+        var newCountryCode = string.IsNullOrWhiteSpace(request.CountryCode) ? "PK" : request.CountryCode.ToUpperInvariant();
+        if (tenant.CountryCode != newCountryCode) changes.Add($"CountryCode: '{tenant.CountryCode}' -> '{newCountryCode}'");
+
+        tenant.Update(request.Name.Trim(), subdomain);
+        tenant.SetBillingEmail(newBillingEmail);
+        tenant.SetCountryCode(newCountryCode);
+
+        await _db.SaveChangesAsync();
+
+        if (changes.Any())
+            await LogAuditAsync(tenant.Id, "Edited", string.Join("; ", changes));
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            tenant.Id,
+            tenant.Name,
+            tenant.Subdomain,
+            tenant.BillingEmail,
+            tenant.CountryCode
+        }));
+    }
+
+    // ---------------------------------------------------------------
+    // POST /api/tenants/{id}/archive  — SuperAdmin: hide from the default list
+    // (fully reversible, no data is removed)
+    // ---------------------------------------------------------------
+    [HttpPost("{id:guid}/archive")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> Archive(Guid id)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        if (tenant.IsArchived)
+            return Ok(ApiResponse<object>.Ok(new { tenant.Id, tenant.IsArchived }));
+
+        tenant.Archive();
+        await _db.SaveChangesAsync();
+        await LogAuditAsync(tenant.Id, "Archived", $"Archived tenant '{tenant.Name}'");
+
+        return Ok(ApiResponse<object>.Ok(new { tenant.Id, tenant.IsArchived, tenant.ArchivedAt }));
+    }
+
+    // ---------------------------------------------------------------
+    // POST /api/tenants/{id}/unarchive  — SuperAdmin: restore to the default list
+    // ---------------------------------------------------------------
+    [HttpPost("{id:guid}/unarchive")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> Unarchive(Guid id)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        if (!tenant.IsArchived)
+            return Ok(ApiResponse<object>.Ok(new { tenant.Id, tenant.IsArchived }));
+
+        tenant.Unarchive();
+        await _db.SaveChangesAsync();
+        await LogAuditAsync(tenant.Id, "Unarchived", $"Unarchived tenant '{tenant.Name}'");
+
+        return Ok(ApiResponse<object>.Ok(new { tenant.Id, tenant.IsArchived }));
+    }
+
+    // ---------------------------------------------------------------
+    // GET /api/tenants/{id}  — SuperAdmin: full tenant detail (subscription,
+    // usage vs plan limits, recent invoices). User list is fetched separately
+    // via GET /api/tenants/{id}/users below.
+    // ---------------------------------------------------------------
+    [HttpGet("{id:guid}")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> GetDetail(Guid id)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        var subscription = await _db.TenantSubscriptions
+            .IgnoreQueryFilters()
+            .Where(s => s.TenantId == id && !s.IsDeleted)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        object? subscriptionDto  = null;
+        SubscriptionPlan? plan   = null;
+
+        if (subscription != null)
+        {
+            plan = await _db.SubscriptionPlans.FirstOrDefaultAsync(p => p.Id == subscription.PlanId);
+            subscriptionDto = new
+            {
+                subscription.Id,
+                subscription.PlanCode,
+                PlanName     = plan?.Name,
+                Status       = subscription.Status.ToString(),
+                BillingCycle = subscription.BillingCycle.ToString(),
+                subscription.StartDate,
+                subscription.EndDate,
+                subscription.TrialEndsAt,
+                subscription.NextBillingAt,
+                subscription.CancelAtPeriodEnd,
+                subscription.AutoRenew,
+                subscription.LastPrice,
+                subscription.Currency,
+                subscription.PaymentMethodType,
+                subscription.CardBrand,
+                subscription.CardLast4
+            };
+        }
+
+        // Usage counts computed directly rather than via IEntitlementService:
+        // that service only returns CurrentCount/Limit when a limit is actually
+        // exceeded (it's an allow/deny gate, not a reporting API), so it can't
+        // be reused as-is for an always-show-the-numbers usage view.
+        var userCount = await _db.Users
+            .IgnoreQueryFilters()
+            .CountAsync(u => u.TenantId == id && !u.IsDeleted);
+
+        var productCount = await _db.Products
+            .IgnoreQueryFilters()
+            .CountAsync(p => p.TenantId == id && !p.IsDeleted);
+
+        var orderCountSince = DateTime.UtcNow.AddDays(-30);
+        var orderCount = await _db.Orders
+            .IgnoreQueryFilters()
+            .CountAsync(o => o.TenantId == id && !o.IsDeleted && o.CreatedAt >= orderCountSince);
+
+        var invoices = await _db.SubscriptionInvoices
+            .IgnoreQueryFilters()
+            .Where(i => i.TenantId == id && !i.IsDeleted)
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(20)
+            .Select(i => new
+            {
+                i.Id,
+                i.InvoiceNumber,
+                i.PlanCode,
+                i.PeriodStart,
+                i.PeriodEnd,
+                i.Total,
+                i.Currency,
+                Status = i.Status.ToString(),
+                i.DueDate,
+                i.PaidAt,
+                i.AmountDue
+            })
+            .ToListAsync();
+
+        var auditLog = await _db.TenantAuditLogs
+            .Where(a => a.TenantId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(50)
+            .Select(a => new
+            {
+                a.Action,
+                a.Details,
+                a.PerformedByEmail,
+                a.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            Tenant = new
+            {
+                tenant.Id,
+                tenant.Name,
+                tenant.Subdomain,
+                tenant.Status,
+                tenant.BillingEmail,
+                tenant.CountryCode,
+                tenant.IsArchived,
+                tenant.ArchivedAt,
+                tenant.CreatedAt
+            },
+            Subscription = subscriptionDto,
+            Usage = new
+            {
+                Users    = new { Current = userCount,    Limit = plan?.MaxUsers },
+                Products = new { Current = productCount, Limit = plan?.MaxProducts },
+                Orders   = new { Current = orderCount,   Limit = plan?.MaxOrdersPerMonth, WindowDays = 30 }
+            },
+            Invoices = invoices,
+            AuditLog = auditLog
+        }));
     }
 
     // ---------------------------------------------------------------
@@ -211,4 +472,12 @@ public class CreateTenantRequest
 public class SetTenantStatusRequest
 {
     public string Status { get; set; } = "Active";
+}
+
+public class UpdateTenantRequest
+{
+    public string  Name         { get; set; } = string.Empty;
+    public string  Subdomain    { get; set; } = string.Empty;
+    public string? BillingEmail { get; set; }
+    public string? CountryCode  { get; set; }
 }

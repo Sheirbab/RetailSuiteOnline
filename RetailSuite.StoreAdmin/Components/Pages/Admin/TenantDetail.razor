@@ -1,0 +1,589 @@
+@page "/admin/tenants/{Id:guid}"
+@layout MainLayout
+@inject HttpClient Http
+@inject AuthService AuthSvc
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject IJSRuntime JS
+@using System.Text.Json
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    bool _loading = true;
+    bool _notFound;
+
+    bool _archiving;
+
+    // Mark-paid form state
+    Guid?  _payingInvoiceId;
+    string _payMethod    = "BankTransfer";
+    string _payReference = string.Empty;
+    bool   _recordingPayment;
+
+    static readonly string[] ManualPaymentMethods = { "BankTransfer", "Cash", "JazzCash", "EasyPaisa" };
+    static readonly HashSet<string> PayableInvoiceStatuses = new() { "Open", "Overdue" };
+
+    TenantInfo?          _tenant;
+    SubscriptionInfo?    _subscription;
+    UsageInfo?           _usage;
+    List<InvoiceRow>     _invoices  = new();
+    List<UserRow>        _users     = new();
+    List<AuditRow>       _auditLog  = new();
+
+    protected override void OnInitialized()
+    {
+        if (!AuthSvc.IsSuperAdmin)
+        {
+            Nav.NavigateTo("/", replace: true);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        _loading  = true;
+        _notFound = false;
+        try
+        {
+            var detailRes = await Http.GetAsync($"api/tenants/{Id}");
+            if (detailRes.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _notFound = true;
+                _loading  = false;
+                return;
+            }
+            detailRes.EnsureSuccessStatusCode();
+
+            var json = await detailRes.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            var t = data.GetProperty("tenant");
+            _tenant = new TenantInfo
+            {
+                Id           = t.GetProperty("id").GetGuid(),
+                Name         = t.GetProperty("name").GetString() ?? "—",
+                Subdomain    = t.GetProperty("subdomain").GetString() ?? "—",
+                Status       = t.GetProperty("status").GetString() ?? "Unknown",
+                BillingEmail = t.TryGetProperty("billingEmail", out var be) && be.ValueKind == JsonValueKind.String ? be.GetString() : null,
+                CountryCode  = t.TryGetProperty("countryCode", out var cc) ? cc.GetString() ?? "PK" : "PK",
+                IsArchived   = t.TryGetProperty("isArchived", out var ia) && ia.GetBoolean(),
+                CreatedAt    = t.GetProperty("createdAt").GetDateTime()
+            };
+
+            if (data.TryGetProperty("subscription", out var sub) && sub.ValueKind == JsonValueKind.Object)
+            {
+                _subscription = new SubscriptionInfo
+                {
+                    PlanCode          = sub.TryGetProperty("planCode", out var pc) ? pc.GetString() ?? "—" : "—",
+                    PlanName          = sub.TryGetProperty("planName", out var pn) && pn.ValueKind == JsonValueKind.String ? pn.GetString() : null,
+                    Status            = sub.TryGetProperty("status", out var ss) ? ss.GetString() ?? "—" : "—",
+                    BillingCycle      = sub.TryGetProperty("billingCycle", out var bc) ? bc.GetString() ?? "—" : "—",
+                    StartDate         = sub.TryGetProperty("startDate", out var sd) ? sd.GetDateTime() : DateTime.MinValue,
+                    EndDate           = sub.TryGetProperty("endDate", out var ed) ? ed.GetDateTime() : DateTime.MinValue,
+                    TrialEndsAt       = sub.TryGetProperty("trialEndsAt", out var te) && te.ValueKind != JsonValueKind.Null ? te.GetDateTime() : (DateTime?)null,
+                    NextBillingAt     = sub.TryGetProperty("nextBillingAt", out var nb) ? nb.GetDateTime() : DateTime.MinValue,
+                    CancelAtPeriodEnd = sub.TryGetProperty("cancelAtPeriodEnd", out var cape) && cape.GetBoolean(),
+                    AutoRenew         = sub.TryGetProperty("autoRenew", out var ar) && ar.GetBoolean(),
+                    LastPrice         = sub.TryGetProperty("lastPrice", out var lp) ? lp.GetDecimal() : 0m,
+                    Currency          = sub.TryGetProperty("currency", out var cur) ? cur.GetString() ?? "PKR" : "PKR",
+                    PaymentMethodType = sub.TryGetProperty("paymentMethodType", out var pmt) && pmt.ValueKind == JsonValueKind.String ? pmt.GetString() : null,
+                    CardBrand         = sub.TryGetProperty("cardBrand", out var cb) && cb.ValueKind == JsonValueKind.String ? cb.GetString() : null,
+                    CardLast4         = sub.TryGetProperty("cardLast4", out var cl4) && cl4.ValueKind == JsonValueKind.String ? cl4.GetString() : null
+                };
+            }
+            else
+            {
+                _subscription = null;
+            }
+
+            var usage = data.GetProperty("usage");
+            _usage = new UsageInfo
+            {
+                Users    = ParseUsageRow(usage.GetProperty("users")),
+                Products = ParseUsageRow(usage.GetProperty("products")),
+                Orders   = ParseUsageRow(usage.GetProperty("orders"))
+            };
+
+            _invoices.Clear();
+            if (data.TryGetProperty("invoices", out var inv) && inv.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var i in inv.EnumerateArray())
+                {
+                    _invoices.Add(new InvoiceRow
+                    {
+                        Id            = i.GetProperty("id").GetGuid(),
+                        InvoiceNumber = i.GetProperty("invoiceNumber").GetString() ?? "—",
+                        PlanCode      = i.GetProperty("planCode").GetString() ?? "—",
+                        PeriodStart   = i.GetProperty("periodStart").GetDateTime(),
+                        PeriodEnd     = i.GetProperty("periodEnd").GetDateTime(),
+                        Total         = i.GetProperty("total").GetDecimal(),
+                        Currency      = i.GetProperty("currency").GetString() ?? "PKR",
+                        Status        = i.GetProperty("status").GetString() ?? "—",
+                        DueDate       = i.GetProperty("dueDate").GetDateTime(),
+                        PaidAt        = i.TryGetProperty("paidAt", out var pa) && pa.ValueKind != JsonValueKind.Null ? pa.GetDateTime() : (DateTime?)null,
+                        AmountDue     = i.GetProperty("amountDue").GetDecimal()
+                    });
+                }
+            }
+
+            _auditLog.Clear();
+            if (data.TryGetProperty("auditLog", out var al) && al.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var a in al.EnumerateArray())
+                {
+                    _auditLog.Add(new AuditRow
+                    {
+                        Action           = a.GetProperty("action").GetString() ?? "—",
+                        Details          = a.GetProperty("details").GetString() ?? "",
+                        PerformedByEmail = a.GetProperty("performedByEmail").GetString() ?? "—",
+                        CreatedAt        = a.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+
+            // Users list — separate existing endpoint.
+            var usersJson = await Http.GetStringAsync($"api/tenants/{Id}/users");
+            using var usersDoc = JsonDocument.Parse(usersJson);
+            var usersArr = usersDoc.RootElement.TryGetProperty("data", out var ud) ? ud : usersDoc.RootElement;
+            _users.Clear();
+            if (usersArr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var u in usersArr.EnumerateArray())
+                {
+                    _users.Add(new UserRow
+                    {
+                        Email     = u.GetProperty("email").GetString() ?? "—",
+                        Role      = u.GetProperty("role").GetString() ?? "—",
+                        CreatedAt = u.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error loading tenant: {ex.Message}");
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    static UsageRow ParseUsageRow(JsonElement el) => new()
+    {
+        Current = el.GetProperty("current").GetInt32(),
+        Limit   = el.TryGetProperty("limit", out var l) && l.ValueKind != JsonValueKind.Null ? l.GetInt32() : (int?)null
+    };
+
+    static (string Bg, string Fg) StatusColors(string status) => status switch
+    {
+        "Active"              => ("#d1fae5", "#065f46"),
+        "Trialing"            => ("#dbeafe", "#1e40af"),
+        "PastDue"             => ("#fef3c7", "#92400e"),
+        "Suspended"           => ("#fee2e2", "#991b1b"),
+        "Cancelled"           => ("#f3f4f6", "#374151"),
+        "PendingVerification" => ("#f3f4f6", "#374151"),
+        _                     => ("#fee2e2", "#991b1b")
+    };
+
+    static (string Bg, string Fg) InvoiceStatusColors(string status) => status switch
+    {
+        "Paid"     => ("#d1fae5", "#065f46"),
+        "Open"     => ("#dbeafe", "#1e40af"),
+        "Overdue"  => ("#fee2e2", "#991b1b"),
+        "Void"     => ("#f3f4f6", "#374151"),
+        "Refunded" => ("#f3f4f6", "#374151"),
+        _          => ("#f3f4f6", "#374151")
+    };
+
+    class TenantInfo
+    {
+        public Guid     Id           { get; set; }
+        public string   Name         { get; set; } = string.Empty;
+        public string   Subdomain    { get; set; } = string.Empty;
+        public string   Status       { get; set; } = string.Empty;
+        public string?  BillingEmail { get; set; }
+        public string   CountryCode  { get; set; } = "PK";
+        public bool     IsArchived   { get; set; }
+        public DateTime CreatedAt    { get; set; }
+    }
+
+    class SubscriptionInfo
+    {
+        public string   PlanCode          { get; set; } = string.Empty;
+        public string?  PlanName          { get; set; }
+        public string   Status            { get; set; } = string.Empty;
+        public string   BillingCycle      { get; set; } = string.Empty;
+        public DateTime StartDate         { get; set; }
+        public DateTime EndDate           { get; set; }
+        public DateTime? TrialEndsAt      { get; set; }
+        public DateTime NextBillingAt     { get; set; }
+        public bool     CancelAtPeriodEnd { get; set; }
+        public bool     AutoRenew         { get; set; }
+        public decimal  LastPrice         { get; set; }
+        public string   Currency          { get; set; } = "PKR";
+        public string?  PaymentMethodType { get; set; }
+        public string?  CardBrand         { get; set; }
+        public string?  CardLast4         { get; set; }
+    }
+
+    class UsageRow
+    {
+        public int  Current { get; set; }
+        public int? Limit   { get; set; }
+    }
+
+    class UsageInfo
+    {
+        public UsageRow Users    { get; set; } = new();
+        public UsageRow Products { get; set; } = new();
+        public UsageRow Orders   { get; set; } = new();
+    }
+
+    class InvoiceRow
+    {
+        public Guid      Id            { get; set; }
+        public string    InvoiceNumber { get; set; } = string.Empty;
+        public string    PlanCode      { get; set; } = string.Empty;
+        public DateTime  PeriodStart   { get; set; }
+        public DateTime  PeriodEnd     { get; set; }
+        public decimal   Total         { get; set; }
+        public string    Currency      { get; set; } = "PKR";
+        public string    Status        { get; set; } = string.Empty;
+        public DateTime  DueDate       { get; set; }
+        public DateTime? PaidAt        { get; set; }
+        public decimal   AmountDue     { get; set; }
+    }
+
+    class UserRow
+    {
+        public string   Email     { get; set; } = string.Empty;
+        public string   Role      { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+    }
+
+    class AuditRow
+    {
+        public string   Action           { get; set; } = string.Empty;
+        public string   Details          { get; set; } = string.Empty;
+        public string   PerformedByEmail { get; set; } = string.Empty;
+        public DateTime CreatedAt        { get; set; }
+    }
+
+    async Task ArchiveAsync()
+    {
+        if (_tenant == null) return;
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"Archive \"{_tenant.Name}\"? This hides it from the default tenant list but keeps all its data — you can unarchive it any time.");
+        if (!confirmed) return;
+
+        _archiving = true;
+        try
+        {
+            var res = await Http.PostAsync($"api/tenants/{Id}/archive", null);
+            if (res.IsSuccessStatusCode)
+            {
+                Toast.Show($"{_tenant.Name} archived.");
+                await LoadAsync();
+            }
+            else
+            {
+                Toast.Show("Failed to archive tenant.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _archiving = false;
+    }
+
+    async Task UnarchiveAsync()
+    {
+        if (_tenant == null) return;
+
+        _archiving = true;
+        try
+        {
+            var res = await Http.PostAsync($"api/tenants/{Id}/unarchive", null);
+            if (res.IsSuccessStatusCode)
+            {
+                Toast.Show($"{_tenant.Name} unarchived.");
+                await LoadAsync();
+            }
+            else
+            {
+                Toast.Show("Failed to unarchive tenant.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _archiving = false;
+    }
+
+    void OpenMarkPaid(InvoiceRow inv)
+    {
+        _payingInvoiceId = inv.Id;
+        _payMethod       = "BankTransfer";
+        _payReference    = string.Empty;
+    }
+
+    void CancelMarkPaid() => _payingInvoiceId = null;
+
+    async Task SubmitMarkPaidAsync()
+    {
+        if (_payingInvoiceId == null) return;
+
+        _recordingPayment = true;
+        try
+        {
+            var payload = new { paymentMethod = _payMethod, externalReference = _payReference };
+            var res     = await Http.PostAsJsonAsync($"api/billing/invoices/{_payingInvoiceId}/mark-paid", payload);
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                Toast.Show("Payment recorded.");
+                _payingInvoiceId = null;
+                await LoadAsync();
+            }
+            else
+            {
+                using var doc = JsonDocument.Parse(content);
+                var msg = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Failed to record payment.";
+                Toast.Show(msg ?? "Failed to record payment.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _recordingPayment = false;
+    }
+}
+
+<a href="/admin/tenants" style="font-size:13px;color:#6b7280;">← Back to Tenant Management</a>
+
+@if (_loading)
+{
+    <div class="spinner" style="margin-top:20px;"></div>
+}
+else if (_notFound)
+{
+    <div class="card" style="margin-top:16px;">
+        <p style="color:#9ca3af;">Tenant not found.</p>
+    </div>
+}
+else if (_tenant != null && _usage != null)
+{
+    var (statusBg, statusFg) = StatusColors(_tenant.Status);
+
+    <div style="display:flex;align-items:center;gap:12px;margin:16px 0 20px;flex-wrap:wrap;">
+        <h2 style="margin:0;">@_tenant.Name</h2>
+        <span style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;background:@statusBg;color:@statusFg;">
+            @_tenant.Status
+        </span>
+        <span style="color:#6b7280;font-family:monospace;font-size:13px;">@_tenant.Subdomain</span>
+        @if (_tenant.IsArchived)
+        {
+            <span style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;background:#f3f4f6;color:#6b7280;">Archived</span>
+            <button class="btn" style="font-size:12px;color:#065f46;" disabled="@_archiving" @onclick="UnarchiveAsync">Unarchive</button>
+        }
+        else
+        {
+            <button class="btn" style="font-size:12px;color:#b91c1c;" disabled="@_archiving" @onclick="ArchiveAsync">Archive</button>
+        }
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+        <!-- Tenant info -->
+        <div class="card">
+            <h4 style="margin-bottom:12px;">Tenant Info</h4>
+            <div style="font-size:14px;line-height:2;">
+                <div><strong>Billing Email:</strong> @(_tenant.BillingEmail ?? "—")</div>
+                <div><strong>Country:</strong> @_tenant.CountryCode</div>
+                <div><strong>Created:</strong> @_tenant.CreatedAt.ToString("yyyy-MM-dd")</div>
+                <div><strong>Users:</strong> @_users.Count</div>
+            </div>
+        </div>
+
+        <!-- Subscription -->
+        <div class="card">
+            <h4 style="margin-bottom:12px;">Subscription</h4>
+            @if (_subscription == null)
+            {
+                <p style="color:#9ca3af;font-size:14px;">No subscription on record.</p>
+            }
+            else
+            {
+                <div style="font-size:14px;line-height:2;">
+                    <div><strong>Plan:</strong> @(_subscription.PlanName ?? _subscription.PlanCode) (@_subscription.PlanCode)</div>
+                    <div><strong>Status:</strong> @_subscription.Status</div>
+                    <div><strong>Cycle:</strong> @_subscription.BillingCycle — @_subscription.Currency @_subscription.LastPrice.ToString("N2")</div>
+                    <div><strong>Period:</strong> @_subscription.StartDate.ToString("yyyy-MM-dd") → @_subscription.EndDate.ToString("yyyy-MM-dd")</div>
+                    @if (_subscription.TrialEndsAt.HasValue)
+                    {
+                        <div><strong>Trial ends:</strong> @_subscription.TrialEndsAt.Value.ToString("yyyy-MM-dd")</div>
+                    }
+                    <div><strong>Next billing:</strong> @_subscription.NextBillingAt.ToString("yyyy-MM-dd")</div>
+                    <div><strong>Auto-renew:</strong> @(_subscription.AutoRenew ? "Yes" : "No") @(_subscription.CancelAtPeriodEnd ? "(cancellation scheduled)" : "")</div>
+                    <div>
+                        <strong>Payment method:</strong>
+                        @(_subscription.PaymentMethodType == "Card"
+                            ? $"{_subscription.CardBrand} •••• {_subscription.CardLast4}"
+                            : _subscription.PaymentMethodType ?? "Not configured")
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Usage -->
+        <div class="card">
+            <h4 style="margin-bottom:12px;">Usage vs Plan Limits</h4>
+            <div style="font-size:14px;line-height:2;">
+                <div><strong>Users:</strong> @_usage.Users.Current / @(_usage.Users.Limit?.ToString() ?? "Unlimited")</div>
+                <div><strong>Products:</strong> @_usage.Products.Current / @(_usage.Products.Limit?.ToString() ?? "Unlimited")</div>
+                <div><strong>Orders (30d):</strong> @_usage.Orders.Current / @(_usage.Orders.Limit?.ToString() ?? "Unlimited")</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users -->
+    <h4 style="margin-bottom:10px;">Users</h4>
+    @if (!_users.Any())
+    {
+        <div class="card" style="margin-bottom:20px;"><p style="color:#9ca3af;">No users.</p></div>
+    }
+    else
+    {
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+            <table class="table" style="margin:0;">
+                <thead><tr><th>Email</th><th>Role</th><th>Created</th></tr></thead>
+                <tbody>
+                    @foreach (var u in _users)
+                    {
+                        <tr>
+                            <td>@u.Email</td>
+                            <td>@u.Role</td>
+                            <td style="color:#6b7280;font-size:13px;">@u.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- Invoices -->
+    <h4 style="margin-bottom:10px;">Invoices</h4>
+    @if (!_invoices.Any())
+    {
+        <div class="card"><p style="color:#9ca3af;">No invoices.</p></div>
+    }
+    else
+    {
+        <div class="card" style="padding:0;overflow:hidden;">
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Plan</th>
+                        <th>Period</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Due</th>
+                        <th>Amount Due</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var i in _invoices)
+                    {
+                        var (ibg, ifg) = InvoiceStatusColors(i.Status);
+                        <tr>
+                            <td style="font-family:monospace;">@i.InvoiceNumber</td>
+                            <td>@i.PlanCode</td>
+                            <td style="color:#6b7280;font-size:13px;">@i.PeriodStart.ToString("yyyy-MM-dd") → @i.PeriodEnd.ToString("yyyy-MM-dd")</td>
+                            <td>@i.Currency @i.Total.ToString("N2")</td>
+                            <td>
+                                <span style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;background:@ibg;color:@ifg;">
+                                    @i.Status
+                                </span>
+                            </td>
+                            <td style="color:#6b7280;font-size:13px;">@i.DueDate.ToString("yyyy-MM-dd")</td>
+                            <td>@i.Currency @i.AmountDue.ToString("N2")</td>
+                            <td>
+                                @if (PayableInvoiceStatuses.Contains(i.Status) && i.AmountDue > 0)
+                                {
+                                    <button class="btn" style="padding:3px 10px;font-size:12px;" @onclick="() => OpenMarkPaid(i)">Mark as Paid</button>
+                                }
+                            </td>
+                        </tr>
+                        @if (_payingInvoiceId == i.Id)
+                        {
+                            <tr>
+                                <td colspan="8" style="background:#f8fafc;">
+                                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0;">
+                                        <label style="font-size:13px;color:#374151;">Method:</label>
+                                        <select class="input" style="width:auto;padding:5px 8px;font-size:13px;" @bind="_payMethod">
+                                            @foreach (var m in ManualPaymentMethods)
+                                            {
+                                                <option value="@m">@m</option>
+                                            }
+                                        </select>
+                                        <label style="font-size:13px;color:#374151;">Reference:</label>
+                                        <input class="input" style="width:220px;padding:5px 8px;font-size:13px;"
+                                               placeholder="e.g. bank txn ID (optional)" @bind="_payReference" />
+                                        <button class="btn btn-primary" style="font-size:12px;" disabled="@_recordingPayment" @onclick="SubmitMarkPaidAsync">
+                                            @(_recordingPayment ? "Recording..." : $"Confirm {i.Currency} {i.AmountDue:N2} paid")
+                                        </button>
+                                        <button class="btn" style="font-size:12px;" disabled="@_recordingPayment" @onclick="CancelMarkPaid">Cancel</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- Audit Log -->
+    <h4 style="margin:20px 0 10px;">Audit Log</h4>
+    @if (!_auditLog.Any())
+    {
+        <div class="card"><p style="color:#9ca3af;">No recorded actions yet.</p></div>
+    }
+    else
+    {
+        <div class="card" style="padding:0;overflow:hidden;">
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in _auditLog)
+                    {
+                        <tr>
+                            <td style="color:#6b7280;font-size:13px;white-space:nowrap;">@a.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@a.Action</td>
+                            <td style="font-size:13px;">@a.Details</td>
+                            <td style="color:#6b7280;font-size:13px;">@a.PerformedByEmail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}

@@ -74,14 +74,25 @@ public class SubscriptionEnforcementMiddleware
         var status = await db.Tenants
             .IgnoreQueryFilters()
             .Where(t => t.Id == tenantId)
-            .Select(t => t.Status)
+            .Select(t => (string?)t.Status)
             .FirstOrDefaultAsync();
 
-        if (status == TenantStatus.Suspended || status == TenantStatus.Cancelled)
+        // Block Suspended/Cancelled/Inactive explicitly rather than using
+        // TenantStatus.AllowsAccess's allow-list: that helper also excludes
+        // PendingVerification, but every tenant (SuperAdmin-created or
+        // self-signup) starts in PendingVerification and this codebase has no
+        // verification flow that ever moves it out — deny-by-default against
+        // AllowsAccess would lock out every brand-new tenant immediately.
+        // "Inactive" is included here because it's what the SuperAdmin UI's
+        // deactivate action sets, and previously wasn't checked at all.
+        if (status == TenantStatus.Suspended || status == TenantStatus.Cancelled || status == TenantStatus.Inactive)
         {
-            await WritePaymentRequiredAsync(context, "Your tenant is suspended. Please settle outstanding charges to restore access.");
+            var message = status == TenantStatus.Cancelled
+                ? "Your tenant has been cancelled."
+                : "Your tenant is suspended. Please settle outstanding charges to restore access.";
+            await WritePaymentRequiredAsync(context, message);
             _logger.LogWarning(
-                "Request blocked — tenant suspended/cancelled: Tenant={TenantId}, Path={Path}, Status={Status}",
+                "Request blocked — tenant suspended/cancelled/inactive: Tenant={TenantId}, Path={Path}, Status={Status}",
                 tenantId, path, status);
             return;
         }

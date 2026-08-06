@@ -31,4 +31,22 @@ public static class TenantStatus
     /// <summary>True if a tenant in this status may access tenant APIs.</summary>
     public static bool AllowsAccess(string status) =>
         status == Trialing || status == Active || status == PastDue;
+
+    /// <summary>All recognized status values — used to validate input before persisting.</summary>
+    public static readonly IReadOnlySet<string> All = new HashSet<string>
+    {
+        PendingVerification, Trialing, Active, PastDue, Suspended, Cancelled, Inactive
+    };
+
+    public static bool IsValid(string status) => All.Contains(status);
+
+    /// <summary>
+    /// Status transitions a SuperAdmin may set manually from the tenant management UI.
+    /// Excludes PendingVerification (system-assigned at signup) and PastDue (system-assigned
+    /// by the billing/renewal pipeline, not a manual admin action).
+    /// </summary>
+    public static readonly IReadOnlyList<string> ManuallyAssignable = new[]
+    {
+        Trialing, Active, Suspended, Cancelled
+    };
 }

@@ -18,6 +18,15 @@ public class Tenant
 
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Soft-removed from the default tenant list. Distinct from Status/Cancelled —
+    /// Cancelled means "no longer paying, data retained for audit" while Archived
+    /// means "hidden from the working list" (e.g. a duplicate/test tenant), and
+    /// is fully reversible. Data is never deleted by this flag.
+    /// </summary>
+    public bool     IsArchived { get; private set; }
+    public DateTime? ArchivedAt { get; private set; }
+
     private Tenant() { }
 
     public Tenant(string name, string subdomain)
@@ -40,12 +49,29 @@ public class Tenant
         Subdomain = subdomain;
     }
 
-    public void SetStatus(string status) => Status = status;
+    public void SetStatus(string status)
+    {
+        if (!TenantStatus.IsValid(status))
+            throw new ArgumentException($"'{status}' is not a recognized tenant status.", nameof(status));
+        Status = status;
+    }
 
     public void SetBillingEmail(string? email) => BillingEmail = email;
 
     public void SetCountryCode(string code)
     {
         CountryCode = string.IsNullOrWhiteSpace(code) ? "PK" : code.ToUpperInvariant();
+    }
+
+    public void Archive()
+    {
+        IsArchived = true;
+        ArchivedAt = DateTime.UtcNow;
+    }
+
+    public void Unarchive()
+    {
+        IsArchived = false;
+        ArchivedAt = null;
     }
 }
