@@ -17,21 +17,24 @@ namespace RetailSuite.Api.Controllers;
 [Authorize]
 public class TenantsController : ControllerBase
 {
-    private readonly RetailDbContext          _db;
-    private readonly ITenantContext           _tenantContext;
-    private readonly ICurrentUserContext      _currentUser;
+    private readonly RetailDbContext             _db;
+    private readonly ITenantContext              _tenantContext;
+    private readonly ICurrentUserContext         _currentUser;
     private readonly ISubscriptionBillingService _billing;
+    private readonly ISubscriptionService        _subs;
 
     public TenantsController(
         RetailDbContext db,
         ITenantContext tenantContext,
         ICurrentUserContext currentUser,
-        ISubscriptionBillingService billing)
+        ISubscriptionBillingService billing,
+        ISubscriptionService subs)
     {
         _db            = db;
         _tenantContext = tenantContext;
         _currentUser   = currentUser;
         _billing       = billing;
+        _subs          = subs;
     }
 
     private async Task LogAuditAsync(Guid tenantId, string action, string details)
@@ -368,6 +371,51 @@ public class TenantsController : ControllerBase
     }
 
     // ---------------------------------------------------------------
+    // POST /api/tenants/{id}/subscription  — SuperAdmin: assign a plan to a
+    // tenant that has none yet, or change an existing one. Once a paid plan
+    // + billing cycle is set, the existing renewal background job takes over
+    // and auto-generates an invoice every cycle — no separate scheduling
+    // needed here, this just connects a tenant to that already-running engine.
+    // ---------------------------------------------------------------
+    [HttpPost("{id:guid}/subscription")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> AssignOrChangePlan(Guid id, [FromBody] AssignPlanRequest request)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        if (string.IsNullOrWhiteSpace(request.PlanCode))
+            return BadRequest(ApiResponse<object>.Fail("PlanCode is required."));
+
+        if (!Enum.TryParse<BillingCycle>(request.BillingCycle, ignoreCase: true, out var cycle))
+            return BadRequest(ApiResponse<object>.Fail("BillingCycle must be 'Monthly' or 'Yearly'."));
+
+        var existing = await _subs.GetActiveAsync(id);
+
+        if (existing == null)
+        {
+            var created = await _subs.CreateInitialSubscriptionAsync(id, request.PlanCode, cycle);
+            await LogAuditAsync(id, "PlanAssigned", $"Assigned plan {created.PlanCode} ({cycle})");
+
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                created.Id,
+                created.PlanCode,
+                Status       = created.Status.ToString(),
+                BillingCycle = created.BillingCycle.ToString(),
+                created.NextBillingAt
+            }));
+        }
+
+        var result = await _subs.ChangePlanAsync(id, request.PlanCode, cycle);
+        await LogAuditAsync(id, "PlanChanged",
+            $"{result.FromPlanCode} -> {result.ToPlanCode} ({cycle}), NetDue={result.NetDue:N2}");
+
+        return Ok(ApiResponse<object>.Ok(result));
+    }
+
+    // ---------------------------------------------------------------
     // GET /api/tenants/{id}/invoices/{invoiceId}  — SuperAdmin: full invoice
     // detail + its payment history. The tenant-facing equivalent
     // (GET /api/billing/invoices/{id}) is scoped to the caller's own tenant,
@@ -614,4 +662,10 @@ public class CreateInvoiceRequest
     public string? Currency { get; set; }
     public string? PlanCode { get; set; }
     public string  Reason   { get; set; } = string.Empty;
+}
+
+public class AssignPlanRequest
+{
+    public string PlanCode     { get; set; } = string.Empty;
+    public string BillingCycle { get; set; } = "Monthly";
 }

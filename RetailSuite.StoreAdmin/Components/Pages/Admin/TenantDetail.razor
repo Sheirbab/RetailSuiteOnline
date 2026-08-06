@@ -31,6 +31,13 @@
     string  _newInvoiceCurrency = string.Empty;
     string  _newInvoiceReason   = string.Empty;
 
+    // Assign/change plan form state
+    bool           _showPlanForm;
+    bool           _savingPlan;
+    string         _selectedPlanCode = string.Empty;
+    string         _selectedCycle    = "Monthly";
+    List<PlanOption> _plans = new();
+
     // Invoice detail (expand-on-click) state
     Guid?           _expandedInvoiceId;
     bool            _loadingInvoiceDetail;
@@ -54,6 +61,33 @@
     protected override async Task OnParametersSetAsync()
     {
         await LoadAsync();
+        await LoadPlansAsync();
+    }
+
+    async Task LoadPlansAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/subscriptions/plans");
+            using var doc = JsonDocument.Parse(json);
+            var arr = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            _plans.Clear();
+            if (arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in arr.EnumerateArray())
+                {
+                    _plans.Add(new PlanOption
+                    {
+                        Code         = p.GetProperty("code").GetString() ?? "",
+                        Name         = p.GetProperty("name").GetString() ?? "",
+                        MonthlyPrice = p.GetProperty("monthlyPrice").GetDecimal(),
+                        YearlyPrice  = p.GetProperty("yearlyPrice").GetDecimal()
+                    });
+                }
+            }
+        }
+        catch { /* non-fatal — plan dropdown just stays empty */ }
     }
 
     async Task LoadAsync()
@@ -278,6 +312,14 @@
         public DateTime CreatedAt { get; set; }
     }
 
+    class PlanOption
+    {
+        public string  Code         { get; set; } = string.Empty;
+        public string  Name         { get; set; } = string.Empty;
+        public decimal MonthlyPrice { get; set; }
+        public decimal YearlyPrice  { get; set; }
+    }
+
     class InvoiceDetail
     {
         public string        Reason     { get; set; } = string.Empty;
@@ -417,6 +459,50 @@
     }
 
     void CancelCreateInvoice() => _showCreateInvoice = false;
+
+    void OpenPlanForm()
+    {
+        _selectedPlanCode = _subscription?.PlanCode ?? _plans.FirstOrDefault()?.Code ?? "";
+        _selectedCycle    = _subscription?.BillingCycle ?? "Monthly";
+        _showPlanForm     = true;
+    }
+
+    void CancelPlanForm() => _showPlanForm = false;
+
+    async Task SubmitPlanChangeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPlanCode))
+        {
+            Toast.Show("Select a plan.");
+            return;
+        }
+
+        _savingPlan = true;
+        try
+        {
+            var payload = new { planCode = _selectedPlanCode, billingCycle = _selectedCycle };
+            var res     = await Http.PostAsJsonAsync($"api/tenants/{Id}/subscription", payload);
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                Toast.Show("Plan updated.");
+                _showPlanForm = false;
+                await LoadAsync();
+            }
+            else
+            {
+                using var doc = JsonDocument.Parse(content);
+                var msg = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Failed to update plan.";
+                Toast.Show(msg ?? "Failed to update plan.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _savingPlan = false;
+    }
 
     async Task ToggleInvoiceDetailAsync(InvoiceRow inv)
     {
@@ -571,7 +657,41 @@ else if (_tenant != null && _usage != null)
 
         <!-- Subscription -->
         <div class="card">
-            <h4 style="margin-bottom:12px;">Subscription</h4>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h4 style="margin:0;">Subscription</h4>
+                <button class="btn" style="font-size:12px;" @onclick="OpenPlanForm">
+                    @(_subscription == null ? "Assign Plan" : "Change Plan")
+                </button>
+            </div>
+
+            @if (_showPlanForm)
+            {
+                <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <select class="input" style="width:auto;padding:5px 8px;font-size:13px;" @bind="_selectedPlanCode">
+                            @foreach (var p in _plans)
+                            {
+                                <option value="@p.Code">@p.Name (@p.Code)</option>
+                            }
+                        </select>
+                        <select class="input" style="width:auto;padding:5px 8px;font-size:13px;" @bind="_selectedCycle">
+                            <option value="Monthly">Monthly</option>
+                            <option value="Yearly">Yearly</option>
+                        </select>
+                    </div>
+                    <p style="font-size:12px;color:#6b7280;margin:0 0 10px;">
+                        Once assigned, invoices for this plan are generated automatically each billing
+                        cycle by the renewal job — no separate scheduling needed.
+                    </p>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-primary" style="font-size:12px;" disabled="@_savingPlan" @onclick="SubmitPlanChangeAsync">
+                            @(_savingPlan ? "Saving..." : "Confirm")
+                        </button>
+                        <button class="btn" style="font-size:12px;" disabled="@_savingPlan" @onclick="CancelPlanForm">Cancel</button>
+                    </div>
+                </div>
+            }
+
             @if (_subscription == null)
             {
                 <p style="color:#9ca3af;font-size:14px;">No subscription on record.</p>
