@@ -7,6 +7,7 @@ using RetailSuite.Infrastructure.Seeders;
 using RetailSuite.Infrastructure.Modules.Identity.Entities;
 using RetailSuite.Infrastructure.Modules.Tenant.Entities;
 using RetailSuite.Infrastructure.Modules.Subscriptions.Entities;
+using RetailSuite.Infrastructure.Modules.Subscriptions.Services;
 using RetailSuite.Shared;
 
 namespace RetailSuite.Api.Controllers;
@@ -16,15 +17,21 @@ namespace RetailSuite.Api.Controllers;
 [Authorize]
 public class TenantsController : ControllerBase
 {
-    private readonly RetailDbContext     _db;
-    private readonly ITenantContext      _tenantContext;
-    private readonly ICurrentUserContext _currentUser;
+    private readonly RetailDbContext          _db;
+    private readonly ITenantContext           _tenantContext;
+    private readonly ICurrentUserContext      _currentUser;
+    private readonly ISubscriptionBillingService _billing;
 
-    public TenantsController(RetailDbContext db, ITenantContext tenantContext, ICurrentUserContext currentUser)
+    public TenantsController(
+        RetailDbContext db,
+        ITenantContext tenantContext,
+        ICurrentUserContext currentUser,
+        ISubscriptionBillingService billing)
     {
         _db            = db;
         _tenantContext = tenantContext;
         _currentUser   = currentUser;
+        _billing       = billing;
     }
 
     private async Task LogAuditAsync(Guid tenantId, string action, string details)
@@ -302,6 +309,125 @@ public class TenantsController : ControllerBase
     }
 
     // ---------------------------------------------------------------
+    // POST /api/tenants/{id}/invoices  — SuperAdmin: create an ad-hoc
+    // invoice for the tenant (e.g. to record an out-of-band payment
+    // arrangement). Reuses the existing (previously unwired)
+    // GenerateProrationInvoiceAsync — no new billing logic, just an
+    // entry point for it.
+    // ---------------------------------------------------------------
+    [HttpPost("{id:guid}/invoices")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> CreateInvoice(Guid id, [FromBody] CreateInvoiceRequest request)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(ApiResponse<object>.Fail("Tenant not found."));
+
+        if (request.Amount <= 0)
+            return BadRequest(ApiResponse<object>.Fail("Amount must be greater than zero."));
+
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(ApiResponse<object>.Fail("Reason is required."));
+
+        if (request.Reason.Trim().Length > 250)
+            return BadRequest(ApiResponse<object>.Fail("Reason must be 250 characters or fewer."));
+
+        var subscription = await _db.TenantSubscriptions
+            .IgnoreQueryFilters()
+            .Where(s => s.TenantId == id && !s.IsDeleted)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        var planCode = string.IsNullOrWhiteSpace(request.PlanCode)
+            ? (subscription?.PlanCode ?? "MANUAL")
+            : request.PlanCode.Trim().ToUpperInvariant();
+
+        var currency = string.IsNullOrWhiteSpace(request.Currency)
+            ? (subscription?.Currency ?? "PKR")
+            : request.Currency.Trim().ToUpperInvariant();
+
+        var invoice = await _billing.GenerateProrationInvoiceAsync(
+            id,
+            subscription?.Id ?? Guid.Empty,
+            request.Amount,
+            planCode,
+            currency,
+            request.Reason.Trim());
+
+        await LogAuditAsync(id, "InvoiceCreated",
+            $"Created invoice {invoice.InvoiceNumber} for {currency} {request.Amount:N2} — {request.Reason.Trim()}");
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            invoice.Total,
+            invoice.Currency,
+            invoice.DueDate
+        }));
+    }
+
+    // ---------------------------------------------------------------
+    // GET /api/tenants/{id}/invoices/{invoiceId}  — SuperAdmin: full invoice
+    // detail + its payment history. The tenant-facing equivalent
+    // (GET /api/billing/invoices/{id}) is scoped to the caller's own tenant,
+    // which doesn't work for a SuperAdmin looking at an arbitrary tenant.
+    // ---------------------------------------------------------------
+    [HttpGet("{id:guid}/invoices/{invoiceId:guid}")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> GetInvoiceDetail(Guid id, Guid invoiceId)
+    {
+        var invoice = await _db.SubscriptionInvoices
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(i => i.Id == invoiceId && i.TenantId == id);
+        if (invoice == null)
+            return NotFound(ApiResponse<object>.Fail("Invoice not found."));
+
+        var payments = await _db.SubscriptionPayments
+            .IgnoreQueryFilters()
+            .Where(p => p.InvoiceId == invoiceId)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                p.Id,
+                p.Amount,
+                p.Currency,
+                p.PaymentMethod,
+                p.Provider,
+                p.ProviderTxnRef,
+                Status = p.Status.ToString(),
+                p.FailureReason,
+                p.PaidAt,
+                p.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            Invoice = new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                invoice.PlanCode,
+                invoice.PeriodStart,
+                invoice.PeriodEnd,
+                invoice.Subtotal,
+                invoice.TaxAmount,
+                invoice.Total,
+                invoice.AmountPaid,
+                invoice.AmountDue,
+                invoice.Currency,
+                Status = invoice.Status.ToString(),
+                invoice.DueDate,
+                invoice.PaidAt,
+                invoice.Reason,
+                invoice.CreatedAt
+            },
+            Payments = payments
+        }));
+    }
+
+    // ---------------------------------------------------------------
     // GET /api/tenants/{id}  — SuperAdmin: full tenant detail (subscription,
     // usage vs plan limits, recent invoices). User list is fetched separately
     // via GET /api/tenants/{id}/users below.
@@ -480,4 +606,12 @@ public class UpdateTenantRequest
     public string  Subdomain    { get; set; } = string.Empty;
     public string? BillingEmail { get; set; }
     public string? CountryCode  { get; set; }
+}
+
+public class CreateInvoiceRequest
+{
+    public decimal Amount   { get; set; }
+    public string? Currency { get; set; }
+    public string? PlanCode { get; set; }
+    public string  Reason   { get; set; } = string.Empty;
 }

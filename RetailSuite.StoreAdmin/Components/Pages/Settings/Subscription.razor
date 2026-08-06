@@ -127,6 +127,141 @@ else
     </div>
 }
 
+<!-- ============================ Invoices ============================ -->
+<!-- Deliberately outside the has-subscription branch above: a tenant can have
+     invoices (e.g. an ad-hoc one from SuperAdmin) even with no active
+     subscription row, so this must always render regardless of _sub. -->
+@if (!_loading)
+{
+    <div class="card">
+        <h4 style="margin-bottom:10px;">Invoices</h4>
+        @if (_loadingInvoices)
+        {
+            <div class="spinner"></div>
+        }
+        else if (!_invoices.Any())
+        {
+            <p style="color:#9ca3af;font-size:13px;">No invoices yet.</p>
+        }
+        else
+        {
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Period</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Due</th>
+                        <th>Amount Due</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in _invoices)
+                    {
+                        <tr>
+                            <td style="font-family:monospace;">
+                                <a href="javascript:void(0)" @onclick="() => ToggleInvoiceDetailAsync(inv)" @onclick:preventDefault>
+                                    @inv.InvoiceNumber
+                                </a>
+                            </td>
+                            <td style="color:#6b7280;font-size:13px;">@inv.PeriodStart.ToString("yyyy-MM-dd") → @inv.PeriodEnd.ToString("yyyy-MM-dd")</td>
+                            <td>@inv.Currency @inv.Total.ToString("N2")</td>
+                            <td>
+                                <span class="status-pill" style="background:@InvoiceStatusBg(inv.Status);color:@InvoiceStatusFg(inv.Status);">
+                                    @inv.Status
+                                </span>
+                            </td>
+                            <td style="color:#6b7280;font-size:13px;">@inv.DueDate.ToString("yyyy-MM-dd")</td>
+                            <td>@inv.Currency @inv.AmountDue.ToString("N2")</td>
+                            <td>
+                                @if (PayableInvoiceStatuses.Contains(inv.Status) && inv.AmountDue > 0)
+                                {
+                                    <button class="btn btn-primary" style="padding:3px 10px;font-size:12px;" @onclick="() => OpenPayInvoice(inv)">Pay Now</button>
+                                }
+                            </td>
+                        </tr>
+                        @if (_payingInvoiceId == inv.Id)
+                        {
+                            <tr>
+                                <td colspan="7" style="background:#f8fafc;">
+                                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0;">
+                                        <label style="font-size:13px;color:#374151;">Pay via:</label>
+                                        <select class="input" style="width:auto;padding:5px 8px;font-size:13px;" @bind="_payMethod">
+                                            @foreach (var m in ManualMethods)
+                                            {
+                                                <option value="@m.Code">@m.Name</option>
+                                            }
+                                        </select>
+                                        <button class="btn btn-primary" style="font-size:12px;" disabled="@_payingSubmitting" @onclick="SubmitPayInvoiceAsync">
+                                            @(_payingSubmitting ? "Processing..." : $"Confirm {inv.Currency} {inv.AmountDue:N2}")
+                                        </button>
+                                        <button class="btn" style="font-size:12px;" disabled="@_payingSubmitting" @onclick="CancelPayInvoice">Cancel</button>
+                                    </div>
+                                    <p style="font-size:12px;color:#6b7280;margin:0 0 8px;">
+                                        JazzCash/EasyPaisa charge immediately if configured. Bank transfer/Cash are recorded
+                                        as pending until our team confirms receipt.
+                                    </p>
+                                </td>
+                            </tr>
+                        }
+                        @if (_expandedInvoiceId == inv.Id)
+                        {
+                            <tr>
+                                <td colspan="7" style="background:#f8fafc;">
+                                    @if (_loadingInvoiceDetail)
+                                    {
+                                        <div class="spinner" style="margin:10px 0;"></div>
+                                    }
+                                    else if (_invoiceDetail != null)
+                                    {
+                                        <div style="padding:10px 0;font-size:13px;">
+                                            <div style="margin-bottom:8px;"><strong>Reason:</strong> @_invoiceDetail.Reason</div>
+                                            <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;color:#374151;">
+                                                <span><strong>Subtotal:</strong> @inv.Currency @_invoiceDetail.Subtotal.ToString("N2")</span>
+                                                <span><strong>Paid so far:</strong> @inv.Currency @_invoiceDetail.AmountPaid.ToString("N2")</span>
+                                                @if (_invoiceDetail.PaidAt.HasValue)
+                                                {
+                                                    <span><strong>Paid at:</strong> @_invoiceDetail.PaidAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                                }
+                                            </div>
+                                            <strong>Payment attempts</strong>
+                                            @if (!_invoiceDetail.Payments.Any())
+                                            {
+                                                <p style="color:#9ca3af;margin-top:6px;">No payment attempts yet.</p>
+                                            }
+                                            else
+                                            {
+                                                <table class="table" style="margin-top:6px;background:#fff;">
+                                                    <thead>
+                                                        <tr><th>Method</th><th>Status</th><th>Amount</th><th>When</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var p in _invoiceDetail.Payments)
+                                                        {
+                                                            <tr>
+                                                                <td>@p.PaymentMethod</td>
+                                                                <td>@p.Status</td>
+                                                                <td>@p.Currency @p.Amount.ToString("N2")</td>
+                                                                <td style="color:#6b7280;">@p.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
 <!-- ============================ Change-plan modal ============================ -->
 <Modal Visible="@_showChangePlan" OnClose="() => _showChangePlan = false">
     <h3 style="margin-bottom:14px;">Change plan</h3>
@@ -259,6 +394,21 @@ else
     string _manualMethod = "JazzCash";
     CardForm _card = new();
 
+    // Invoices
+    bool               _loadingInvoices = true;
+    List<InvoiceRow>   _invoices = new();
+    static readonly HashSet<string> PayableInvoiceStatuses = new() { "Open", "Overdue" };
+
+    // Pay-invoice form state
+    Guid?  _payingInvoiceId;
+    string _payMethod = "JazzCash";
+    bool   _payingSubmitting;
+
+    // Invoice detail (expand-on-click) state
+    Guid?          _expandedInvoiceId;
+    bool           _loadingInvoiceDetail;
+    InvoiceDetail? _invoiceDetail;
+
     static readonly ManualMethodOption[] ManualMethods = new[]
     {
         new ManualMethodOption("JazzCash",     "JazzCash",      "📱", "Pay via JazzCash mobile wallet"),
@@ -273,6 +423,7 @@ else
         {
             await LoadSubscription();
             await LoadPlans();
+            await LoadInvoices();
         }
     }
 
@@ -281,7 +432,17 @@ else
         _loading = true; StateHasChanged();
         try
         {
-            var json = await Http.GetStringAsync("api/subscriptions/me");
+            var res = await Http.GetAsync("api/subscriptions/me");
+            if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // No active subscription is a valid state (e.g. a tenant that predates
+                // auto-provisioning a Free plan on signup) — not an error to report.
+                _sub = null;
+                return;
+            }
+            res.EnsureSuccessStatusCode();
+
+            var json = await res.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
             var d = doc.RootElement.GetProperty("data");
 
@@ -335,6 +496,168 @@ else
         }
         catch { _plans = new(); }
     }
+
+    async Task LoadInvoices()
+    {
+        _loadingInvoices = true; StateHasChanged();
+        try
+        {
+            var json = await Http.GetStringAsync("api/billing/invoices");
+            using var doc = JsonDocument.Parse(json);
+            var arr = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            _invoices.Clear();
+            if (arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var i in arr.EnumerateArray())
+                {
+                    _invoices.Add(new InvoiceRow
+                    {
+                        Id            = i.GetProperty("id").GetGuid(),
+                        InvoiceNumber = i.GetProperty("invoiceNumber").GetString() ?? "—",
+                        PeriodStart   = i.GetProperty("periodStart").GetDateTime(),
+                        PeriodEnd     = i.GetProperty("periodEnd").GetDateTime(),
+                        Total         = i.GetProperty("total").GetDecimal(),
+                        Currency      = i.GetProperty("currency").GetString() ?? "PKR",
+                        Status        = i.GetProperty("status").GetString() ?? "—",
+                        DueDate       = i.GetProperty("dueDate").GetDateTime(),
+                        AmountDue     = i.GetProperty("amountDue").GetDecimal()
+                    });
+                }
+            }
+        }
+        catch (Exception ex) { Toast.Show($"Failed to load invoices: {ex.Message}"); }
+        _loadingInvoices = false; StateHasChanged();
+    }
+
+    void OpenPayInvoice(InvoiceRow inv)
+    {
+        _payingInvoiceId = inv.Id;
+        _payMethod       = "JazzCash";
+    }
+
+    void CancelPayInvoice() => _payingInvoiceId = null;
+
+    async Task SubmitPayInvoiceAsync()
+    {
+        if (_payingInvoiceId == null) return;
+
+        _payingSubmitting = true;
+        try
+        {
+            var res     = await Http.PostAsJsonAsync($"api/billing/invoices/{_payingInvoiceId}/pay", new { paymentMethod = _payMethod });
+            var content = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(content);
+                var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+                var status = data.TryGetProperty("status", out var st) ? st.GetString() : null;
+
+                Toast.Show(status switch
+                {
+                    "Succeeded" => "Payment succeeded.",
+                    "Pending"   => "Payment submitted — pending confirmation.",
+                    "Failed"    => "Payment failed. Try a different method.",
+                    _           => "Payment submitted."
+                });
+
+                var paidInvoiceId = _payingInvoiceId.Value;
+                _payingInvoiceId = null;
+                await LoadInvoices();
+                await LoadSubscription();
+
+                if (_expandedInvoiceId == paidInvoiceId)
+                    await LoadInvoiceDetailAsync(paidInvoiceId);
+            }
+            else
+            {
+                using var doc = JsonDocument.Parse(content);
+                var msg = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : "Payment failed.";
+                Toast.Show(msg ?? "Payment failed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error: {ex.Message}");
+        }
+        _payingSubmitting = false;
+    }
+
+    async Task ToggleInvoiceDetailAsync(InvoiceRow inv)
+    {
+        if (_expandedInvoiceId == inv.Id)
+        {
+            _expandedInvoiceId = null;
+            _invoiceDetail     = null;
+            return;
+        }
+
+        _expandedInvoiceId = inv.Id;
+        await LoadInvoiceDetailAsync(inv.Id);
+    }
+
+    async Task LoadInvoiceDetailAsync(Guid invoiceId)
+    {
+        _invoiceDetail        = null;
+        _loadingInvoiceDetail = true;
+        try
+        {
+            var json = await Http.GetStringAsync($"api/billing/invoices/{invoiceId}");
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            var i = data.GetProperty("invoice");
+            var detail = new InvoiceDetail
+            {
+                Reason     = i.GetProperty("reason").GetString() ?? "",
+                Subtotal   = i.GetProperty("subtotal").GetDecimal(),
+                AmountPaid = i.GetProperty("amountPaid").GetDecimal(),
+                PaidAt     = i.TryGetProperty("paidAt", out var pa) && pa.ValueKind != JsonValueKind.Null ? pa.GetDateTime() : (DateTime?)null
+            };
+
+            if (data.TryGetProperty("payments", out var pays) && pays.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in pays.EnumerateArray())
+                {
+                    detail.Payments.Add(new PaymentRow
+                    {
+                        Amount        = p.GetProperty("amount").GetDecimal(),
+                        Currency      = p.GetProperty("currency").GetString() ?? "PKR",
+                        PaymentMethod = p.GetProperty("paymentMethod").GetString() ?? "—",
+                        Status        = p.GetProperty("status").GetString() ?? "—",
+                        CreatedAt     = p.GetProperty("createdAt").GetDateTime()
+                    });
+                }
+            }
+
+            _invoiceDetail = detail;
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Error loading invoice: {ex.Message}");
+        }
+        _loadingInvoiceDetail = false;
+    }
+
+    static string InvoiceStatusBg(string s) => s switch
+    {
+        "Paid"     => "#dcfce7",
+        "Open"     => "#dbeafe",
+        "Overdue"  => "#fee2e2",
+        "Void"     => "#f3f4f6",
+        "Refunded" => "#f3f4f6",
+        _          => "#f3f4f6"
+    };
+    static string InvoiceStatusFg(string s) => s switch
+    {
+        "Paid"     => "#15803d",
+        "Open"     => "#1e40af",
+        "Overdue"  => "#b91c1c",
+        "Void"     => "#374151",
+        "Refunded" => "#374151",
+        _          => "#374151"
+    };
 
     void OpenChangePlan()
     {
@@ -484,6 +807,37 @@ else
         public string  Description { get; set; } = "";
         public decimal MonthlyPrice { get; set; }
         public decimal YearlyPrice { get; set; }
+    }
+
+    class InvoiceRow
+    {
+        public Guid      Id            { get; set; }
+        public string    InvoiceNumber { get; set; } = string.Empty;
+        public DateTime  PeriodStart   { get; set; }
+        public DateTime  PeriodEnd     { get; set; }
+        public decimal   Total         { get; set; }
+        public string    Currency      { get; set; } = "PKR";
+        public string    Status        { get; set; } = string.Empty;
+        public DateTime  DueDate       { get; set; }
+        public decimal   AmountDue     { get; set; }
+    }
+
+    class InvoiceDetail
+    {
+        public string           Reason     { get; set; } = string.Empty;
+        public decimal          Subtotal   { get; set; }
+        public decimal          AmountPaid { get; set; }
+        public DateTime?        PaidAt     { get; set; }
+        public List<PaymentRow> Payments   { get; set; } = new();
+    }
+
+    class PaymentRow
+    {
+        public decimal  Amount        { get; set; }
+        public string   Currency      { get; set; } = "PKR";
+        public string   PaymentMethod { get; set; } = string.Empty;
+        public string   Status        { get; set; } = string.Empty;
+        public DateTime CreatedAt     { get; set; }
     }
 
     class CardForm
