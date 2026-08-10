@@ -229,7 +229,12 @@ else
 
             <div class="pd-qty-row">
                 <label style="font-size:13px;color:#6b7280;">Qty</label>
-                <input type="number" class="input pd-qty-input" @bind="_qty" min="1" />
+                <div class="qty-stepper">
+                    <button type="button" @onclick="DecrementQty" disabled="@(_qty <= 1)">−</button>
+                    <span class="qty-value">@_qty</span>
+                    <button type="button" @onclick="IncrementQty"
+                            disabled="@(_selected != null && _qty >= _selected.StockQuantity)">+</button>
+                </div>
                 <button class="btn btn-primary" style="padding:10px 22px;font-size:14px;"
                         disabled="@(_selected == null || _selected.StockQuantity <= 0)"
                         @onclick="AddToCart">
@@ -240,6 +245,24 @@ else
             <a href="@($"/store/{TenantSlug}")" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
         </div>
     </div>
+
+    <!-- Sticky mobile CTA: on a long product page the inline "Add to cart"
+         above scrolls out of view, so this pins price + qty + action to the
+         bottom of the screen at all times on mobile (hidden on desktop). -->
+    @if (_selected != null)
+    {
+        <div class="pd-sticky-cta">
+            <div>
+                <div class="pd-sticky-price">Rs @_selected.Price.ToString("N2")</div>
+                <div style="font-size:11px;color:#9ca3af;">Qty @_qty</div>
+            </div>
+            <button class="btn btn-primary" style="padding:10px 24px;white-space:nowrap;"
+                    disabled="@(_selected.StockQuantity <= 0)"
+                    @onclick="AddToCart">
+                🛒 @(_selected.StockQuantity <= 0 ? "Out of stock" : "Add to cart")
+            </button>
+        </div>
+    }
 
     <!-- ============================ Long description + specs ============================ -->
     @if (!string.IsNullOrEmpty(_product.Description) || _product.Specs.Any() || !string.IsNullOrEmpty(_product.Tags))
@@ -491,10 +514,21 @@ else
                 v.Attributes.TryGetValue(sel.Key, out var avo) && avo == sel.Value));
     }
 
+    void DecrementQty()
+    {
+        if (_qty > 1) _qty--;
+    }
+
+    void IncrementQty()
+    {
+        if (_selected == null || _qty < _selected.StockQuantity) _qty++;
+    }
+
     void AddToCart()
     {
         if (_selected == null || _product == null) return;
         if (_qty < 1) _qty = 1;
+        if (_qty > _selected.StockQuantity) _qty = _selected.StockQuantity;
 
         Cart.AddItem(new CartItem
         {

@@ -142,7 +142,17 @@
 
         @if (_loading)
         {
-            <div class="spinner"></div>
+            <div class="product-grid">
+                @for (var i = 0; i < 8; i++)
+                {
+                    <div class="skeleton-card">
+                        <div class="skeleton-img skeleton-shimmer"></div>
+                        <div class="skeleton-line skeleton-shimmer"></div>
+                        <div class="skeleton-line skeleton-shimmer short"></div>
+                        <div class="skeleton-btn skeleton-shimmer"></div>
+                    </div>
+                }
+            </div>
         }
         else if (!_products.Any())
         {
@@ -183,10 +193,6 @@
                                 }
                             </div>
                             <div class="product-actions">
-                                <button class="btn" @onclick:stopPropagation="true"
-                                        @onclick="() => GoToProduct(p.Id)">
-                                    View
-                                </button>
                                 @if (p.DefaultVariantId.HasValue)
                                 {
                                     <button class="btn btn-primary"
@@ -194,6 +200,13 @@
                                             @onclick:stopPropagation="true"
                                             @onclick="() => AddToCart(p)">
                                         🛒 @(p.DefaultVariantStock <= 0 ? "Out of stock" : "Add to cart")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn" @onclick:stopPropagation="true"
+                                            @onclick="() => GoToProduct(p.Id)">
+                                        View options
                                     </button>
                                 }
                             </div>

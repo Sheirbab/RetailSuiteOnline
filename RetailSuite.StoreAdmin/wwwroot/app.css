@@ -39,6 +39,9 @@
 
     --sidebar-width:        232px;
     --header-height:        58px;
+
+    /* Storefront-specific */
+    --shop-bottom-nav-height: 60px;
 }
 
 * { box-sizing: border-box; }
@@ -476,6 +479,108 @@ select.input { height: 38px; }
     font-weight: 700;
 }
 
+/* ===============================================================
+   Desktop/base defaults for elements that flip appearance on mobile.
+   These MUST precede the @media (max-width: 768px) block below —
+   an unconditional rule beats a media-query rule of equal specificity
+   when it comes later in source order, regardless of viewport width.
+   =============================================================== */
+.cart-desktop-table { display: block; }
+.cart-mobile-list    { display: none; }
+.pd-sticky-cta        { display: none; }
+.checkout-sticky-bar { display: none; }
+
+/* ===============================================================
+   Mobile bottom nav — replaces the top nav bar on small screens.
+   Hidden on desktop (display:none here; flipped to flex at 768px below).
+   =============================================================== */
+.shop-bottom-nav {
+    display: none;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 200; /* same tier as .shop-header — always reachable */
+    background: #fff;
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -2px 10px rgba(17,24,39,.06);
+    padding-bottom: env(safe-area-inset-bottom, 0); /* clears the iOS home-indicator */
+}
+
+.shop-bottom-nav-inner {
+    display: flex;
+    height: var(--shop-bottom-nav-height);
+}
+
+.shop-bottom-nav a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 11px;
+    position: relative;
+}
+
+.shop-bottom-nav a .bn-icon { font-size: 20px; line-height: 1; }
+
+.shop-bottom-nav a.active {
+    color: var(--color-primary-dark);
+    font-weight: 600;
+}
+
+.shop-bottom-nav .bn-badge {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 20px);
+    background: var(--color-warning);
+    color: #fff;
+    border-radius: 99px;
+    font-size: 10px;
+    min-width: 15px;
+    height: 15px;
+    line-height: 15px;
+    text-align: center;
+    font-weight: 700;
+}
+
+/* ===============================================================
+   Quantity stepper — shared by Product Detail and Cart, replacing raw
+   number inputs with proper touch-friendly -/+ controls.
+   =============================================================== */
+.qty-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    overflow: hidden;
+    background: #fff;
+}
+.qty-stepper button {
+    width: 34px;
+    height: 34px;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s;
+}
+.qty-stepper button:hover:not(:disabled) { background: var(--color-primary-soft); }
+.qty-stepper button:disabled { opacity: .35; cursor: not-allowed; }
+.qty-stepper .qty-value {
+    min-width: 32px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    user-select: none;
+}
+
 .shop-main {
     max-width: 1200px;
     margin: 28px auto;
@@ -504,16 +609,19 @@ select.input { height: 38px; }
     border-color: rgba(99,102,241,.4);
 }
 
+/* aspect-ratio (not a fixed pixel height) so the image scales cleanly at
+   every breakpoint without a separate height override per media query. */
 .product-img {
     width: 100%;
-    height: 180px;
+    aspect-ratio: 1 / 1;
     object-fit: cover;
     background: linear-gradient(135deg,#fafafd,#eef2ff);
+    display: block;
 }
 
 .product-img-placeholder {
     width: 100%;
-    height: 180px;
+    aspect-ratio: 1 / 1;
     background: linear-gradient(135deg,#fafafd,#eef2ff);
     display: flex;
     align-items: center;
@@ -528,25 +636,46 @@ select.input { height: 38px; }
                 color: var(--color-text); line-height: 1.3; }
 .product-price { color: var(--color-primary-dark); font-size: 16px; font-weight: 700; }
 
-/* View + Add to cart, stacked full-width on each grid card. (Side-by-side
-   with flex:1 overflowed on narrow cards — flex items don't shrink below
-   their text's natural width unless min-width:0 is set, so "Add to cart"
-   spilled past the card edge instead of wrapping or compressing.) */
-.product-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
-}
+/* Single, full-width primary action. Tapping the card itself (image/name/
+   price) already navigates to the product — a separate "View" button next
+   to "Add to cart" was a redundant tap target and the two-button stack was
+   the source of a mobile overflow bug earlier; one clear action reads
+   better and removes that whole class of bug. */
+.product-actions { margin-top: 10px; }
 .product-actions .btn {
     width: 100%;
-    padding: 8px 6px;
+    padding: 9px 6px;
     font-size: 13px;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ===============================================================
+   Skeleton loading — shown in place of the product grid while it loads,
+   instead of a single generic spinner.
+   =============================================================== */
+.skeleton-card {
+    background: #fff;
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+.skeleton-shimmer {
+    background: linear-gradient(90deg, #eef0f4 25%, #f6f7fa 37%, #eef0f4 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+.skeleton-card .skeleton-img   { width: 100%; aspect-ratio: 1 / 1; }
+.skeleton-card .skeleton-line  { height: 12px; border-radius: 6px; margin: 10px 12px; }
+.skeleton-card .skeleton-line.short { width: 50%; }
+.skeleton-card .skeleton-btn   { height: 34px; border-radius: var(--radius-sm); margin: 10px 12px 12px; }
 
 /* Categories toggle — a nav-menu-style trigger for the sidebar drawer.
    Hidden on desktop (sidebar is always visible there); on mobile it opens
@@ -620,6 +749,50 @@ select.input { height: 38px; }
 @media (max-width: 768px) {
     body { font-size: 14px; }
 
+    .shop-bottom-nav { display: block; }
+
+    .cart-desktop-table { display: none; }
+    .cart-mobile-list    { display: block; }
+
+    .pd-sticky-cta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        z-index: 190; /* below .shop-bottom-nav (200) so both can coexist */
+        background: #fff;
+        border-top: 1px solid var(--color-border);
+        box-shadow: 0 -2px 10px rgba(17,24,39,.08);
+        padding: 10px 16px calc(10px + var(--shop-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+    }
+    .pd-sticky-cta .pd-sticky-price { font-size: 17px; font-weight: 800; color: var(--color-primary-dark); }
+    .pd-sticky-cta .btn { flex-shrink: 0; }
+
+    /* PDP content needs bottom clearance for both the sticky CTA bar and the
+       bottom nav sitting beneath it. */
+    .pd-shell, .pd-below { margin-bottom: calc(64px + var(--shop-bottom-nav-height)); }
+
+    .checkout-sticky-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        z-index: 190;
+        background: #fff;
+        border-top: 1px solid var(--color-border);
+        box-shadow: 0 -2px 10px rgba(17,24,39,.08);
+        padding: 10px 16px calc(10px + var(--shop-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+    }
+    .checkout-sticky-bar .checkout-sticky-total { font-size: 12px; color: var(--color-text-muted); }
+    .checkout-sticky-bar .checkout-sticky-amount { font-size: 17px; font-weight: 800; color: var(--color-text); }
+
+    /* Clears both the sticky bar and the bottom nav sitting beneath it. */
+    .checkout-shell { margin-bottom: calc(64px + var(--shop-bottom-nav-height)); }
+
     .sidebar {
         position: fixed;
         top: 0;
@@ -646,7 +819,6 @@ select.input { height: 38px; }
 
     /* Two-column grids stack */
     .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-    .product-img, .product-img-placeholder { height: 140px; }
 
     /* Shop home: product grid takes the full width; the sidebar becomes a
        left-anchored drawer (below) instead of an in-flow column. */
@@ -698,12 +870,16 @@ select.input { height: 38px; }
     /* Recipient/payment/wallet-stat grids collapse to one column */
     .two-col-grid { grid-template-columns: 1fr; }
 
-    /* Storefront header content wraps; navigation chips stay scrollable */
+    /* Storefront header: on mobile, primary nav moves to the fixed bottom
+       tab bar (.shop-bottom-nav) — the top bar just shows the brand, so it
+       no longer needs to wrap/shrink nav links to fit. */
     .shop-header { padding: 8px 16px; }
     .shop-brand  { font-size: 17px; }
-    .shop-nav a  { padding: 6px 10px; font-size: 13px; }
+    .shop-nav    { display: none; }
 
-    .shop-main { margin: 18px auto; padding: 0 14px; }
+    /* Leaves room for the fixed bottom nav bar so the last bit of page
+       content isn't hidden underneath it. */
+    .shop-main { margin: 18px auto; padding: 0 14px calc(var(--shop-bottom-nav-height) + 14px); }
 
     /* Modal full-width on phone */
     .modal { max-width: 100%; padding: 18px; border-radius: var(--radius); }
@@ -712,10 +888,67 @@ select.input { height: 38px; }
     .footer { padding: 12px 16px; }
 }
 
+/* ===============================================================
+   Cart — card list on mobile, table on desktop. A <table> doesn't reflow
+   usefully at narrow widths (cramped columns, horizontal scroll), so the
+   page renders two markup variants and CSS picks one — simpler and safer
+   than reshaping a table with JS. (Base display rules live near the top
+   of the file, before the @media block, so they don't override it.)
+   =============================================================== */
+.cart-item-card {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--color-border-soft);
+}
+.cart-item-card:last-child { border-bottom: none; }
+.cart-item-card img, .cart-item-card .cart-item-noimg {
+    width: 64px; height: 64px; border-radius: var(--radius-sm);
+    object-fit: cover; flex-shrink: 0; background: var(--color-border-soft);
+}
+.cart-item-card .cart-item-body { flex: 1; min-width: 0; }
+.cart-item-card .cart-item-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+.cart-item-card .cart-item-sku  { font-size: 12px; color: var(--color-text-faint); margin-bottom: 6px; }
+.cart-item-card .cart-item-row  { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cart-item-card .cart-item-total { font-weight: 700; font-size: 14px; }
+
+/* ===============================================================
+   Product Detail — sticky mobile "Add to cart" bar. On a long product
+   page the inline button scrolls out of view; this pins price + action
+   to the bottom of the screen at all times on mobile. (Base display:none
+   lives near the top of the file, before the @media block.)
+   =============================================================== */
+
+/* ===============================================================
+   Checkout — step header + sticky mobile total/place-order bar. The form
+   itself is unchanged (still one scrollable page, so nothing about the
+   working order-placement logic changes) — this is a presentation layer:
+   a compact numbered-step header instead of plain "1./2./3." text, and a
+   bottom bar so the total + place-order action don't require scrolling
+   all the way down.
+   =============================================================== */
+.checkout-steps {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 18px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    flex-wrap: wrap;
+}
+.checkout-step { display: flex; align-items: center; gap: 6px; }
+.checkout-step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-border-soft); color: var(--color-text-muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.checkout-step.done .checkout-step-num { background: var(--color-success); color: #fff; }
+.checkout-step-sep { color: var(--color-border); }
+
 /* Small phones (<= 380px) */
 @media (max-width: 380px) {
     .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .product-img, .product-img-placeholder { height: 110px; }
     .stat-value { font-size: 24px; }
 }
 

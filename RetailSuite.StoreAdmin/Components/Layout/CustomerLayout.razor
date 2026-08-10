@@ -41,6 +41,29 @@
     <footer style="margin-top:40px;padding:14px 16px;text-align:center;font-size:12px;color:#9ca3af;">
         © @DateTime.Now.Year RetailSuite
     </footer>
+
+    <!-- Mobile-only: replaces the top nav as the primary navigation on small
+         screens (hidden on desktop via CSS). -->
+    <nav class="shop-bottom-nav">
+        <div class="shop-bottom-nav-inner">
+            <a href="@StorePath("")" class="@ActiveClass("")">
+                <span class="bn-icon">🏠</span> Shop
+            </a>
+            <a href="@StorePath("track")" class="@ActiveClass("track")">
+                <span class="bn-icon">📦</span> Track
+            </a>
+            <a href="@StorePath("wallet")" class="@ActiveClass("wallet")">
+                <span class="bn-icon">💳</span> Wallet
+            </a>
+            <a href="@StorePath("cart")" class="@ActiveClass("cart")" style="position:relative;">
+                <span class="bn-icon">🛒</span> Cart
+                @if (Cart.TotalCount > 0)
+                {
+                    <span class="bn-badge">@Cart.TotalCount</span>
+                }
+            </a>
+        </div>
+    </nav>
 </div>
 
 <style>
@@ -61,6 +84,17 @@
 
     string StorePath(string relative) =>
         string.IsNullOrEmpty(relative) ? $"/store/{Store.TenantSlug}" : $"/store/{Store.TenantSlug}/{relative}";
+
+    // Highlights the matching bottom-nav tab for the current page. Compares
+    // trimmed relative paths rather than exact strings so a product detail
+    // page (/store/{slug}/product/{id}) still doesn't (mis)match "Shop" —
+    // only an exact route match highlights.
+    string ActiveClass(string relative)
+    {
+        var current = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        var target  = StorePath(relative).TrimStart('/').TrimEnd('/');
+        return current == target ? "active" : "";
+    }
 
     protected override void OnInitialized()
     {

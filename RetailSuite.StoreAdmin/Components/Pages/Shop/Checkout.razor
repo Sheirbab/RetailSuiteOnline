@@ -78,8 +78,25 @@
 }
 else
 {
-    <div style="max-width:560px;margin:0 auto;">
-        <h2 style="margin-bottom:20px;">Checkout</h2>
+    <div class="checkout-shell" style="max-width:560px;margin:0 auto;">
+        <h2 style="margin-bottom:14px;">Checkout</h2>
+
+        @if (Cart.Items.Any())
+        {
+            <div class="checkout-steps">
+                <div class="checkout-step @(StepDetailsDone ? "done" : "")">
+                    <span class="checkout-step-num">@(StepDetailsDone ? "✓" : "1")</span> Details
+                </div>
+                <span class="checkout-step-sep">—</span>
+                <div class="checkout-step @(StepDeliveryDone ? "done" : "")">
+                    <span class="checkout-step-num">@(StepDeliveryDone ? "✓" : "2")</span> Delivery
+                </div>
+                <span class="checkout-step-sep">—</span>
+                <div class="checkout-step">
+                    <span class="checkout-step-num">3</span> Payment
+                </div>
+            </div>
+        }
 
         @if (!string.IsNullOrEmpty(_error))
         {
@@ -257,7 +274,7 @@ else
                 <hr style="margin:6px 0;" />
                 <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;">
                     <span>Total</span>
-                    <span>Rs @((Math.Max(0, Cart.TotalAmount + _shippingFee - (_applyCredit ? _creditToApply : 0))).ToString("N2"))</span>
+                    <span>Rs @OrderTotal.ToString("N2")</span>
                 </div>
                 <button class="btn btn-primary full" style="margin-top:14px;"
                         disabled="@_placing"
@@ -267,6 +284,21 @@ else
                 <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:8px;">
                     By placing this order you agree to our terms.
                 </p>
+            </div>
+
+            <!-- Sticky mobile bar: the total + place-order button above scroll
+                 out of view on a long checkout form. Calls the same PlaceOrder()
+                 method — no duplicate validation/order logic. -->
+            <div class="checkout-sticky-bar">
+                <div>
+                    <div class="checkout-sticky-total">Total</div>
+                    <div class="checkout-sticky-amount">Rs @OrderTotal.ToString("N2")</div>
+                </div>
+                <button class="btn btn-primary" style="white-space:nowrap;"
+                        disabled="@_placing"
+                        @onclick="PlaceOrder">
+                    @(_placing ? "Placing..." : "Place order")
+                </button>
             </div>
         }
     </div>
@@ -316,6 +348,18 @@ else
 
     decimal MaxApplyableCredit =>
         Math.Min(_walletBalance, Cart.TotalAmount + _shippingFee);
+
+    // Purely presentational — drives the step-header checkmarks. Doesn't
+    // gate anything, so it can't block or break order placement.
+    bool StepDetailsDone  => !string.IsNullOrWhiteSpace(_name) && !string.IsNullOrWhiteSpace(_phone);
+    bool StepDeliveryDone =>
+        !string.IsNullOrWhiteSpace(_selectedShippingCode) &&
+        (!_requireAddress ||
+            (!string.IsNullOrWhiteSpace(_address.RecipientName) &&
+             !string.IsNullOrWhiteSpace(_address.Line1) &&
+             !string.IsNullOrWhiteSpace(_address.City)));
+
+    decimal OrderTotal => Math.Max(0, Cart.TotalAmount + _shippingFee - (_applyCredit ? _creditToApply : 0));
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
