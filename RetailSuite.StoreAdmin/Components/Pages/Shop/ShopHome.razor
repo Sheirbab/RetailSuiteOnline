@@ -7,17 +7,52 @@
 @inject ApiUrlService Api
 @using System.Text.Json
 
-<button class="btn shop-cat-toggle" @onclick="() => _categoriesOpen = !_categoriesOpen">
-    📂 Categories @(_categoriesOpen ? "▴" : "▾")
-</button>
+<section class="shop-hero">
+    <div>
+        <p class="shop-eyebrow">Fresh picks for your store</p>
+        <h1>@(_selectedCategoryName ?? "Shop products")</h1>
+        <p>Browse inventory, compare variants, and checkout quickly from any device.</p>
+    </div>
+    <div class="shop-hero-search">
+        <input class="input shop-search-input" placeholder="Search by product, SKU, or brand"
+               value="@_search"
+               @oninput="OnSearchChanged" />
+    </div>
+</section>
 
-<div class="shop-sidebar-backdrop @(_categoriesOpen ? "open" : "")" @onclick="() => _categoriesOpen = false"></div>
+<div class="category-strip" aria-label="Product categories">
+    <button type="button"
+            class="category-chip @(_selectedCategoryId == null ? "selected" : "")"
+            @onclick="() => SelectCategory(null)">
+        All
+    </button>
+    @if (_tree != null)
+    {
+        @foreach (var row in FlattenVisibleTree())
+        {
+            var c = row.Node;
+            <button type="button"
+                    class="category-chip @(_selectedCategoryId == c.Id ? "selected" : "")"
+                    @onclick="() => SelectCategory(c.Id)">
+                @c.Name
+                <span>@c.TotalCount</span>
+            </button>
+        }
+    }
+</div>
 
 <div class="shop-home-layout">
 
     <!-- Categories sidebar -->
-    <div class="card shop-sidebar @(_categoriesOpen ? "open" : "")">
-        <h4 style="margin-bottom:10px;">Categories</h4>
+    <aside class="shop-sidebar">
+        <div class="shop-filter-title">
+            <h4>Filters</h4>
+            @if (_selectedBrandIds.Any() || _selectedAttrValueIds.Any()
+                 || _priceMin.HasValue || _priceMax.HasValue)
+            {
+                <button type="button" class="link-button" @onclick="ClearFilters">Reset</button>
+            }
+        </div>
 
         <div class="cat-row @(_selectedCategoryId == null ? "selected" : "")"
              @onclick="() => SelectCategory(null)">
@@ -55,7 +90,7 @@
 
             @if (_filters.Brands.Any())
             {
-                <h5 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">Brand</h5>
+                <h5 class="facet-title">Brand</h5>
                 @foreach (var b in _filters.Brands)
                 {
                     var picked = _selectedBrandIds.Contains(b.Id);
@@ -70,7 +105,7 @@
 
             @foreach (var attr in _filters.Attributes)
             {
-                <h5 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">@attr.Name</h5>
+                <h5 class="facet-title">@attr.Name</h5>
                 @foreach (var v in attr.Values)
                 {
                     var picked = _selectedAttrValueIds.Contains(v.Id);
@@ -85,59 +120,40 @@
 
             @if (_filters.PriceMax > 0)
             {
-                <h5 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.04em;">Price (Rs)</h5>
-                <div style="display:flex;gap:6px;align-items:center;">
-                    <input type="number" class="input" style="width:80px;padding:4px 6px;"
+                <h5 class="facet-title">Price (Rs)</h5>
+                <div class="price-filter-row">
+                    <input type="number" class="input"
                            placeholder="@_filters.PriceMin.ToString("0")"
                            @bind="_priceMin" @bind:event="onchange" />
-                    <span style="color:#9ca3af;">—</span>
-                    <input type="number" class="input" style="width:80px;padding:4px 6px;"
+                    <span>to</span>
+                    <input type="number" class="input"
                            placeholder="@_filters.PriceMax.ToString("0")"
                            @bind="_priceMax" @bind:event="onchange" />
                 </div>
-                <button class="btn" style="margin-top:8px;padding:4px 10px;font-size:12px;"
+                <button class="btn filter-apply"
                         @onclick="ApplyPriceFilter">Apply</button>
             }
 
             @if (_selectedBrandIds.Any() || _selectedAttrValueIds.Any()
                  || _priceMin.HasValue || _priceMax.HasValue)
             {
-                <button class="btn" style="margin-top:10px;font-size:12px;width:100%;"
+                <button class="btn filter-clear"
                         @onclick="ClearFilters">Clear filters</button>
             }
         }
 
-        <div style="margin-top:14px;">
-            <a class="btn full" href="@($"/store/{TenantSlug}/track")" style="font-size:13px;text-align:center;">Track an order ↗</a>
+        <div class="shop-sidebar-utility">
+            <a class="btn full" href="@($"/store/{TenantSlug}/track")">Track an order</a>
         </div>
-    </div>
-
-    <style>
-        .facet-line {
-            display:flex; align-items:center; gap:8px; font-size:13px;
-            padding:3px 0; cursor:pointer;
-        }
-        .facet-line:hover { color:#1d4ed8; }
-    </style>
-
-    <style>
-        .cat-row {
-            display:flex; align-items:center; gap:6px;
-            padding:6px 8px; border-radius:4px; cursor:pointer; margin-top:2px;
-            font-size:14px;
-        }
-        .cat-row:hover    { background:#f1f5f9; }
-        .cat-row.selected { background:#e0e7ff; color:#1d4ed8; font-weight:600; }
-        .cat-twisty       { width:14px; display:inline-flex; align-items:center; justify-content:center; color:#9ca3af; font-size:11px; }
-    </style>
+    </aside>
 
     <!-- Product grid -->
-    <div style="flex:1;min-width:0;">
+    <section class="shop-product-section">
         <div class="shop-grid-header">
-            <h2 style="margin:0;flex:1;">@(_selectedCategoryName ?? "All products")</h2>
-            <input class="input shop-search-input" placeholder="Search..."
-                   value="@_search"
-                   @oninput="OnSearchChanged" />
+            <div>
+                <h2>@(_selectedCategoryName ?? "All products")</h2>
+                <p>@_products.Count item@(_products.Count == 1 ? "" : "s") available</p>
+            </div>
         </div>
 
         @if (_loading)
@@ -170,17 +186,17 @@
                         }
                         else
                         {
-                            <div class="product-img-placeholder">📦</div>
+                            <div class="product-img-placeholder">No image</div>
                         }
                         <div class="product-info">
                             @if (!string.IsNullOrEmpty(p.BrandName))
                             {
-                                <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">@p.BrandName</div>
+                                <div class="product-brand">@p.BrandName</div>
                             }
                             <div class="product-name">@p.Name</div>
                             @if (!string.IsNullOrEmpty(p.ShortDescription))
                             {
-                                <div style="font-size:12px;color:#6b7280;line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">@p.ShortDescription</div>
+                                <div class="product-desc">@p.ShortDescription</div>
                             }
                             <div class="product-price">
                                 @if (p.MinPrice > 0)
@@ -192,6 +208,9 @@
                                     <span style="color:#9ca3af;">Price varies</span>
                                 }
                             </div>
+                            <div class="product-stock @(p.DefaultVariantStock <= 0 ? "out" : p.DefaultVariantStock <= 5 ? "low" : "")">
+                                @(p.DefaultVariantStock <= 0 ? "Out of stock" : $"{p.DefaultVariantStock} in stock")
+                            </div>
                             <div class="product-actions">
                                 @if (p.DefaultVariantId.HasValue)
                                 {
@@ -199,7 +218,7 @@
                                             disabled="@(p.DefaultVariantStock <= 0)"
                                             @onclick:stopPropagation="true"
                                             @onclick="() => AddToCart(p)">
-                                        🛒 @(p.DefaultVariantStock <= 0 ? "Out of stock" : "Add to cart")
+                                        @(p.DefaultVariantStock <= 0 ? "Unavailable" : "Add to cart")
                                     </button>
                                 }
                                 else
@@ -215,12 +234,11 @@
                 }
             </div>
         }
-    </div>
+    </section>
 </div>
 
 @code {
     bool _loading = true;
-    bool _categoriesOpen;
     string _search = string.Empty;
     Guid? _selectedCategoryId;
     string? _selectedCategoryName;
@@ -433,7 +451,6 @@
         _selectedBrandIds.Clear();
         _selectedAttrValueIds.Clear();
         _priceMin = _priceMax = null;
-        _categoriesOpen = false; // close the mobile drawer once a category is picked
         await LoadFilters();
         await LoadProducts();
     }

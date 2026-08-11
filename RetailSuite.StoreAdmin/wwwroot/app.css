@@ -405,149 +405,17 @@ select.input { height: 38px; }
 .badge-amber { background: #fef3c7; color: #a16207; }
 
 /* ===============================================================
-   Storefront
+   Storefront — .cart-link is still used (CustomerLayout's top nav Cart
+   link); everything else that used to live under this header has been
+   superseded by the "clean commerce theme" block further down and was
+   removed to avoid two competing definitions of the same classes.
    =============================================================== */
-.shop-layout {
-    min-height: 100vh;
-    background: var(--color-bg);
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-}
-
-.shop-header {
-    background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-accent) 100%);
-    color: white;
-    padding: 0 24px;
-    min-height: 60px;
-    display: flex;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 200; /* stays on top of the mobile categories drawer (z-index:150) */
-    box-shadow: var(--shadow);
-}
-
-.shop-header-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    max-width: 1200px;
-    margin: auto;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 10px 0;
-}
-
-.shop-brand {
-    font-size: 19px;
-    font-weight: 800;
-    color: #fff;
-    text-decoration: none;
-    letter-spacing: .3px;
-}
-
-.shop-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.shop-nav a {
-    color: rgba(255,255,255,.88);
-    text-decoration: none;
-    padding: 8px 14px;
-    border-radius: 999px;
-    font-size: 14px;
-    transition: background .15s, color .15s;
-}
-
-.shop-nav a:hover {
-    background: rgba(255,255,255,.18);
-    color: #fff;
-}
-
 .cart-link { position: relative; }
 
-.cart-badge {
-    background: var(--color-warning);
-    color: #fff;
-    border-radius: 99px;
-    font-size: 11px;
-    padding: 1px 7px;
-    margin-left: 4px;
-    font-weight: 700;
-}
-
 /* ===============================================================
-   Desktop/base defaults for elements that flip appearance on mobile.
-   These MUST precede the @media (max-width: 768px) block below —
-   an unconditional rule beats a media-query rule of equal specificity
-   when it comes later in source order, regardless of viewport width.
-   =============================================================== */
-.cart-desktop-table { display: block; }
-.cart-mobile-list    { display: none; }
-.pd-sticky-cta        { display: none; }
-.checkout-sticky-bar { display: none; }
-
-/* ===============================================================
-   Mobile bottom nav — replaces the top nav bar on small screens.
-   Hidden on desktop (display:none here; flipped to flex at 768px below).
-   =============================================================== */
-.shop-bottom-nav {
-    display: none;
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    z-index: 200; /* same tier as .shop-header — always reachable */
-    background: #fff;
-    border-top: 1px solid var(--color-border);
-    box-shadow: 0 -2px 10px rgba(17,24,39,.06);
-    padding-bottom: env(safe-area-inset-bottom, 0); /* clears the iOS home-indicator */
-}
-
-.shop-bottom-nav-inner {
-    display: flex;
-    height: var(--shop-bottom-nav-height);
-}
-
-.shop-bottom-nav a {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    color: var(--color-text-muted);
-    text-decoration: none;
-    font-size: 11px;
-    position: relative;
-}
-
-.shop-bottom-nav a .bn-icon { font-size: 20px; line-height: 1; }
-
-.shop-bottom-nav a.active {
-    color: var(--color-primary-dark);
-    font-weight: 600;
-}
-
-.shop-bottom-nav .bn-badge {
-    position: absolute;
-    top: 2px;
-    right: calc(50% - 20px);
-    background: var(--color-warning);
-    color: #fff;
-    border-radius: 99px;
-    font-size: 10px;
-    min-width: 15px;
-    height: 15px;
-    line-height: 15px;
-    text-align: center;
-    font-weight: 700;
-}
-
-/* ===============================================================
-   Quantity stepper — shared by Product Detail and Cart, replacing raw
-   number inputs with proper touch-friendly -/+ controls.
+   Quantity stepper — shared -/+ control. Storefront no longer uses this
+   (Cart/Product Detail switched to plain number inputs); POS.razor still
+   does, so the rule stays.
    =============================================================== */
 .qty-stepper {
     display: inline-flex;
@@ -581,77 +449,6 @@ select.input { height: 38px; }
     user-select: none;
 }
 
-.shop-main {
-    max-width: 1200px;
-    margin: 28px auto;
-    padding: 0 20px;
-}
-
-.product-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 20px;
-}
-
-.product-card {
-    background: #fff;
-    border: 1px solid var(--color-border-soft);
-    border-radius: var(--radius);
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform .15s, box-shadow .2s;
-    box-shadow: var(--shadow-sm);
-}
-
-.product-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 24px rgba(99,102,241,.18);
-    border-color: rgba(99,102,241,.4);
-}
-
-/* aspect-ratio (not a fixed pixel height) so the image scales cleanly at
-   every breakpoint without a separate height override per media query. */
-.product-img {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    object-fit: cover;
-    background: linear-gradient(135deg,#fafafd,#eef2ff);
-    display: block;
-}
-
-.product-img-placeholder {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: linear-gradient(135deg,#fafafd,#eef2ff);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 48px;
-    color: var(--color-text-faint);
-}
-
-.product-info { padding: 14px; }
-
-.product-name { font-weight: 600; font-size: 15px; margin-bottom: 4px;
-                color: var(--color-text); line-height: 1.3; }
-.product-price { color: var(--color-primary-dark); font-size: 16px; font-weight: 700; }
-
-/* Single, full-width primary action. Tapping the card itself (image/name/
-   price) already navigates to the product — a separate "View" button next
-   to "Add to cart" was a redundant tap target and the two-button stack was
-   the source of a mobile overflow bug earlier; one clear action reads
-   better and removes that whole class of bug. */
-.product-actions { margin-top: 10px; }
-.product-actions .btn {
-    width: 100%;
-    padding: 9px 6px;
-    font-size: 13px;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 /* ===============================================================
    Skeleton loading — shown in place of the product grid while it loads,
    instead of a single generic spinner.
@@ -677,57 +474,6 @@ select.input { height: 38px; }
 .skeleton-card .skeleton-line.short { width: 50%; }
 .skeleton-card .skeleton-btn   { height: 34px; border-radius: var(--radius-sm); margin: 10px 12px 12px; }
 
-/* Categories toggle — a nav-menu-style trigger for the sidebar drawer.
-   Hidden on desktop (sidebar is always visible there); on mobile it opens
-   a fixed, left-anchored drawer (see .shop-sidebar rules below) rather
-   than an inline block that scrolls away with the page. */
-.shop-cat-toggle {
-    display: none;
-}
-
-.shop-sidebar-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(17,24,39,.45);
-    z-index: 140;
-}
-
-/* Shop home: categories sidebar + product grid. Uses real classes (not inline
-   styles) specifically so the mobile media query below can stack them —
-   inline styles can't be overridden by @media rules. */
-.shop-home-layout {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-}
-
-.shop-sidebar {
-    width: 240px;
-    flex-shrink: 0;
-    /* Desktop: stays in view while the product grid scrolls, instead of
-       scrolling away with the page. --shop-header-height is measured in
-       app.js (the sticky header's height varies by content/viewport). */
-    position: sticky;
-    top: calc(var(--shop-header-height, 70px) + 16px);
-    max-height: calc(100vh - var(--shop-header-height, 70px) - 32px);
-    overflow-y: auto;
-}
-
-.shop-grid-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-}
-
-.shop-search-input {
-    width: 280px;
-    max-width: 100%;
-    flex: 1 1 200px;
-}
-
 /* Generic two-column info grid (order recipient/payment details, wallet stats). */
 .two-col-grid {
     display: grid;
@@ -748,50 +494,6 @@ select.input { height: 38px; }
 /* Mobile (<= 768px) — sidebar becomes a slide-out drawer */
 @media (max-width: 768px) {
     body { font-size: 14px; }
-
-    .shop-bottom-nav { display: block; }
-
-    .cart-desktop-table { display: none; }
-    .cart-mobile-list    { display: block; }
-
-    .pd-sticky-cta {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        z-index: 190; /* below .shop-bottom-nav (200) so both can coexist */
-        background: #fff;
-        border-top: 1px solid var(--color-border);
-        box-shadow: 0 -2px 10px rgba(17,24,39,.08);
-        padding: 10px 16px calc(10px + var(--shop-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
-    }
-    .pd-sticky-cta .pd-sticky-price { font-size: 17px; font-weight: 800; color: var(--color-primary-dark); }
-    .pd-sticky-cta .btn { flex-shrink: 0; }
-
-    /* PDP content needs bottom clearance for both the sticky CTA bar and the
-       bottom nav sitting beneath it. */
-    .pd-shell, .pd-below { margin-bottom: calc(64px + var(--shop-bottom-nav-height)); }
-
-    .checkout-sticky-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        z-index: 190;
-        background: #fff;
-        border-top: 1px solid var(--color-border);
-        box-shadow: 0 -2px 10px rgba(17,24,39,.08);
-        padding: 10px 16px calc(10px + var(--shop-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
-    }
-    .checkout-sticky-bar .checkout-sticky-total { font-size: 12px; color: var(--color-text-muted); }
-    .checkout-sticky-bar .checkout-sticky-amount { font-size: 17px; font-weight: 800; color: var(--color-text); }
-
-    /* Clears both the sticky bar and the bottom nav sitting beneath it. */
-    .checkout-shell { margin-bottom: calc(64px + var(--shop-bottom-nav-height)); }
 
     .sidebar {
         position: fixed;
@@ -817,69 +519,8 @@ select.input { height: 38px; }
     .table { font-size: 13px; }
     .table th, .table td { padding: 8px 6px; }
 
-    /* Two-column grids stack */
-    .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-
-    /* Shop home: product grid takes the full width; the sidebar becomes a
-       left-anchored drawer (below) instead of an in-flow column. */
-    .shop-home-layout { flex-direction: column; }
-    .shop-search-input { width: 100%; flex-basis: 100%; }
-
-    /* Categories nav-menu toggle: a normal in-flow button right below the
-       header. Not fixed/sticky — the header's rendered height varies by
-       device/font, and floating the toggle over it at a guessed pixel
-       offset kept causing it to overlap the header. Being in-flow makes
-       overlap structurally impossible, at the cost of it scrolling away
-       with the page instead of staying pinned. */
-    .shop-cat-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin: 10px 0 4px;
-        box-shadow: var(--shadow);
-    }
-
-    /* Sidebar becomes a fixed, left-anchored drawer that overlays the page
-       and stays put while the page scrolls behind it — opened via .open,
-       closed by tapping the backdrop or the toggle again. Starts below the
-       header (--shop-header-height, measured in app.js) instead of top:0 —
-       anchoring at 0 either covered the header or got covered by it,
-       depending on which one had the higher z-index. Starting below it
-       sidesteps the stacking conflict entirely. */
-    .shop-sidebar {
-        position: fixed;
-        top: var(--shop-header-height, 70px);
-        bottom: 0;
-        /* Off-screen by default. Using "left" (not transform:translateX) to
-           slide the drawer — animating position directly instead of a
-           transform, which reliably sidesteps compositor/transform quirks
-           we hit testing this on real devices. -300px safely clears the
-           280px max width regardless of viewport size. */
-        left: -300px;
-        z-index: 150;
-        width: min(280px, 82vw);
-        max-width: 82vw;
-        max-height: none;
-        overflow-y: auto;
-        border-radius: 0;
-        transition: left .25s ease;
-    }
-    .shop-sidebar.open { left: 0; }
-    .shop-sidebar-backdrop.open { display: block; }
-
     /* Recipient/payment/wallet-stat grids collapse to one column */
     .two-col-grid { grid-template-columns: 1fr; }
-
-    /* Storefront header: on mobile, primary nav moves to the fixed bottom
-       tab bar (.shop-bottom-nav) — the top bar just shows the brand, so it
-       no longer needs to wrap/shrink nav links to fit. */
-    .shop-header { padding: 8px 16px; }
-    .shop-brand  { font-size: 17px; }
-    .shop-nav    { display: none; }
-
-    /* Leaves room for the fixed bottom nav bar so the last bit of page
-       content isn't hidden underneath it. */
-    .shop-main { margin: 18px auto; padding: 0 14px calc(var(--shop-bottom-nav-height) + 14px); }
 
     /* Modal full-width on phone */
     .modal { max-width: 100%; padding: 18px; border-radius: var(--radius); }
@@ -888,68 +529,916 @@ select.input { height: 38px; }
     .footer { padding: 12px 16px; }
 }
 
-/* ===============================================================
-   Cart — card list on mobile, table on desktop. A <table> doesn't reflow
-   usefully at narrow widths (cramped columns, horizontal scroll), so the
-   page renders two markup variants and CSS picks one — simpler and safer
-   than reshaping a table with JS. (Base display rules live near the top
-   of the file, before the @media block, so they don't override it.)
-   =============================================================== */
-.cart-item-card {
-    display: flex;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--color-border-soft);
-}
-.cart-item-card:last-child { border-bottom: none; }
-.cart-item-card img, .cart-item-card .cart-item-noimg {
-    width: 64px; height: 64px; border-radius: var(--radius-sm);
-    object-fit: cover; flex-shrink: 0; background: var(--color-border-soft);
-}
-.cart-item-card .cart-item-body { flex: 1; min-width: 0; }
-.cart-item-card .cart-item-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-.cart-item-card .cart-item-sku  { font-size: 12px; color: var(--color-text-faint); margin-bottom: 6px; }
-.cart-item-card .cart-item-row  { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cart-item-card .cart-item-total { font-weight: 700; font-size: 14px; }
-
-/* ===============================================================
-   Product Detail — sticky mobile "Add to cart" bar. On a long product
-   page the inline button scrolls out of view; this pins price + action
-   to the bottom of the screen at all times on mobile. (Base display:none
-   lives near the top of the file, before the @media block.)
-   =============================================================== */
-
-/* ===============================================================
-   Checkout — step header + sticky mobile total/place-order bar. The form
-   itself is unchanged (still one scrollable page, so nothing about the
-   working order-placement logic changes) — this is a presentation layer:
-   a compact numbered-step header instead of plain "1./2./3." text, and a
-   bottom bar so the total + place-order action don't require scrolling
-   all the way down.
-   =============================================================== */
-.checkout-steps {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 18px;
-    font-size: 12px;
-    color: var(--color-text-muted);
-    flex-wrap: wrap;
-}
-.checkout-step { display: flex; align-items: center; gap: 6px; }
-.checkout-step-num {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: var(--color-border-soft); color: var(--color-text-muted);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; flex-shrink: 0;
-}
-.checkout-step.done .checkout-step-num { background: var(--color-success); color: #fff; }
-.checkout-step-sep { color: var(--color-border); }
-
 /* Small phones (<= 380px) */
 @media (max-width: 380px) {
     .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .stat-value { font-size: 24px; }
+}
+
+/* ===============================================================
+   Storefront redesign — clean commerce theme
+   =============================================================== */
+.shop-layout {
+    --shop-ink: #111827;
+    --shop-muted: #64748b;
+    --shop-line: #e5e7eb;
+    --shop-soft: #f8fafc;
+    --shop-cta: #111827;
+    --shop-cta-hover: #0f172a;
+    min-height: 100vh;
+    background: #f8fafc;
+    color: var(--shop-ink);
+    padding-bottom: 0;
+}
+
+.shop-header {
+    display: flex;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    min-height: 60px;
+    background: rgba(255,255,255,.94);
+    color: var(--shop-ink);
+    border-bottom: 1px solid rgba(226,232,240,.95);
+    box-shadow: 0 1px 0 rgba(15,23,42,.04);
+    backdrop-filter: blur(14px);
+    padding: 0 24px;
+}
+
+.shop-header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 1180px;
+    min-height: 64px;
+    margin: auto;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+}
+
+.shop-brand {
+    color: var(--shop-ink);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 800;
+    text-decoration: none;
+    letter-spacing: 0;
+}
+
+.shop-brand:hover { color: var(--shop-ink); }
+
+.shop-brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: inline-grid;
+    place-items: center;
+    background: #111827;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.shop-nav {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.shop-nav a {
+    color: #475569;
+    text-decoration: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background .15s, color .15s;
+}
+
+.shop-nav a:hover,
+.shop-nav a.active {
+    background: #f1f5f9;
+    color: var(--shop-ink);
+}
+
+.wallet-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wallet-balance,
+.cart-badge {
+    background: #ecfdf5;
+    color: #047857;
+    font-weight: 800;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+.cart-badge {
+    background: #111827;
+    color: #fff;
+    margin-left: 4px;
+}
+
+.shop-main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+}
+
+.shop-footer {
+    margin-top: 28px;
+    padding: 18px 16px;
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.shop-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+    gap: 24px;
+    align-items: end;
+    margin-bottom: 18px;
+}
+
+.shop-eyebrow {
+    margin: 0 0 6px;
+    color: #64748b;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    font-weight: 800;
+}
+
+.shop-hero h1,
+.cart-page-head h2 {
+    margin: 0;
+    color: #111827;
+    font-size: clamp(28px, 5vw, 44px);
+    line-height: 1.05;
+    letter-spacing: 0;
+}
+
+.shop-hero p {
+    max-width: 560px;
+    margin: 10px 0 0;
+    color: #64748b;
+    line-height: 1.55;
+}
+
+.shop-hero-search {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 10px 30px rgba(15,23,42,.06);
+}
+
+.shop-search-input {
+    width: 100%;
+    min-height: 46px;
+    border-radius: 9px;
+    margin: 0;
+}
+
+.category-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px 2px 16px;
+    margin-bottom: 6px;
+    scrollbar-width: none;
+}
+
+.category-strip::-webkit-scrollbar { display: none; }
+
+.category-chip {
+    flex: 0 0 auto;
+    min-height: 38px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.category-chip span {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.category-chip.selected {
+    background: #111827;
+    color: #fff;
+    border-color: #111827;
+}
+
+.category-chip.selected span { color: rgba(255,255,255,.72); }
+
+.shop-home-layout {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.shop-sidebar {
+    width: auto;
+    /* Desktop: stays in view while the product grid scrolls, instead of
+       scrolling away with the page. --shop-header-height is measured in
+       app.js (the sticky header's height varies by content/viewport). */
+    position: sticky;
+    top: calc(var(--shop-header-height, 70px) + 16px);
+    max-height: calc(100vh - var(--shop-header-height, 70px) - 32px);
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: none;
+    padding: 16px;
+}
+
+.shop-filter-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.shop-filter-title h4 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.link-button {
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cat-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 2px;
+    font-size: 13px;
+    color: #334155;
+}
+
+.cat-row:hover { background: #f8fafc; }
+.cat-row.selected { background: #f1f5f9; color: #111827; font-weight: 800; }
+.cat-twisty { width: 14px; display: inline-flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 11px; }
+
+.facet-title {
+    margin: 14px 0 7px;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: .07em;
+}
+
+.facet-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    padding: 5px 0;
+    cursor: pointer;
+    color: #334155;
+}
+
+.facet-line:hover { color: #111827; }
+
+.price-filter-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 6px;
+    align-items: center;
+}
+
+.price-filter-row .input {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+}
+
+.price-filter-row span {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.filter-apply,
+.filter-clear {
+    width: 100%;
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.shop-sidebar-utility { margin-top: 14px; }
+
+.shop-product-section {
+    min-width: 0;
+}
+
+.shop-grid-header {
+    margin-bottom: 14px;
+}
+
+.shop-grid-header h2 {
+    margin: 0;
+    color: #111827;
+    font-size: 22px;
+    letter-spacing: 0;
+}
+
+.shop-grid-header p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 16px;
+}
+
+.product-card {
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .2s, border-color .15s;
+}
+
+.product-card:hover {
+    transform: translateY(-2px);
+    border-color: #cbd5e1;
+    box-shadow: 0 14px 28px rgba(15,23,42,.08);
+}
+
+.product-img,
+.product-img-placeholder {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 5;
+    background: #f1f5f9;
+}
+
+.product-img {
+    object-fit: cover;
+    display: block;
+}
+
+.product-img-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.product-info {
+    padding: 12px;
+}
+
+.product-brand {
+    font-size: 10px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.product-name {
+    font-size: 14px;
+    font-weight: 750;
+    color: #111827;
+    line-height: 1.3;
+    margin-bottom: 4px;
+    min-height: 36px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.product-desc {
+    min-height: 34px;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.product-price {
+    color: #111827;
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 9px;
+}
+
+.product-stock {
+    color: #047857;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.product-stock.low { color: #b45309; }
+.product-stock.out { color: #b91c1c; }
+
+.product-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.product-actions .btn {
+    /* Cards only ever render one action button (Add to cart, or View
+       options as a fallback) — span both grid tracks so it isn't left
+       squeezed into just the first ~43% of the row. */
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 38px;
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-layout .btn-primary {
+    background: var(--shop-cta);
+    border-color: var(--shop-cta);
+    box-shadow: none;
+}
+
+.shop-layout .btn-primary:hover {
+    background: var(--shop-cta-hover);
+    border-color: var(--shop-cta-hover);
+    box-shadow: none;
+}
+
+.shop-bottom-nav {
+    display: none;
+}
+
+.cart-page-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.cart-page-head h2 {
+    font-size: clamp(26px, 4vw, 38px);
+}
+
+.cart-table-card {
+    overflow-x: auto;
+}
+
+.cart-mobile-list {
+    display: none;
+}
+
+.cart-summary-bar {
+    margin-top: 16px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.cart-summary-bar span {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+}
+
+.cart-summary-bar strong {
+    display: block;
+    color: #111827;
+    font-size: 24px;
+    margin-top: 2px;
+}
+
+.cart-summary-actions {
+    display: flex;
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .shop-layout {
+        padding-bottom: 72px;
+    }
+
+    .shop-header {
+        padding: 0 14px;
+    }
+
+    .shop-header-inner {
+        min-height: 58px;
+        flex-wrap: nowrap;
+    }
+
+    .shop-brand span:last-child {
+        max-width: 145px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .shop-nav {
+        display: none;
+    }
+
+    .shop-main {
+        padding: 16px 12px 28px;
+    }
+
+    .shop-hero {
+        grid-template-columns: 1fr;
+        gap: 14px;
+        margin-bottom: 12px;
+    }
+
+    .shop-hero h1 {
+        font-size: 30px;
+    }
+
+    .shop-hero p {
+        font-size: 14px;
+    }
+
+    .shop-hero-search {
+        position: sticky;
+        top: 66px;
+        z-index: 80;
+        padding: 6px;
+        border-radius: 11px;
+    }
+
+    .category-strip {
+        margin-left: -12px;
+        margin-right: -12px;
+        padding: 2px 12px 14px;
+    }
+
+    .shop-home-layout {
+        display: block;
+    }
+
+    .shop-sidebar {
+        position: static;
+        width: 100%;
+        max-height: none;
+        overflow: visible;
+        margin-bottom: 14px;
+        border-radius: 12px;
+    }
+
+    .shop-sidebar .cat-row,
+    .shop-sidebar-utility {
+        display: none;
+    }
+
+    .shop-filter-title {
+        margin-bottom: 0;
+    }
+
+    .product-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .product-info {
+        padding: 10px;
+    }
+
+    .product-name {
+        font-size: 13px;
+        min-height: 34px;
+    }
+
+    .product-desc {
+        display: none;
+    }
+
+    .product-actions {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .product-actions .btn {
+        min-height: 36px;
+    }
+
+    .shop-bottom-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 220;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+        background: rgba(255,255,255,.96);
+        border-top: 1px solid #e2e8f0;
+        box-shadow: 0 -8px 22px rgba(15,23,42,.08);
+        backdrop-filter: blur(14px);
+    }
+
+    .shop-bottom-nav a {
+        position: relative;
+        color: #64748b;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 800;
+        min-height: 42px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+    }
+
+    .shop-bottom-nav a.active {
+        background: #111827;
+        color: #fff;
+    }
+
+    .shop-bottom-nav strong {
+        position: absolute;
+        top: 2px;
+        right: 14px;
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #ef4444;
+        color: #fff;
+        font-size: 10px;
+    }
+
+    .cart-page-head {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .cart-table-card {
+        display: none;
+    }
+
+    .cart-mobile-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .cart-mobile-item {
+        position: relative;
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 12px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px;
+    }
+
+    .cart-mobile-item img,
+    .cart-mobile-empty {
+        width: 88px;
+        height: 110px;
+        object-fit: cover;
+        border-radius: 9px;
+        background: #f1f5f9;
+        color: #94a3b8;
+        font-size: 11px;
+        display: grid;
+        place-items: center;
+    }
+
+    .cart-mobile-info h3 {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.25;
+        color: #111827;
+    }
+
+    .cart-mobile-info p {
+        margin: 3px 0 6px;
+        color: #64748b;
+        font-size: 12px;
+    }
+
+    .cart-mobile-info strong {
+        color: #111827;
+        font-size: 14px;
+    }
+
+    .cart-mobile-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 9px;
+    }
+
+    .cart-mobile-actions .input {
+        width: 64px;
+        min-height: 38px;
+        margin: 0;
+    }
+
+    .cart-mobile-actions .btn {
+        padding: 7px 9px;
+        font-size: 12px;
+    }
+
+    .cart-line-total {
+        grid-column: 1 / -1;
+        padding-top: 8px;
+        border-top: 1px solid #f1f5f9;
+        color: #111827;
+        font-size: 13px;
+        font-weight: 800;
+        text-align: right;
+    }
+
+    .cart-summary-bar {
+        position: sticky;
+        bottom: 72px;
+        z-index: 40;
+        padding: 12px;
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(15,23,42,.14);
+    }
+
+    .cart-summary-bar strong {
+        font-size: 18px;
+    }
+
+    .cart-summary-actions {
+        flex-shrink: 0;
+    }
+
+    .cart-summary-actions .btn {
+        min-height: 40px;
+        padding: 8px 10px;
+    }
+}
+
+.checkout-shell {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.checkout-page-head,
+.cart-page-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.checkout-page-head h2 {
+    margin: 2px 0 0;
+    color: #111827;
+}
+
+.checkout-section {
+    border-color: #e2e8f0;
+    box-shadow: none;
+}
+
+.checkout-section h4 {
+    color: #111827;
+    font-size: 15px;
+}
+
+.checkout-credit {
+    background: #f0fdf4 !important;
+    border-color: #bbf7d0 !important;
+}
+
+.checkout-totals {
+    border: 2px solid #111827;
+}
+
+.checkout-confirmation {
+    max-width: 500px;
+    margin: 12px auto 0;
+    padding: 38px 26px !important;
+    text-align: center;
+    border-color: #d1fae5;
+}
+
+.checkout-confirmation-mark {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 10px;
+    margin-bottom: 12px;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.checkout-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px;
+    margin-bottom: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color .16s ease, background .16s ease;
+}
+
+.checkout-option:has(input:checked) {
+    border-color: #111827;
+    background: #f8fafc;
+}
+
+.checkout-option input {
+    width: 17px;
+    height: 17px;
+    accent-color: #111827;
+}
+
+@media (max-width: 640px) {
+    .checkout-page-head {
+        align-items: flex-start;
+    }
+
+    .checkout-page-head .btn {
+        min-height: 38px;
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .checkout-section {
+        padding: 14px !important;
+    }
+
+    .checkout-confirmation {
+        margin-top: 4px;
+    }
+
+    .checkout-confirmation > div:last-child {
+        flex-direction: column;
+    }
+
+    .checkout-confirmation > div:last-child .btn {
+        width: 100%;
+    }
 }
 
 /* ===============================================================

@@ -12,19 +12,22 @@
 <div class="shop-layout">
     <header class="shop-header">
         <div class="shop-header-inner">
-            <a href="@StorePath("")" class="shop-brand">🛍 RetailSuite Store</a>
+            <a href="@StorePath("")" class="shop-brand">
+                <span class="shop-brand-mark">R</span>
+                <span>RetailSuite Store</span>
+            </a>
             <nav class="shop-nav">
-                <a href="@StorePath("")">Shop</a>
-                <a href="@StorePath("track")">Track order</a>
+                <a class="@ActiveClass("")" href="@StorePath("")">Shop</a>
+                <a class="@ActiveClass("track")" href="@StorePath("track")">Track order</a>
                 <a href="@StorePath("wallet")" class="wallet-link">
-                    💳 Wallet
+                    Wallet
                     @if (_walletBalance.HasValue && _walletBalance.Value > 0)
                     {
                         <span class="wallet-balance">Rs @_walletBalance.Value.ToString("N0")</span>
                     }
                 </a>
                 <a href="@StorePath("cart")" class="cart-link">
-                    🛒 Cart
+                    Cart
                     @if (Cart.TotalCount > 0)
                     {
                         <span class="cart-badge">@Cart.TotalCount</span>
@@ -38,45 +41,29 @@
         @Body
     </main>
 
-    <footer style="margin-top:40px;padding:14px 16px;text-align:center;font-size:12px;color:#9ca3af;">
+    <nav class="shop-bottom-nav">
+        <a class="@ActiveClass("")" href="@StorePath("")">
+            <span>Shop</span>
+        </a>
+        <a class="@ActiveClass("track")" href="@StorePath("track")">
+            <span>Track</span>
+        </a>
+        <a class="@ActiveClass("wallet")" href="@StorePath("wallet")">
+            <span>Wallet</span>
+        </a>
+        <a class="@ActiveClass("cart")" href="@StorePath("cart")">
+            <span>Cart</span>
+            @if (Cart.TotalCount > 0)
+            {
+                <strong>@Cart.TotalCount</strong>
+            }
+        </a>
+    </nav>
+
+    <footer class="shop-footer">
         © @DateTime.Now.Year RetailSuite
     </footer>
-
-    <!-- Mobile-only: replaces the top nav as the primary navigation on small
-         screens (hidden on desktop via CSS). -->
-    <nav class="shop-bottom-nav">
-        <div class="shop-bottom-nav-inner">
-            <a href="@StorePath("")" class="@ActiveClass("")">
-                <span class="bn-icon">🏠</span> Shop
-            </a>
-            <a href="@StorePath("track")" class="@ActiveClass("track")">
-                <span class="bn-icon">📦</span> Track
-            </a>
-            <a href="@StorePath("wallet")" class="@ActiveClass("wallet")">
-                <span class="bn-icon">💳</span> Wallet
-            </a>
-            <a href="@StorePath("cart")" class="@ActiveClass("cart")" style="position:relative;">
-                <span class="bn-icon">🛒</span> Cart
-                @if (Cart.TotalCount > 0)
-                {
-                    <span class="bn-badge">@Cart.TotalCount</span>
-                }
-            </a>
-        </div>
-    </nav>
 </div>
-
-<style>
-    .wallet-link { display:inline-flex; align-items:center; gap:6px; }
-    .wallet-balance {
-        background:#dcfce7;
-        color:#15803d;
-        font-weight:700;
-        font-size:11px;
-        padding:2px 8px;
-        border-radius:999px;
-    }
-</style>
 
 @code {
     const string WALLET_TOKEN_KEY = "wallet_token";
@@ -85,15 +72,11 @@
     string StorePath(string relative) =>
         string.IsNullOrEmpty(relative) ? $"/store/{Store.TenantSlug}" : $"/store/{Store.TenantSlug}/{relative}";
 
-    // Highlights the matching bottom-nav tab for the current page. Compares
-    // trimmed relative paths rather than exact strings so a product detail
-    // page (/store/{slug}/product/{id}) still doesn't (mis)match "Shop" —
-    // only an exact route match highlights.
     string ActiveClass(string relative)
     {
-        var current = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
-        var target  = StorePath(relative).TrimStart('/').TrimEnd('/');
-        return current == target ? "active" : "";
+        var target = Nav.ToAbsoluteUri(StorePath(relative)).AbsolutePath.TrimEnd('/');
+        var current = Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        return string.Equals(target, current, StringComparison.OrdinalIgnoreCase) ? "active" : "";
     }
 
     protected override void OnInitialized()

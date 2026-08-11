@@ -6,21 +6,27 @@
 @inject ApiUrlService Api
 @implements IDisposable
 
-<h2 style="margin-bottom:20px;">Your Cart</h2>
+<div class="cart-page-head">
+    <div>
+        <p class="shop-eyebrow">Review order</p>
+        <h2>Your cart</h2>
+    </div>
+    @if (CartSvc.Items.Any())
+    {
+        <a class="btn" href="@($"/store/{TenantSlug}")">Continue shopping</a>
+    }
+</div>
 
 @if (!CartSvc.Items.Any())
 {
-    <div class="card" style="text-align:center;padding:40px 20px;">
-        <div style="font-size:48px;margin-bottom:12px;">🛒</div>
-        <p style="color:#9ca3af;margin-bottom:14px;">Your cart is empty.</p>
-        <a class="btn btn-primary" href="@($"/store/{TenantSlug}")">Browse products →</a>
+    <div class="card">
+        <p style="color:#9ca3af;">Your cart is empty. <a href="@($"/store/{TenantSlug}")">Browse products →</a></p>
     </div>
 }
 else
 {
-    <div class="card">
-        <!-- Desktop: table -->
-        <table class="table cart-desktop-table">
+    <div class="card cart-table-card">
+        <table class="table">
             <thead>
                 <tr>
                     <th>Product</th>
@@ -45,11 +51,10 @@ else
                         <td>@item.SKU</td>
                         <td>Rs @item.UnitPrice.ToString("N2")</td>
                         <td>
-                            <div class="qty-stepper">
-                                <button type="button" @onclick="() => Decrement(item)" disabled="@(item.Quantity <= 1)">−</button>
-                                <span class="qty-value">@item.Quantity</span>
-                                <button type="button" @onclick="() => Increment(item)">+</button>
-                            </div>
+                            <input type="number" class="input" style="width:60px;"
+                                   value="@item.Quantity"
+                                   min="1"
+                                   @onchange="e => UpdateQtyFromEvent(item.VariantId, e)" />
                         </td>
                         <td><strong>Rs @item.LineTotal.ToString("N2")</strong></td>
                         <td>
@@ -60,45 +65,47 @@ else
                 }
             </tbody>
         </table>
+    </div>
 
-        <!-- Mobile: card list (a table doesn't reflow usefully at narrow widths) -->
-        <div class="cart-mobile-list">
-            @foreach (var item in CartSvc.Items)
-            {
-                <div class="cart-item-card">
-                    @if (!string.IsNullOrEmpty(item.ImageUrl))
-                    {
-                        <img src="@Api.Absolute(item.ImageUrl)" alt="@item.ProductName" />
-                    }
-                    else
-                    {
-                        <div class="cart-item-noimg"></div>
-                    }
-                    <div class="cart-item-body">
-                        <div class="cart-item-name">@item.ProductName</div>
-                        <div class="cart-item-sku">@item.SKU · Rs @item.UnitPrice.ToString("N2")</div>
-                        <div class="cart-item-row">
-                            <div class="qty-stepper">
-                                <button type="button" @onclick="() => Decrement(item)" disabled="@(item.Quantity <= 1)">−</button>
-                                <span class="qty-value">@item.Quantity</span>
-                                <button type="button" @onclick="() => Increment(item)">+</button>
-                            </div>
-                            <span class="cart-item-total">Rs @item.LineTotal.ToString("N2")</span>
-                        </div>
+    <div class="cart-mobile-list">
+        @foreach (var item in CartSvc.Items)
+        {
+            <article class="cart-mobile-item">
+                @if (!string.IsNullOrEmpty(item.ImageUrl))
+                {
+                    <img src="@Api.Absolute(item.ImageUrl)" alt="@item.ProductName" />
+                }
+                else
+                {
+                    <div class="cart-mobile-empty">No image</div>
+                }
+                <div class="cart-mobile-info">
+                    <h3>@item.ProductName</h3>
+                    <p>@item.SKU</p>
+                    <strong>Rs @item.UnitPrice.ToString("N2")</strong>
+                    <div class="cart-mobile-actions">
+                        <input type="number" class="input"
+                               value="@item.Quantity"
+                               min="1"
+                               @onchange="e => UpdateQtyFromEvent(item.VariantId, e)" />
+                        <button class="btn btn-danger"
+                                @onclick="() => CartSvc.RemoveItem(item.VariantId)">Remove</button>
                     </div>
-                    <button class="btn btn-danger" style="padding:2px 8px;font-size:12px;align-self:flex-start;"
-                            @onclick="() => CartSvc.RemoveItem(item.VariantId)">✕</button>
                 </div>
-            }
-        </div>
+                <div class="cart-line-total">Rs @item.LineTotal.ToString("N2")</div>
+            </article>
+        }
+    </div>
 
-        <div style="text-align:right;margin-top:16px;">
-            <div style="font-size:20px;font-weight:700;margin-bottom:12px;">
-                Total: Rs @CartSvc.TotalAmount.ToString("N2")
-            </div>
-            <button class="btn" @onclick="() => CartSvc.Clear()" style="margin-right:8px;">Clear Cart</button>
+    <div class="cart-summary-bar">
+        <div>
+            <span>Total</span>
+            <strong>Rs @CartSvc.TotalAmount.ToString("N2")</strong>
+        </div>
+        <div class="cart-summary-actions">
+            <button class="btn" @onclick="() => CartSvc.Clear()">Clear</button>
             <button class="btn btn-primary" @onclick="GoCheckout">
-                Proceed to Checkout →
+                Checkout
             </button>
         </div>
     </div>
@@ -108,8 +115,11 @@ else
     protected override void OnInitialized() => CartSvc.OnChange += StateHasChanged;
     public void Dispose()                   => CartSvc.OnChange -= StateHasChanged;
 
-    void Decrement(CartItem item) => CartSvc.UpdateQuantity(item.VariantId, item.Quantity - 1);
-    void Increment(CartItem item) => CartSvc.UpdateQuantity(item.VariantId, item.Quantity + 1);
-
+    void UpdateQty(Guid variantId, int qty) => CartSvc.UpdateQuantity(variantId, qty);
+    void UpdateQtyFromEvent(Guid variantId, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var qty) && qty >= 1)
+            CartSvc.UpdateQuantity(variantId, qty);
+    }
     void GoCheckout() => Nav.NavigateTo($"/store/{TenantSlug}/checkout");
 }

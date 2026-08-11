@@ -9,14 +9,14 @@
 @using System.Text.Json
 
 <style>
-    .pd-shell        { display:grid; grid-template-columns: 1fr 1fr; gap:36px; max-width:1000px; }
+    .pd-shell        { display:grid; grid-template-columns: minmax(0,1fr) minmax(320px, .9fr); gap:40px; max-width:1080px; margin:auto; }
     .pd-gallery      { position:relative; }
     .pd-main-img     { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:14px;
                        border:1px solid #e5e7eb; background:#fff;
                        box-shadow:0 4px 14px rgba(99,102,241,.08); }
     .pd-main-empty   { width:100%; aspect-ratio:1/1; border-radius:14px; border:1px solid #e5e7eb;
-                       background:linear-gradient(135deg,#fafafd,#eef2ff);
-                       display:flex;align-items:center;justify-content:center;font-size:80px;color:#cbd5e1; }
+                       background:linear-gradient(135deg,#fafafa,#f1f5f9);
+                       display:flex;align-items:center;justify-content:center;font-size:15px;color:#94a3b8; }
     .pd-arrow        { position:absolute; top:50%; transform:translateY(-50%);
                        background:rgba(255,255,255,.92); border:1px solid #e5e7eb; border-radius:50%;
                        width:42px; height:42px; cursor:pointer; font-size:18px; font-weight:700;
@@ -34,9 +34,9 @@
     .pd-thumb.active { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
 
     .pd-info         { padding:4px 0; }
-    .pd-name         { font-size:26px; font-weight:700; color:#0d3b66; margin:0 0 8px; line-height:1.2; }
+    .pd-name         { font-size:30px; font-weight:800; color:#111827; margin:0 0 8px; line-height:1.15; letter-spacing:0; }
     .pd-desc         { color:#6b7280; margin:0 0 18px; line-height:1.55; }
-    .pd-price        { font-size:30px; font-weight:800; color:#6366f1; margin:0 0 18px; }
+    .pd-price        { font-size:30px; font-weight:800; color:#111827; margin:0 0 18px; }
 
     .pd-attr-block   { margin-bottom:16px; }
     .pd-attr-label   { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
@@ -47,8 +47,8 @@
                        transition:.15s; color:#374151; }
     .pd-attr-chip:hover { border-color:#a5b4fc; }
     .pd-attr-chip.selected {
-        background:linear-gradient(135deg,#6366f1,#7c3aed); color:#fff; border-color:transparent;
-        box-shadow:0 2px 8px rgba(99,102,241,.32);
+        background:#111827; color:#fff; border-color:#111827;
+        box-shadow:0 2px 8px rgba(17,24,39,.18);
     }
     .pd-attr-chip.disabled {
         opacity:.4; cursor:not-allowed; text-decoration:line-through;
@@ -59,13 +59,34 @@
     .pd-stock-low    { color:#d97706; }
     .pd-stock-out    { color:#dc2626; font-weight:600; }
 
-    .pd-qty-row      { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+    .pd-buy-panel    { display:flex; align-items:center; gap:10px; margin:18px 0 14px; }
     .pd-qty-input    { width:80px; text-align:center; font-weight:700; }
 
     @@media (max-width: 768px) {
         .pd-shell    { grid-template-columns: 1fr; gap:20px; }
         .pd-name     { font-size:22px; }
         .pd-price    { font-size:24px; }
+
+        /* Fixed to the viewport (not sticky within .pd-info) so it stays
+           reachable while scrolling through the description/specs section
+           below — a sticky position only holds while its own parent block
+           is still on screen, which on this page ends well before the
+           bottom of a long product description. */
+        .pd-buy-panel {
+            position: fixed;
+            left: 0; right: 0;
+            bottom: var(--shop-bottom-nav-height, 60px);
+            z-index: 210; /* below .shop-bottom-nav (220) */
+            margin: 0;
+            background: rgba(255,255,255,.98);
+            border-top: 1px solid #e5e7eb;
+            box-shadow: 0 -8px 22px rgba(15,23,42,.12);
+            padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+        }
+        .pd-buy-panel .btn-primary { flex: 1; min-height: 44px; }
+
+        /* Room for the fixed buy-panel plus the bottom nav sitting beneath it. */
+        .pd-shell, .pd-below { margin-bottom: calc(64px + var(--shop-bottom-nav-height, 60px)); }
     }
 
     .pd-crumb        { font-size:13px; color:#6b7280; margin-bottom:8px; display:flex; gap:6px; align-items:center; }
@@ -128,7 +149,7 @@ else
             }
             else
             {
-                <div class="pd-main-empty">📦</div>
+                <div class="pd-main-empty">No product image</div>
             }
         </div>
 
@@ -214,55 +235,32 @@ else
                 <div class="pd-stock-line">
                     @if (_selected.StockQuantity <= 0)
                     {
-                        <span class="pd-stock-out">✕ Out of stock</span>
+                        <span class="pd-stock-out">Out of stock</span>
                     }
                     else if (_selected.StockQuantity <= 5)
                     {
-                        <span class="pd-stock-low">⚠ Only @_selected.StockQuantity left</span>
+                        <span class="pd-stock-low">Only @_selected.StockQuantity left</span>
                     }
                     else
                     {
-                        <span class="pd-stock-ok">✓ In stock (@_selected.StockQuantity available)</span>
+                        <span class="pd-stock-ok">In stock (@_selected.StockQuantity available)</span>
                     }
                 </div>
             }
 
-            <div class="pd-qty-row">
+            <div class="pd-buy-panel">
                 <label style="font-size:13px;color:#6b7280;">Qty</label>
-                <div class="qty-stepper">
-                    <button type="button" @onclick="DecrementQty" disabled="@(_qty <= 1)">−</button>
-                    <span class="qty-value">@_qty</span>
-                    <button type="button" @onclick="IncrementQty"
-                            disabled="@(_selected != null && _qty >= _selected.StockQuantity)">+</button>
-                </div>
-                <button class="btn btn-primary" style="padding:10px 22px;font-size:14px;"
+                <input type="number" class="input pd-qty-input" @bind="_qty" min="1" />
+                <button class="btn btn-primary"
                         disabled="@(_selected == null || _selected.StockQuantity <= 0)"
                         @onclick="AddToCart">
-                    🛒 Add to cart
+                    Add to cart
                 </button>
             </div>
 
-            <a href="@($"/store/{TenantSlug}")" style="color:#6b7280;font-size:13px;">← Continue shopping</a>
+            <a href="@($"/store/{TenantSlug}")" style="color:#6b7280;font-size:13px;">Continue shopping</a>
         </div>
     </div>
-
-    <!-- Sticky mobile CTA: on a long product page the inline "Add to cart"
-         above scrolls out of view, so this pins price + qty + action to the
-         bottom of the screen at all times on mobile (hidden on desktop). -->
-    @if (_selected != null)
-    {
-        <div class="pd-sticky-cta">
-            <div>
-                <div class="pd-sticky-price">Rs @_selected.Price.ToString("N2")</div>
-                <div style="font-size:11px;color:#9ca3af;">Qty @_qty</div>
-            </div>
-            <button class="btn btn-primary" style="padding:10px 24px;white-space:nowrap;"
-                    disabled="@(_selected.StockQuantity <= 0)"
-                    @onclick="AddToCart">
-                🛒 @(_selected.StockQuantity <= 0 ? "Out of stock" : "Add to cart")
-            </button>
-        </div>
-    }
 
     <!-- ============================ Long description + specs ============================ -->
     @if (!string.IsNullOrEmpty(_product.Description) || _product.Specs.Any() || !string.IsNullOrEmpty(_product.Tags))
@@ -514,21 +512,10 @@ else
                 v.Attributes.TryGetValue(sel.Key, out var avo) && avo == sel.Value));
     }
 
-    void DecrementQty()
-    {
-        if (_qty > 1) _qty--;
-    }
-
-    void IncrementQty()
-    {
-        if (_selected == null || _qty < _selected.StockQuantity) _qty++;
-    }
-
     void AddToCart()
     {
         if (_selected == null || _product == null) return;
         if (_qty < 1) _qty = 1;
-        if (_qty > _selected.StockQuantity) _qty = _selected.StockQuantity;
 
         Cart.AddItem(new CartItem
         {

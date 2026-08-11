@@ -11,8 +11,8 @@
 
 @if (_confirmed)
 {
-    <div class="card" style="text-align:center;padding:40px;max-width:500px;margin:0 auto;">
-        <div style="font-size:48px;margin-bottom:16px;">✅</div>
+    <div class="card checkout-confirmation">
+        <div class="checkout-confirmation-mark">Order confirmed</div>
         <h2>Order placed!</h2>
         <p style="color:#6b7280;margin-bottom:4px;">Order number:</p>
         <p style="font-size:22px;font-family:monospace;font-weight:700;margin:0 0 16px;">@_orderNumber</p>
@@ -20,7 +20,7 @@
         @if (_creditRedeemed > 0)
         {
             <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#15803d;font-size:14px;">
-                💳 Rs @_creditRedeemed.ToString("N2") store credit applied.
+                Rs @_creditRedeemed.ToString("N2") store credit applied.
             </div>
         }
 
@@ -41,7 +41,7 @@
                 {
                     <button class="btn" style="margin-top:10px;font-size:11px;background:#fee2e2;color:#b91c1c;"
                             @onclick="DevSimulatePaid">
-                        🛠 DEV: Simulate paid
+                        DEV: Simulate paid
                     </button>
                 }
             </div>
@@ -78,25 +78,14 @@
 }
 else
 {
-    <div class="checkout-shell" style="max-width:560px;margin:0 auto;">
-        <h2 style="margin-bottom:14px;">Checkout</h2>
-
-        @if (Cart.Items.Any())
-        {
-            <div class="checkout-steps">
-                <div class="checkout-step @(StepDetailsDone ? "done" : "")">
-                    <span class="checkout-step-num">@(StepDetailsDone ? "✓" : "1")</span> Details
-                </div>
-                <span class="checkout-step-sep">—</span>
-                <div class="checkout-step @(StepDeliveryDone ? "done" : "")">
-                    <span class="checkout-step-num">@(StepDeliveryDone ? "✓" : "2")</span> Delivery
-                </div>
-                <span class="checkout-step-sep">—</span>
-                <div class="checkout-step">
-                    <span class="checkout-step-num">3</span> Payment
-                </div>
+    <div class="checkout-shell">
+        <div class="checkout-page-head">
+            <div>
+                <p class="shop-eyebrow">Secure checkout</p>
+                <h2>Checkout</h2>
             </div>
-        }
+            <a class="btn btn-secondary" href="@($"/store/{TenantSlug}/cart")">Back to cart</a>
+        </div>
 
         @if (!string.IsNullOrEmpty(_error))
         {
@@ -106,7 +95,7 @@ else
         }
 
         <!-- Cart summary -->
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card checkout-section" style="margin-bottom:16px;">
             <h4 style="margin-bottom:8px;">Your cart</h4>
             @if (!Cart.Items.Any())
             {
@@ -132,7 +121,7 @@ else
         @if (Cart.Items.Any())
         {
             <!-- Contact -->
-            <div class="card" style="margin-bottom:16px;">
+            <div class="card checkout-section" style="margin-bottom:16px;">
                 <h4 style="margin-bottom:8px;">1. Your details</h4>
                 <input class="input full" placeholder="Full name *" @bind="_name"  style="margin-bottom:8px;" />
                 <input class="input full" placeholder="Phone *"     @bind="_phone" style="margin-bottom:8px;" />
@@ -140,7 +129,7 @@ else
             </div>
 
             <!-- Shipping method -->
-            <div class="card" style="margin-bottom:16px;">
+            <div class="card checkout-section" style="margin-bottom:16px;">
                 <h4 style="margin-bottom:8px;">2. Delivery</h4>
                 @if (_shippingMethods == null)
                 {
@@ -180,7 +169,7 @@ else
             <!-- Shipping address (hidden if pickup chosen) -->
             @if (_requireAddress)
             {
-                <div class="card" style="margin-bottom:16px;">
+                <div class="card checkout-section" style="margin-bottom:16px;">
                     <h4 style="margin-bottom:8px;">3. Shipping address</h4>
                     <input class="input full" placeholder="Recipient name *"   @bind="_address.RecipientName" style="margin-bottom:8px;" />
                     <input class="input full" placeholder="Address line 1 *"    @bind="_address.Line1"         style="margin-bottom:8px;" />
@@ -194,14 +183,14 @@ else
             }
 
             <!-- Payment -->
-            <div class="card" style="margin-bottom:16px;">
+            <div class="card checkout-section" style="margin-bottom:16px;">
                 <h4 style="margin-bottom:8px;">@(_requireAddress ? "4." : "3.") Payment</h4>
                 <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid @(_paymentMethod == "COD" ? "#0d3b66" : "#e5e7eb");border-radius:6px;margin-bottom:6px;cursor:pointer;">
                     <input type="radio" name="pay" value="COD"
                            checked="@(_paymentMethod == "COD")"
                            @onchange="@(() => SelectPayment("COD"))" />
                     <div style="flex:1;">
-                        <strong>💵 Cash on Delivery</strong>
+                        <strong>Cash on Delivery</strong>
                         <div style="font-size:12px;color:#9ca3af;">Pay in cash when your order arrives.</div>
                     </div>
                 </label>
@@ -211,7 +200,7 @@ else
                            checked="@(_paymentMethod == "EasyPaisa")"
                            @onchange="@(() => SelectPayment("EasyPaisa"))" />
                     <div style="flex:1;">
-                        <strong>📱 EasyPaisa</strong>
+                        <strong>EasyPaisa</strong>
                         <div style="font-size:12px;color:#9ca3af;">Scan a QR with your EasyPaisa app to pay.</div>
                     </div>
                 </label>
@@ -221,7 +210,7 @@ else
                            checked="@(_paymentMethod == "JazzCash")"
                            @onchange="@(() => SelectPayment("JazzCash"))" />
                     <div style="flex:1;">
-                        <strong>📱 JazzCash</strong>
+                        <strong>JazzCash</strong>
                         <div style="font-size:12px;color:#9ca3af;">Scan a QR with your JazzCash app to pay.</div>
                     </div>
                 </label>
@@ -230,9 +219,9 @@ else
             <!-- Wallet credit (only shown when the customer is signed into the wallet) -->
             @if (_walletBalance > 0)
             {
-                <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,#ecfeff 0%, #f0fdf4 100%);border:1px solid #a7f3d0;">
+                <div class="card checkout-section checkout-credit" style="margin-bottom:16px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <strong>💳 Use store credit</strong>
+                        <strong>Use store credit</strong>
                         <span style="font-size:12px;color:#0f766e;">Available: Rs @_walletBalance.ToString("N2")</span>
                     </div>
                     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;">
@@ -257,7 +246,7 @@ else
             }
 
             <!-- Totals + place -->
-            <div class="card" style="margin-bottom:16px;">
+            <div class="card checkout-section checkout-totals" style="margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;">
                     <span>Subtotal</span><span>Rs @Cart.TotalAmount.ToString("N2")</span>
                 </div>
@@ -274,7 +263,7 @@ else
                 <hr style="margin:6px 0;" />
                 <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;">
                     <span>Total</span>
-                    <span>Rs @OrderTotal.ToString("N2")</span>
+                    <span>Rs @((Math.Max(0, Cart.TotalAmount + _shippingFee - (_applyCredit ? _creditToApply : 0))).ToString("N2"))</span>
                 </div>
                 <button class="btn btn-primary full" style="margin-top:14px;"
                         disabled="@_placing"
@@ -284,21 +273,6 @@ else
                 <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:8px;">
                     By placing this order you agree to our terms.
                 </p>
-            </div>
-
-            <!-- Sticky mobile bar: the total + place-order button above scroll
-                 out of view on a long checkout form. Calls the same PlaceOrder()
-                 method — no duplicate validation/order logic. -->
-            <div class="checkout-sticky-bar">
-                <div>
-                    <div class="checkout-sticky-total">Total</div>
-                    <div class="checkout-sticky-amount">Rs @OrderTotal.ToString("N2")</div>
-                </div>
-                <button class="btn btn-primary" style="white-space:nowrap;"
-                        disabled="@_placing"
-                        @onclick="PlaceOrder">
-                    @(_placing ? "Placing..." : "Place order")
-                </button>
             </div>
         }
     </div>
@@ -348,18 +322,6 @@ else
 
     decimal MaxApplyableCredit =>
         Math.Min(_walletBalance, Cart.TotalAmount + _shippingFee);
-
-    // Purely presentational — drives the step-header checkmarks. Doesn't
-    // gate anything, so it can't block or break order placement.
-    bool StepDetailsDone  => !string.IsNullOrWhiteSpace(_name) && !string.IsNullOrWhiteSpace(_phone);
-    bool StepDeliveryDone =>
-        !string.IsNullOrWhiteSpace(_selectedShippingCode) &&
-        (!_requireAddress ||
-            (!string.IsNullOrWhiteSpace(_address.RecipientName) &&
-             !string.IsNullOrWhiteSpace(_address.Line1) &&
-             !string.IsNullOrWhiteSpace(_address.City)));
-
-    decimal OrderTotal => Math.Max(0, Cart.TotalAmount + _shippingFee - (_applyCredit ? _creditToApply : 0));
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
