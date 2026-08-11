@@ -13,8 +13,8 @@
     <header class="shop-header">
         <div class="shop-header-inner">
             <a href="@StorePath("")" class="shop-brand">
-                <span class="shop-brand-mark">R</span>
-                <span>RetailSuite Store</span>
+                <span class="shop-brand-mark">@BrandInitial</span>
+                <span>@(_storeName ?? "RetailSuite Store")</span>
             </a>
             <nav class="shop-nav">
                 <a class="@ActiveClass("")" href="@StorePath("")">Shop</a>
@@ -47,7 +47,7 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             </a>
             <a href="@StorePath("")" class="shop-brand-mobile">
-                <span class="shop-brand-mark">R</span>
+                <span>@(_storeName ?? "RetailSuite Store")</span>
             </a>
             <a class="shop-icon-btn" aria-label="Account" href="@StorePath("wallet")">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>
@@ -120,6 +120,10 @@
     const string WALLET_TOKEN_KEY = "wallet_token";
     decimal? _walletBalance;
     bool _drawerOpen;
+    string? _storeName;
+    string? _storeNameLoadedForSlug;
+
+    string BrandInitial => string.IsNullOrEmpty(_storeName) ? "R" : _storeName.Trim()[0].ToString().ToUpperInvariant();
 
     string StorePath(string relative) =>
         string.IsNullOrEmpty(relative) ? $"/store/{Store.TenantSlug}" : $"/store/{Store.TenantSlug}/{relative}";
@@ -134,7 +138,13 @@
     protected override void OnInitialized()
     {
         Cart.OnChange += StateHasChanged;
-        Store.OnChange += StateHasChanged;
+        Store.OnChange += OnStoreChanged;
+    }
+
+    void OnStoreChanged()
+    {
+        StateHasChanged();
+        _ = TryLoadStoreNameAsync();
     }
 
     // Restore the Bearer token from localStorage so shop-page API calls succeed.
@@ -144,6 +154,22 @@
         if (!firstRender) return;
         await Auth.InitializeAsync();
         await TryLoadWalletBalanceAsync();
+        await TryLoadStoreNameAsync();
+    }
+
+    async Task TryLoadStoreNameAsync()
+    {
+        var slug = Store.TenantSlug;
+        if (string.IsNullOrWhiteSpace(slug) || slug == _storeNameLoadedForSlug) return;
+        try
+        {
+            var json = await Http.GetStringAsync($"api/shop/{slug}/store-info");
+            using var doc = JsonDocument.Parse(json);
+            _storeName = doc.RootElement.GetProperty("data").GetProperty("name").GetString();
+            _storeNameLoadedForSlug = slug;
+            StateHasChanged();
+        }
+        catch { /* best-effort — falls back to the generic brand text */ }
     }
 
     async Task TryLoadWalletBalanceAsync()
@@ -169,6 +195,6 @@
     public void Dispose()
     {
         Cart.OnChange -= StateHasChanged;
-        Store.OnChange -= StateHasChanged;
+        Store.OnChange -= OnStoreChanged;
     }
 }

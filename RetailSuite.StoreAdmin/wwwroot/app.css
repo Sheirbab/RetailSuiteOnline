@@ -808,8 +808,13 @@ select.input { height: 38px; }
     gap: 10px;
 }
 
+/* A plain flex row let the (short, left-aligned) info block eat all the
+   left-over width, leaving a wide dead gap before the price/button — a
+   proper row of aligned columns (image | info | price | action) reads as
+   a list instead of loosely scattered pieces. */
 .product-list-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 14px;
     background: #fff;
@@ -828,7 +833,6 @@ select.input { height: 38px; }
 .product-list-img {
     width: 80px;
     height: 80px;
-    flex-shrink: 0;
     object-fit: cover;
     border-radius: 8px;
     background: #f1f5f9;
@@ -836,10 +840,16 @@ select.input { height: 38px; }
     font-size: 11px;
 }
 
-.product-list-info { flex: 1; min-width: 0; }
+.product-list-info { min-width: 0; }
 .product-list-info .product-name { -webkit-line-clamp: 1; min-height: 0; margin-bottom: 3px; }
 
-.product-list-actions { flex-shrink: 0; }
+.product-list-price {
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 800;
+    color: #111827;
+}
+
 .product-list-actions .btn { white-space: nowrap; font-size: 12px; font-weight: 800; padding: 8px 14px; }
 
 .shop-home-layout {
@@ -1135,6 +1145,18 @@ select.input { height: 38px; }
     flex: 1;
     display: flex;
     justify-content: center;
+    min-width: 0;
+    color: var(--shop-ink);
+    font-weight: 800;
+    font-size: 16px;
+    text-decoration: none;
+}
+
+.shop-brand-mobile span {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cart-badge-dot {
@@ -1385,17 +1407,17 @@ select.input { height: 38px; }
     }
 
     .product-list-item {
-        flex-wrap: wrap;
+        grid-template-columns: 64px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "img info price"
+            "actions actions actions";
+        row-gap: 8px;
     }
 
-    .product-list-img {
-        width: 64px;
-        height: 64px;
-    }
-
-    .product-list-actions {
-        flex-basis: 100%;
-    }
+    .product-list-img   { grid-area: img; width: 64px; height: 64px; }
+    .product-list-info  { grid-area: info; }
+    .product-list-price { grid-area: price; }
+    .product-list-actions { grid-area: actions; }
 
     .product-list-actions .btn {
         width: 100%;

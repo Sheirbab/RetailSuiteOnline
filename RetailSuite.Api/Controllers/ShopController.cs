@@ -67,6 +67,21 @@ public class ShopController : ControllerBase
     }
 
     // ============================================================
+    //  GET /api/shop/store-info
+    // ============================================================
+    /// <summary>Public store display name for the storefront header/branding.</summary>
+    [HttpGet("store-info")]
+    public async Task<IActionResult> StoreInfo(string tenantSlug)
+    {
+        var name = await _db.Tenants
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync();
+        if (name == null) return NotFound(ApiResponse<object>.Fail("Store not found."));
+        return Ok(ApiResponse<object>.Ok(new { name }));
+    }
+
+    // ============================================================
     //  GET /api/shop/categories
     // ============================================================
     /// <summary>
