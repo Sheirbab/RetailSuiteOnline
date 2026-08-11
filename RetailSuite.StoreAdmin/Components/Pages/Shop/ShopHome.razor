@@ -41,10 +41,29 @@
     }
 </div>
 
+<!-- Filter/view toolbar. "Filter" toggles the sidebar's visibility on
+     mobile (it's always visible on desktop, where this button is hidden
+     via CSS); the grid/list toggle switches the product layout on any
+     screen size. -->
+<div class="shop-toolbar">
+    <button type="button" class="toolbar-filter-btn" @onclick="() => _mobileFiltersOpen = !_mobileFiltersOpen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4,4 20,4 14,12 14,19 10,21 10,12" /></svg>
+        Filter
+    </button>
+    <div class="view-toggle">
+        <button type="button" class="@(_viewMode == "list" ? "active" : "")" aria-label="List view" @onclick='() => _viewMode = "list"'>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1.2" fill="currentColor" stroke="none" /></svg>
+        </button>
+        <button type="button" class="@(_viewMode == "grid" ? "active" : "")" aria-label="Grid view" @onclick='() => _viewMode = "grid"'>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+        </button>
+    </div>
+</div>
+
 <div class="shop-home-layout">
 
     <!-- Categories sidebar -->
-    <aside class="shop-sidebar">
+    <aside class="shop-sidebar @(_mobileFiltersOpen ? "open" : "")">
         <div class="shop-filter-title">
             <h4>Filters</h4>
             @if (_selectedBrandIds.Any() || _selectedAttrValueIds.Any()
@@ -174,6 +193,62 @@
         {
             <p style="color:#9ca3af;">No products found.</p>
         }
+        else if (_viewMode == "list")
+        {
+            <div class="product-list">
+                @foreach (var p in _products)
+                {
+                    <div class="product-list-item" @onclick="() => GoToProduct(p.Id)">
+                        @if (!string.IsNullOrEmpty(p.ImageUrl))
+                        {
+                            <img src="@Api.Absolute(p.ImageUrl)" alt="@p.Name" class="product-list-img" />
+                        }
+                        else
+                        {
+                            <div class="product-list-img product-img-placeholder">No image</div>
+                        }
+                        <div class="product-list-info">
+                            @if (!string.IsNullOrEmpty(p.BrandName))
+                            {
+                                <div class="product-brand">@p.BrandName</div>
+                            }
+                            <div class="product-name">@p.Name</div>
+                            <div class="product-price">
+                                @if (p.MinPrice > 0)
+                                {
+                                    <span>Rs @p.MinPrice.ToString("N2")</span>
+                                }
+                                else
+                                {
+                                    <span style="color:#9ca3af;">Price varies</span>
+                                }
+                            </div>
+                            <div class="product-stock @(p.DefaultVariantStock <= 0 ? "out" : p.DefaultVariantStock <= 5 ? "low" : "")">
+                                @(p.DefaultVariantStock <= 0 ? "Out of stock" : $"{p.DefaultVariantStock} in stock")
+                            </div>
+                        </div>
+                        <div class="product-list-actions">
+                            @if (p.DefaultVariantId.HasValue)
+                            {
+                                <button class="btn btn-primary"
+                                        disabled="@(p.DefaultVariantStock <= 0)"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => AddToCart(p)">
+                                    @(p.DefaultVariantStock <= 0 ? "Unavailable" : "Add to cart")
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn" @onclick:stopPropagation="true"
+                                        @onclick="() => GoToProduct(p.Id)">
+                                    View options
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
         else
         {
             <div class="product-grid">
@@ -239,6 +314,8 @@
 
 @code {
     bool _loading = true;
+    string _viewMode = "grid";
+    bool _mobileFiltersOpen;
     string _search = string.Empty;
     Guid? _selectedCategoryId;
     string? _selectedCategoryName;

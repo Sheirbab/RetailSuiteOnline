@@ -752,6 +752,96 @@ select.input { height: 38px; }
 
 .category-chip.selected span { color: rgba(255,255,255,.72); }
 
+.shop-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.toolbar-filter-btn {
+    display: none; /* mobile-only — desktop's sidebar is always visible */
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #334155;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 3px;
+    background: #fff;
+    margin-left: auto;
+}
+
+.view-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+}
+
+.view-toggle button.active {
+    background: #111827;
+    color: #fff;
+}
+
+.product-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.product-list-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .2s;
+}
+
+.product-list-item:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 8px 18px rgba(15,23,42,.06);
+}
+
+.product-list-img {
+    width: 80px;
+    height: 80px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #f1f5f9;
+    aspect-ratio: 1 / 1;
+    font-size: 11px;
+}
+
+.product-list-info { flex: 1; min-width: 0; }
+.product-list-info .product-name { -webkit-line-clamp: 1; min-height: 0; margin-bottom: 3px; }
+
+.product-list-actions { flex-shrink: 0; }
+.product-list-actions .btn { white-space: nowrap; font-size: 12px; font-weight: 800; padding: 8px 14px; }
+
 .shop-home-layout {
     display: grid;
     grid-template-columns: 236px minmax(0, 1fr);
@@ -1017,6 +1107,55 @@ select.input { height: 38px; }
     display: none;
 }
 
+/* Icon-only mobile header (hamburger / search / centered mark / account /
+   cart) — hidden on desktop, where the text .shop-header-inner nav is used
+   instead. Base rules keep the drawer fully inert at any width until the
+   mobile media query below turns it on, so a resize from mobile (drawer
+   open) to desktop can't leave it stuck open. */
+.shop-header-mobile { display: none; }
+
+.shop-icon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    color: var(--shop-ink);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.shop-icon-btn:hover { background: #f1f5f9; }
+
+.shop-brand-mobile {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+.cart-badge-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+}
+
+.shop-drawer-backdrop { display: none; }
+.shop-drawer { display: none; }
+
 .cart-page-head {
     display: flex;
     align-items: end;
@@ -1076,23 +1215,80 @@ select.input { height: 38px; }
     }
 
     .shop-header {
-        padding: 0 14px;
+        padding: 0 10px;
     }
 
+    /* Text header (brand + nav) is replaced by the icon-only mobile header
+       below — showing both would duplicate the brand and waste vertical
+       space on a small screen. */
     .shop-header-inner {
-        min-height: 58px;
-        flex-wrap: nowrap;
-    }
-
-    .shop-brand span:last-child {
-        max-width: 145px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .shop-nav {
         display: none;
+    }
+
+    .shop-header-mobile {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        min-height: 58px;
+        gap: 2px;
+    }
+
+    .shop-drawer-backdrop.open {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,.45);
+        z-index: 300;
+    }
+
+    .shop-drawer {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: -300px;
+        width: min(280px, 82vw);
+        max-width: 82vw;
+        background: #fff;
+        z-index: 310;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(17,24,39,.12);
+        overflow-y: auto;
+        transition: left .25s ease;
+    }
+
+    .shop-drawer.open { left: 0; }
+
+    .shop-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 800;
+        color: var(--shop-ink);
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .shop-drawer a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 8px;
+        border-radius: 8px;
+        color: #334155;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 15px;
+    }
+
+    .shop-drawer a:hover,
+    .shop-drawer a.active {
+        background: #f1f5f9;
+        color: var(--shop-ink);
     }
 
     .shop-main {
@@ -1131,13 +1327,25 @@ select.input { height: 38px; }
         display: block;
     }
 
+    .toolbar-filter-btn {
+        display: inline-flex;
+    }
+
+    /* Collapsed by default on mobile — opened via the "Filter" toolbar
+       button (see .toolbar-filter-btn) instead of always taking up space
+       above the product list. */
     .shop-sidebar {
+        display: none;
         position: static;
         width: 100%;
         max-height: none;
         overflow: visible;
         margin-bottom: 14px;
         border-radius: 12px;
+    }
+
+    .shop-sidebar.open {
+        display: block;
     }
 
     .shop-sidebar .cat-row,
@@ -1174,6 +1382,23 @@ select.input { height: 38px; }
 
     .product-actions .btn {
         min-height: 36px;
+    }
+
+    .product-list-item {
+        flex-wrap: wrap;
+    }
+
+    .product-list-img {
+        width: 64px;
+        height: 64px;
+    }
+
+    .product-list-actions {
+        flex-basis: 100%;
+    }
+
+    .product-list-actions .btn {
+        width: 100%;
     }
 
     .shop-bottom-nav {

@@ -35,7 +35,58 @@
                 </a>
             </nav>
         </div>
+
+        <!-- Mobile-only icon header: hamburger opens the nav drawer below,
+             search jumps to the shop's search box, account goes to Wallet
+             (the closest thing to a customer account page). -->
+        <div class="shop-header-mobile">
+            <button type="button" class="shop-icon-btn" aria-label="Menu" @onclick="() => _drawerOpen = true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+            </button>
+            <a class="shop-icon-btn" aria-label="Search" href="@StorePath("")">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            </a>
+            <a href="@StorePath("")" class="shop-brand-mobile">
+                <span class="shop-brand-mark">R</span>
+            </a>
+            <a class="shop-icon-btn" aria-label="Account" href="@StorePath("wallet")">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>
+            </a>
+            <a class="shop-icon-btn cart-icon-btn" aria-label="Cart" href="@StorePath("cart")">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8V6a6 6 0 0112 0v2" /><rect x="3" y="8" width="18" height="13" rx="2" /></svg>
+                @if (Cart.TotalCount > 0)
+                {
+                    <span class="cart-badge-dot">@Cart.TotalCount</span>
+                }
+            </a>
+        </div>
     </header>
+
+    <div class="shop-drawer-backdrop @(_drawerOpen ? "open" : "")" @onclick="() => _drawerOpen = false"></div>
+    <nav class="shop-drawer @(_drawerOpen ? "open" : "")">
+        <div class="shop-drawer-head">
+            <span>Menu</span>
+            <button type="button" class="shop-icon-btn" aria-label="Close menu" @onclick="() => _drawerOpen = false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+        </div>
+        <a class="@ActiveClass("")" href="@StorePath("")" @onclick="() => _drawerOpen = false">Shop</a>
+        <a class="@ActiveClass("track")" href="@StorePath("track")" @onclick="() => _drawerOpen = false">Track order</a>
+        <a class="@ActiveClass("wallet")" href="@StorePath("wallet")" @onclick="() => _drawerOpen = false">
+            Wallet
+            @if (_walletBalance.HasValue && _walletBalance.Value > 0)
+            {
+                <span class="wallet-balance">Rs @_walletBalance.Value.ToString("N0")</span>
+            }
+        </a>
+        <a class="@ActiveClass("cart")" href="@StorePath("cart")" @onclick="() => _drawerOpen = false">
+            Cart
+            @if (Cart.TotalCount > 0)
+            {
+                <span class="cart-badge">@Cart.TotalCount</span>
+            }
+        </a>
+    </nav>
 
     <main class="shop-main">
         @Body
@@ -68,6 +119,7 @@
 @code {
     const string WALLET_TOKEN_KEY = "wallet_token";
     decimal? _walletBalance;
+    bool _drawerOpen;
 
     string StorePath(string relative) =>
         string.IsNullOrEmpty(relative) ? $"/store/{Store.TenantSlug}" : $"/store/{Store.TenantSlug}/{relative}";
