@@ -50,6 +50,12 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4,4 20,4 14,12 14,19 10,21 10,12" /></svg>
         Filter
     </button>
+    <select class="input toolbar-sort" value="@_sort" @onchange="OnSortChanged">
+        <option value="name">Sort: Name (A-Z)</option>
+        <option value="newest">Newest first</option>
+        <option value="price_asc">Price: low to high</option>
+        <option value="price_desc">Price: high to low</option>
+    </select>
     <div class="view-toggle">
         <button type="button" class="@(_viewMode == "list" ? "active" : "")" aria-label="List view" @onclick='() => _viewMode = "list"'>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1.2" fill="currentColor" stroke="none" /></svg>
@@ -316,6 +322,7 @@
     bool _loading = true;
     string _viewMode = "grid";
     bool _mobileFiltersOpen;
+    string _sort = "name";
     string _search = string.Empty;
     Guid? _selectedCategoryId;
     string? _selectedCategoryName;
@@ -396,6 +403,11 @@
         _ = LoadProducts();
     }
     void ApplyPriceFilter() => _ = LoadProducts();
+    void OnSortChanged(ChangeEventArgs e)
+    {
+        _sort = e.Value?.ToString() ?? "name";
+        _ = LoadProducts();
+    }
     void ClearFilters()
     {
         _selectedBrandIds.Clear();
@@ -474,7 +486,7 @@
         StateHasChanged();
         try
         {
-            var url = ShopApi("products?page=1&pageSize=60");
+            var url = ShopApi($"products?page=1&pageSize=60&sort={_sort}");
             if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
             if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
             if (_selectedBrandIds.Any())

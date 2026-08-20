@@ -161,6 +161,7 @@ public class ShopController : ControllerBase
         [FromQuery] string? attrValueIds,
         [FromQuery] decimal? priceMin,
         [FromQuery] decimal? priceMax,
+        [FromQuery] string? sort = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 24)
     {
@@ -226,8 +227,15 @@ public class ShopController : ControllerBase
 
         var total = await query.CountAsync();
 
+        query = sort switch
+        {
+            "price_asc"  => query.OrderBy(p => p.Variants.Where(v => v.IsActive).Min(v => (decimal?)v.Price) ?? 0m),
+            "price_desc" => query.OrderByDescending(p => p.Variants.Where(v => v.IsActive).Min(v => (decimal?)v.Price) ?? 0m),
+            "newest"     => query.OrderByDescending(p => p.CreatedAt),
+            _            => query.OrderBy(p => p.Name)
+        };
+
         var products = await query
-            .OrderBy(p => p.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(p => new

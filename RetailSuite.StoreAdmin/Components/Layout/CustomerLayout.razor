@@ -112,7 +112,29 @@
     </nav>
 
     <footer class="shop-footer">
-        © @DateTime.Now.Year RetailSuite
+        <div class="shop-footer-inner">
+            <div class="shop-footer-brand">
+                <strong>@(_storeName ?? "RetailSuite Store")</strong>
+                <p>Shop quality products, checkout in a few taps, and track your order anytime.</p>
+            </div>
+            <div class="shop-footer-col">
+                <h5>Shop</h5>
+                <a href="@StorePath("")">All products</a>
+                <a href="@StorePath("track")">Track an order</a>
+                <a href="@StorePath("wallet")">Wallet</a>
+            </div>
+            <div class="shop-footer-col">
+                <h5>We accept</h5>
+                <div class="shop-footer-payments">
+                    <span>Cash on Delivery</span>
+                    <span>EasyPaisa</span>
+                    <span>JazzCash</span>
+                </div>
+            </div>
+        </div>
+        <div class="shop-footer-bottom">
+            © @DateTime.Now.Year @(_storeName ?? "RetailSuite Store"). Powered by RetailSuite.
+        </div>
     </footer>
 </div>
 
