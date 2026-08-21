@@ -21,6 +21,9 @@
     string _newName     = string.Empty;
     string _newSubdomain = string.Empty;
     string _newEmail    = string.Empty;
+    string _newPlanCode = string.Empty; // "" = no plan assigned at creation
+    string _newCycle    = "Monthly";
+    List<PlanOption> _plans = new();
 
     // Result of last creation (shown in a success box)
     CreatedResult? _lastCreated;
@@ -53,7 +56,36 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
             await LoadTenantsAsync();
+            await LoadPlansAsync();
+        }
+    }
+
+    async Task LoadPlansAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("api/subscriptions/plans");
+            using var doc = JsonDocument.Parse(json);
+            var arr = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+
+            _plans.Clear();
+            if (arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in arr.EnumerateArray())
+                {
+                    _plans.Add(new PlanOption
+                    {
+                        Code         = p.GetProperty("code").GetString() ?? "",
+                        Name         = p.GetProperty("name").GetString() ?? "",
+                        MonthlyPrice = p.GetProperty("monthlyPrice").GetDecimal(),
+                        YearlyPrice  = p.GetProperty("yearlyPrice").GetDecimal()
+                    });
+                }
+            }
+        }
+        catch { /* non-fatal — plan dropdown just stays empty, plan can still be assigned later */ }
     }
 
     async Task LoadTenantsAsync()
@@ -168,6 +200,7 @@
             {
                 using var doc  = JsonDocument.Parse(content);
                 var data       = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+                var tenantId   = data.TryGetProperty("tenantId", out var idEl) ? idEl.GetGuid() : (Guid?)null;
                 _lastCreated   = new CreatedResult
                 {
                     TenantName   = data.TryGetProperty("tenantName",   out var tn) ? tn.GetString()! : _newName,
@@ -175,8 +208,26 @@
                     TempPassword = data.TryGetProperty("tempPassword", out var tp) ? tp.GetString()! : "—"
                 };
 
+                // Plan is optional at creation — only assign one if the SuperAdmin
+                // picked something other than "No plan yet".
+                if (tenantId.HasValue && !string.IsNullOrWhiteSpace(_newPlanCode))
+                {
+                    try
+                    {
+                        var planPayload = new { planCode = _newPlanCode, billingCycle = _newCycle };
+                        var planRes     = await Http.PostAsJsonAsync($"api/tenants/{tenantId}/subscription", planPayload);
+                        _lastCreated.PlanAssigned = planRes.IsSuccessStatusCode;
+                    }
+                    catch { _lastCreated.PlanAssigned = false; }
+
+                    if (_lastCreated.PlanAssigned == false)
+                        Toast.Show("Tenant created, but plan assignment failed — assign it from the tenant's detail page.");
+                }
+
                 // Reset form and reload list
                 _newName = _newSubdomain = _newEmail = string.Empty;
+                _newPlanCode = string.Empty;
+                _newCycle = "Monthly";
                 _showCreate = false;
                 await LoadTenantsAsync();
             }
@@ -328,6 +379,17 @@
         public string TenantName   { get; set; } = string.Empty;
         public string AdminEmail   { get; set; } = string.Empty;
         public string TempPassword { get; set; } = string.Empty;
+        /// <summary>Null = no plan was selected at creation. True/false = whether the
+        /// chosen plan was assigned successfully right after the tenant was created.</summary>
+        public bool?  PlanAssigned { get; set; }
+    }
+
+    class PlanOption
+    {
+        public string  Code         { get; set; } = string.Empty;
+        public string  Name         { get; set; } = string.Empty;
+        public decimal MonthlyPrice { get; set; }
+        public decimal YearlyPrice  { get; set; }
     }
 }
 
@@ -345,6 +407,14 @@
                 <code style="background:#d1fae5;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px;">@_lastCreated.TempPassword</code>
             </div>
             <div style="margin-top:6px;color:#6b7280;font-size:12px;">⚠️ Share this password securely — it won't be shown again.</div>
+            @if (_lastCreated.PlanAssigned == true)
+            {
+                <div style="margin-top:6px;">✅ Subscription plan assigned.</div>
+            }
+            else if (_lastCreated.PlanAssigned == false)
+            {
+                <div style="margin-top:6px;color:#b91c1c;">⚠️ Plan assignment failed — assign it from the tenant's detail page.</div>
+            }
         </div>
         <button class="btn" style="margin-top:10px;font-size:12px;" @onclick="() => _lastCreated = null">Dismiss</button>
     </div>
@@ -374,7 +444,25 @@
         <input class="input full" placeholder="Subdomain (e.g. mystore) *"
                @bind="_newSubdomain" style="margin-bottom:8px;" />
         <input class="input full" placeholder="Admin Email *"
-               type="email" @bind="_newEmail" style="margin-bottom:12px;" />
+               type="email" @bind="_newEmail" style="margin-bottom:8px;" />
+
+        <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;">
+            Subscription plan (optional — can be assigned later)
+        </label>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <select class="input" style="flex:1;" @bind="_newPlanCode">
+                <option value="">No plan yet</option>
+                @foreach (var p in _plans)
+                {
+                    <option value="@p.Code">@p.Name (@p.Code) — Rs @p.MonthlyPrice.ToString("N0")/mo</option>
+                }
+            </select>
+            <select class="input" style="width:auto;" @bind="_newCycle" disabled="@string.IsNullOrEmpty(_newPlanCode)">
+                <option value="Monthly">Monthly</option>
+                <option value="Yearly">Yearly</option>
+            </select>
+        </div>
+
         <button class="btn btn-primary" @onclick="CreateTenantAsync" disabled="@_creating">
             @(_creating ? "Creating..." : "Create Tenant")
         </button>
