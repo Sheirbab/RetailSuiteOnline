@@ -76,6 +76,15 @@ window.printReceipt = function () {
 };
 
 // ---------------------------------------------------------------------------
+// Smooth-scroll to an element by id — used instead of an <a href="#id">
+// anchor link, since Blazor's enhanced-navigation link interception treats
+// even same-page fragment links as a real navigation.
+// ---------------------------------------------------------------------------
+window.scrollToId = function (id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+// ---------------------------------------------------------------------------
 // CSV download helper — used by Reports pages to export tables
 // ---------------------------------------------------------------------------
 window.downloadCsv = function (filename, csv) {

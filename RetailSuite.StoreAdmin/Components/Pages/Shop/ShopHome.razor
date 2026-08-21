@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject ApiUrlService Api
+@inject IJSRuntime JS
 @using System.Text.Json
 
 <section class="shop-hero">
@@ -20,6 +21,66 @@
     </div>
 </section>
 
+@if (_categoryRows.Any())
+{
+    <!-- Section 1: a handful of curated rows, one per category, so the
+         home page shows a taste of everything instead of one flat list.
+         Only the first few rows show by default; "Explore all categories"
+         reveals the rest. Row picks are just "a few per category" for now —
+         a natural place to swap in per-customer picks (recent searches /
+         browsing interest) once that history is tracked somewhere. -->
+    <section class="category-rows-section">
+        <div class="section-head">
+            <h2>Shop by category</h2>
+        </div>
+        @foreach (var row in VisibleCategoryRows)
+        {
+            <div class="category-row">
+                <div class="category-row-head">
+                    <h3>@row.Category.Name</h3>
+                    <button type="button" class="category-row-view-all" @onclick="() => ViewAllInCategory(row.Category.Id)">View all →</button>
+                </div>
+                <div class="category-row-scroll">
+                    @foreach (var p in row.Products)
+                    {
+                        <div class="row-card" @onclick="() => GoToProduct(p.Id)">
+                            @if (!string.IsNullOrEmpty(p.ImageUrl))
+                            {
+                                <img src="@Api.Absolute(p.ImageUrl)" alt="@p.Name" class="row-card-img" />
+                            }
+                            else
+                            {
+                                <div class="row-card-img product-img-placeholder">No image</div>
+                            }
+                            <div class="row-card-name">@p.Name</div>
+                            <div class="row-card-price">
+                                @if (p.MinPrice > 0)
+                                {
+                                    <span>Rs @p.MinPrice.ToString("N2")</span>
+                                }
+                                else
+                                {
+                                    <span style="color:#9ca3af;">Price varies</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        @if (HasMoreCategoryRows)
+        {
+            <button type="button" class="btn explore-categories-btn" @onclick="() => _showAllCategoryRows = true">
+                Explore all categories
+            </button>
+        }
+    </section>
+}
+
+<section id="all-products" class="all-products-section">
+<div class="section-head">
+    <h2>All products</h2>
+</div>
 <div class="category-strip" aria-label="Product categories">
     <button type="button"
             class="category-chip @(_selectedCategoryId == null ? "selected" : "")"
@@ -317,6 +378,7 @@
         }
     </section>
 </div>
+</section>
 
 @code {
     bool _loading = true;
@@ -329,6 +391,17 @@
     List<CategoryNode>? _tree;
     HashSet<Guid> _openCats = new();
     List<ProductRow> _products = new();
+
+    // Section 1 — a few rows of products grouped by category. Only the first
+    // few show; "Explore all categories" reveals the rest.
+    const int InitialCategoryRowCount = 3;
+    const int CategoryRowProductCount = 8;
+    List<CategoryRow> _categoryRows = new();
+    bool _showAllCategoryRows;
+
+    IEnumerable<CategoryRow> VisibleCategoryRows =>
+        _showAllCategoryRows ? _categoryRows : _categoryRows.Take(InitialCategoryRowCount);
+    bool HasMoreCategoryRows => _categoryRows.Count > InitialCategoryRowCount;
 
     // Faceted filter state
     Filters? _filters;
@@ -346,6 +419,7 @@
         await LoadCategories();
         await LoadFilters();
         await LoadProducts();
+        await LoadCategoryRows();
     }
 
     async Task LoadFilters()
@@ -484,21 +558,51 @@
     {
         _loading = true;
         StateHasChanged();
+
+        var url = ShopApi($"products?page=1&pageSize=60&sort={_sort}");
+        if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
+        if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+        if (_selectedBrandIds.Any())
+            url += $"&brandIds={string.Join(",", _selectedBrandIds)}";
+        if (_selectedAttrValueIds.Any())
+            url += $"&attrValueIds={string.Join(",", _selectedAttrValueIds)}";
+        if (_priceMin.HasValue) url += $"&priceMin={_priceMin.Value}";
+        if (_priceMax.HasValue) url += $"&priceMax={_priceMax.Value}";
+
+        _products = await FetchProductsAsync(url, notifyOnError: true);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    // Section 1's rows use the same product shape/endpoint as the main grid,
+    // just scoped to one category at a time and capped to a handful of items.
+    async Task LoadCategoryRows()
+    {
+        if (_tree == null) return;
+
+        // Only top-level categories get their own row — Section 1 is meant as a
+        // quick taste of the catalog, not a full replay of the sidebar's nested tree.
+        var eligible = _tree.Where(c => c.TotalCount > 0).ToList();
+        var tasks = eligible.Select(async c =>
+        {
+            var url = ShopApi($"products?page=1&pageSize={CategoryRowProductCount}&categoryId={c.Id}&sort=newest");
+            var products = await FetchProductsAsync(url);
+            return new CategoryRow { Category = c, Products = products };
+        });
+
+        var rows = await Task.WhenAll(tasks);
+        _categoryRows = rows.Where(r => r.Products.Count > 0).ToList();
+        StateHasChanged();
+    }
+
+    async Task<List<ProductRow>> FetchProductsAsync(string url, bool notifyOnError = false)
+    {
+        var result = new List<ProductRow>();
         try
         {
-            var url = ShopApi($"products?page=1&pageSize=60&sort={_sort}");
-            if (_selectedCategoryId.HasValue) url += $"&categoryId={_selectedCategoryId}";
-            if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
-            if (_selectedBrandIds.Any())
-                url += $"&brandIds={string.Join(",", _selectedBrandIds)}";
-            if (_selectedAttrValueIds.Any())
-                url += $"&attrValueIds={string.Join(",", _selectedAttrValueIds)}";
-            if (_priceMin.HasValue) url += $"&priceMin={_priceMin.Value}";
-            if (_priceMax.HasValue) url += $"&priceMax={_priceMax.Value}";
-
             var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
-            _products.Clear();
             if (doc.RootElement.TryGetProperty("data", out var d)
                 && d.TryGetProperty("items", out var items)
                 && items.ValueKind == JsonValueKind.Array)
@@ -522,14 +626,18 @@
                         row.DefaultVariantStock = dv.TryGetProperty("stockQuantity", out var sq) ? sq.GetInt32() : 0;
                     }
 
-                    _products.Add(row);
+                    result.Add(row);
                 }
             }
         }
-        catch (Exception ex) { Toast.Show($"Failed to load: {ex.Message}"); }
+        catch (Exception ex) { if (notifyOnError) Toast.Show($"Failed to load: {ex.Message}"); }
+        return result;
+    }
 
-        _loading = false;
-        StateHasChanged();
+    async Task ViewAllInCategory(Guid id)
+    {
+        await SelectCategory(id);
+        await JS.InvokeVoidAsync("scrollToId", "all-products");
     }
 
     async Task SelectCategory(Guid? id)
@@ -599,6 +707,12 @@
         /// <summary>Aggregated count including descendants — what the sidebar displays.</summary>
         public int     TotalCount   { get; set; }
         public List<CategoryNode> Children { get; set; } = new();
+    }
+
+    class CategoryRow
+    {
+        public CategoryNode   Category { get; set; } = default!;
+        public List<ProductRow> Products { get; set; } = new();
     }
 
     class ProductRow

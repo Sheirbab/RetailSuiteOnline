@@ -815,6 +815,94 @@ select.input { height: 38px; }
 
 .category-chip.selected span { color: rgba(255,255,255,.72); }
 
+/* ===============================================================
+   Section 1 — curated per-category rows, and the "All products" section
+   heading that follows it.
+   =============================================================== */
+.section-head { margin-bottom: 14px; }
+.section-head h2 { margin: 0; font-size: 22px; color: #111827; letter-spacing: 0; }
+
+.category-rows-section { margin-bottom: 32px; }
+
+.category-row { margin-bottom: 22px; }
+
+.category-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.category-row-head h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #111827;
+}
+
+.category-row-view-all {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #2563eb;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.category-row-view-all:hover { text-decoration: underline; }
+
+.category-row-scroll {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+}
+
+.category-row-scroll::-webkit-scrollbar { display: none; }
+
+.row-card {
+    flex: 0 0 150px;
+    width: 150px;
+    cursor: pointer;
+}
+
+.row-card-img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #f1f5f9;
+    font-size: 11px;
+}
+
+.row-card-name {
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.row-card-price {
+    margin-top: 2px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.explore-categories-btn {
+    display: block;
+    margin: 4px auto 0;
+}
+
 .shop-toolbar {
     display: flex;
     align-items: center;
